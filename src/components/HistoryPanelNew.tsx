@@ -231,27 +231,25 @@ export const HistoryPanelNew = ({
                         <GitCompare className="w-3 h-3" />
                       </Button>
                       {groupIndex > 0 && (
-                        <>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => onRestoreVersion(group.entries[0])}
-                            className="h-7 px-2"
-                            title="Restore to current file"
-                          >
-                            <RotateCcw className="w-3 h-3" />
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => onRestoreToNewFile(group.entries[0])}
-                            className="h-7 px-2"
-                            title="Restore as new file"
-                          >
-                            <FolderOpen className="w-3 h-3" />
-                          </Button>
-                        </>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => onRestoreVersion(group.entries[0])}
+                          className="h-7 px-2"
+                          title="Restore to current file"
+                        >
+                          <RotateCcw className="w-3 h-3" />
+                        </Button>
                       )}
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => onRestoreToNewFile(group.entries[0])}
+                        className="h-7 px-2"
+                        title="Restore as new file"
+                      >
+                        <FolderOpen className="w-3 h-3" />
+                      </Button>
                     </div>
                   </div>
                 </Card>
@@ -322,15 +320,17 @@ export const HistoryPanelNew = ({
                                 >
                                   <GitCompare className="w-3 h-3" />
                                 </Button>
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => onRestoreVersion(entry)}
-                                  className="h-6 px-2"
-                                  title="Restore to current file"
-                                >
-                                  <RotateCcw className="w-3 h-3" />
-                                </Button>
+                                {(groupIndex > 0 || entryIndex > 0) && (
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={() => onRestoreVersion(entry)}
+                                    className="h-6 px-2"
+                                    title="Restore to current file"
+                                  >
+                                    <RotateCcw className="w-3 h-3" />
+                                  </Button>
+                                )}
                                 <Button
                                   size="sm"
                                   variant="ghost"
