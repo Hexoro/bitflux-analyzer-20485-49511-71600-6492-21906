@@ -18,22 +18,68 @@ export interface HistoryEntry {
 export class HistoryManager {
   private entries: HistoryEntry[] = [];
   private maxEntries = 100;
+  private lastEntryType: string | null = null;
+  private lastEntryTime: number = 0;
 
   addEntry(bits: string, description: string): void {
-    const entry: HistoryEntry = {
-      id: `${Date.now()}-${Math.random()}`,
-      timestamp: new Date(),
-      description,
-      bits,
-      stats: this.calculateQuickStats(bits),
-    };
-
-    this.entries.unshift(entry);
+    const now = Date.now();
+    const entryType = this.getEntryType(description);
     
-    // Limit history size
-    if (this.entries.length > this.maxEntries) {
-      this.entries = this.entries.slice(0, this.maxEntries);
+    // Auto-group if same type and within 30 seconds
+    const shouldMerge = this.lastEntryType === entryType && 
+                        now - this.lastEntryTime < 30000 &&
+                        this.entries.length > 0 &&
+                        entryType === 'Manual Edit';
+    
+    if (shouldMerge && this.entries[0]) {
+      // Update the most recent entry
+      this.entries[0] = {
+        ...this.entries[0],
+        bits,
+        stats: this.calculateQuickStats(bits),
+        description: this.mergeDescriptions(this.entries[0].description, description),
+      };
+    } else {
+      const entry: HistoryEntry = {
+        id: `${Date.now()}-${Math.random()}`,
+        timestamp: new Date(),
+        description,
+        bits,
+        stats: this.calculateQuickStats(bits),
+      };
+
+      this.entries.unshift(entry);
+      
+      // Limit history size
+      if (this.entries.length > this.maxEntries) {
+        this.entries = this.entries.slice(0, this.maxEntries);
+      }
     }
+    
+    this.lastEntryType = entryType;
+    this.lastEntryTime = now;
+  }
+
+  private getEntryType(description: string): string {
+    const lower = description.toLowerCase();
+    if (lower.includes('manual edit')) return 'Manual Edit';
+    if (lower.includes('boundary')) return 'Boundary';
+    if (lower.includes('transform')) return 'Transform';
+    return 'Other';
+  }
+
+  private mergeDescriptions(old: string, newDesc: string): string {
+    // Extract counts from descriptions like "Manual edit: +5 bits"
+    const oldMatch = old.match(/([+-])(\d+)/);
+    const newMatch = newDesc.match(/([+-])(\d+)/);
+    
+    if (oldMatch && newMatch && oldMatch[1] === newMatch[1]) {
+      const totalCount = parseInt(oldMatch[2]) + parseInt(newMatch[2]);
+      const sign = oldMatch[1];
+      return `Manual edit: ${sign}${totalCount} bits`;
+    }
+    
+    return newDesc;
   }
 
   getEntries(): HistoryEntry[] {

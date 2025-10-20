@@ -90,14 +90,14 @@ export const BinaryViewer = forwardRef<any, BinaryViewerProps>(({
           // Replace selection
           const before = bits.substring(0, selectedRange.start);
           const after = bits.substring(selectedRange.end + 1);
-          model.loadBits(before + e.key + after);
+          model.loadBits(before + e.key + after, true);
           setCursorPosition(selectedRange.start + 1);
           setSelectedRange(null);
         } else {
           // Insert at cursor
           const before = bits.substring(0, cursorPosition);
           const after = bits.substring(cursorPosition);
-          model.loadBits(before + e.key + after);
+          model.loadBits(before + e.key + after, true);
           setCursorPosition(cursorPosition + 1);
         }
       }
@@ -166,13 +166,13 @@ export const BinaryViewer = forwardRef<any, BinaryViewerProps>(({
         if (selectedRange) {
           const before = bits.substring(0, selectedRange.start);
           const after = bits.substring(selectedRange.end + 1);
-          model.loadBits(before + after);
+          model.loadBits(before + after, true);
           setCursorPosition(selectedRange.start);
           setSelectedRange(null);
         } else if (cursorPosition < bits.length) {
           const before = bits.substring(0, cursorPosition);
           const after = bits.substring(cursorPosition + 1);
-          model.loadBits(before + after);
+          model.loadBits(before + after, true);
         }
       }
       else if (e.key === 'Backspace') {
@@ -180,13 +180,13 @@ export const BinaryViewer = forwardRef<any, BinaryViewerProps>(({
         if (selectedRange) {
           const before = bits.substring(0, selectedRange.start);
           const after = bits.substring(selectedRange.end + 1);
-          model.loadBits(before + after);
+          model.loadBits(before + after, true);
           setCursorPosition(selectedRange.start);
           setSelectedRange(null);
         } else if (cursorPosition > 0) {
           const before = bits.substring(0, cursorPosition - 1);
           const after = bits.substring(cursorPosition);
-          model.loadBits(before + after);
+          model.loadBits(before + after, true);
           setCursorPosition(cursorPosition - 1);
         }
       }

@@ -11,6 +11,7 @@ import { PartitionsPanel } from '@/components/PartitionsPanel';
 import { HistoryPanelNew } from '@/components/HistoryPanelNew';
 import { TransformationsPanel } from '@/components/TransformationsPanel';
 import { AnomaliesPanel } from '@/components/AnomaliesPanel';
+import { NotesPanel } from '@/components/NotesPanel';
 import { ComparisonDialog } from '@/components/ComparisonDialog';
 import { GenerateDialog } from '@/components/GenerateDialog';
 import { JumpToDialog } from '@/components/JumpToDialog';
@@ -297,12 +298,6 @@ const Index = () => {
     );
   };
 
-  const handleSequenceHighlight = (ranges: Array<{ start: number; end: number; color: string }>) => {
-    if (!activeFile) return;
-    activeFile.state.sequenceHighlights = ranges;
-    forceUpdate({});
-  };
-
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!activeFile) return;
@@ -407,6 +402,7 @@ const Index = () => {
               <TabsTrigger value="anomalies">Anomalies</TabsTrigger>
               <TabsTrigger value="transformations">Transforms</TabsTrigger>
               <TabsTrigger value="history">History</TabsTrigger>
+              <TabsTrigger value="notes">Notes</TabsTrigger>
             </TabsList>
 
             <div className="flex-1 overflow-hidden">
@@ -415,7 +411,7 @@ const Index = () => {
               </TabsContent>
 
               <TabsContent value="sequences" className="h-full m-0">
-                <SequencesPanel bits={bits} onJumpTo={handleJumpTo} onHighlight={handleSequenceHighlight} />
+                <SequencesPanel fileState={activeFile.state} onJumpTo={handleJumpTo} />
               </TabsContent>
 
               <TabsContent value="boundaries" className="h-full m-0">
@@ -458,6 +454,10 @@ const Index = () => {
                   onCompareVersion={handleCompareVersion}
                   onToggleGroup={handleToggleHistoryGroup}
                 />
+              </TabsContent>
+
+              <TabsContent value="notes" className="h-full m-0">
+                <NotesPanel notesManager={activeFile.state.notesManager} onUpdate={() => forceUpdate({})} />
               </TabsContent>
             </div>
           </Tabs>

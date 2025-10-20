@@ -3,9 +3,17 @@
  */
 
 import { BinaryModel } from './binaryModel';
-import { BinaryStats, BinaryMetrics } from './binaryMetrics';
+import { BinaryStats, BinaryMetrics, SequenceMatch } from './binaryMetrics';
 import { HistoryManager, HistoryEntry } from './historyManager';
 import { PartitionManager, Partition, Boundary } from './partitionManager';
+import { NotesManager } from './notesManager';
+
+export interface SavedSequence extends SequenceMatch {
+  id: string;
+  serialNumber: number;
+  color: string;
+  highlighted: boolean;
+}
 
 export interface HistoryGroup {
   id: string;
@@ -21,18 +29,23 @@ export class FileState {
   public model: BinaryModel;
   public historyManager: HistoryManager;
   public partitionManager: PartitionManager;
+  public notesManager: NotesManager;
   public stats: BinaryStats | null = null;
-  public sequenceHighlights: Array<{ start: number; end: number; color: string }> = [];
+  public savedSequences: SavedSequence[] = [];
+  private nextSerial: number = 1;
   private listeners: Set<() => void> = new Set();
+  private editDebounceTimer: NodeJS.Timeout | null = null;
 
   constructor(initialBits: string) {
     this.model = new BinaryModel(initialBits);
     this.historyManager = new HistoryManager();
     this.partitionManager = new PartitionManager();
+    this.notesManager = new NotesManager();
     
     // Subscribe to model changes
     this.model.subscribe(() => {
       this.updateStats();
+      this.handleModelChange();
       this.notifyListeners();
     });
 
@@ -41,6 +54,21 @@ export class FileState {
       this.updateStats();
       this.historyManager.addEntry(initialBits, 'File created');
     }
+  }
+
+  private handleModelChange(): void {
+    // Debounce manual edits to group them together
+    if (this.editDebounceTimer) {
+      clearTimeout(this.editDebounceTimer);
+    }
+
+    this.editDebounceTimer = setTimeout(() => {
+      const description = this.model.getBatchedEditDescription();
+      if (description !== 'Manual edit') {
+        this.historyManager.addEntry(this.model.getBits(), description);
+        this.model.clearEditBatch();
+      }
+    }, 500);
   }
 
   updateStats(): void {
@@ -68,7 +96,67 @@ export class FileState {
 
   getHighlightRanges(): Array<{ start: number; end: number; color: string }> {
     const boundaryRanges = this.partitionManager.getHighlightRanges();
-    return [...this.sequenceHighlights, ...boundaryRanges];
+    const sequenceRanges = this.getSequenceHighlightRanges();
+    return [...sequenceRanges, ...boundaryRanges];
+  }
+
+  private getSequenceHighlightRanges(): Array<{ start: number; end: number; color: string }> {
+    const ranges: Array<{ start: number; end: number; color: string }> = [];
+    const bits = this.model.getBits();
+    
+    this.savedSequences.forEach(seq => {
+      if (seq.highlighted) {
+        // Re-search for the sequence in the current bits
+        const matches = BinaryMetrics.searchSequence(bits, seq.sequence);
+        matches.positions.forEach(pos => {
+          ranges.push({
+            start: pos,
+            end: pos + seq.sequence.length - 1,
+            color: seq.color,
+          });
+        });
+      }
+    });
+    
+    return ranges;
+  }
+
+  // Sequence management methods
+  addSequence(sequence: SequenceMatch, color: string): SavedSequence {
+    const savedSeq: SavedSequence = {
+      ...sequence,
+      id: `seq-${Date.now()}-${Math.random()}`,
+      serialNumber: this.nextSerial++,
+      color,
+      highlighted: true,
+    };
+    
+    this.savedSequences.push(savedSeq);
+    this.notifyListeners();
+    return savedSeq;
+  }
+
+  removeSequence(id: string): void {
+    this.savedSequences = this.savedSequences.filter(s => s.id !== id);
+    this.notifyListeners();
+  }
+
+  toggleSequenceHighlight(id: string): void {
+    const seq = this.savedSequences.find(s => s.id === id);
+    if (seq) {
+      seq.highlighted = !seq.highlighted;
+      this.notifyListeners();
+    }
+  }
+
+  clearAllSequences(): void {
+    this.savedSequences = [];
+    this.nextSerial = 1;
+    this.notifyListeners();
+  }
+
+  getSequence(id: string): SavedSequence | null {
+    return this.savedSequences.find(s => s.id === id) || null;
   }
 
   getHistoryGroups(): HistoryGroup[] {

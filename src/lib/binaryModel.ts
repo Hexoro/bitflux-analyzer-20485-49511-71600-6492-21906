@@ -20,6 +20,8 @@ export class BinaryModel {
   private undoStack: UndoAction[] = [];
   private redoStack: UndoAction[] = [];
   private listeners: Set<() => void> = new Set();
+  private lastEditTimestamp: number = 0;
+  private pendingEditBatch: { type: string; count: number } | null = null;
 
   constructor(initialBits: string = '') {
     this.originalBits = initialBits;
@@ -120,13 +122,60 @@ export class BinaryModel {
     return true;
   }
 
-  // Load new file
-  loadBits(bits: string): void {
-    this.originalBits = bits;
+  // Load new file - with optional history tracking
+  loadBits(bits: string, addToHistory: boolean = false): void {
+    if (!addToHistory) {
+      this.originalBits = bits;
+      this.undoStack = [];
+      this.redoStack = [];
+    }
+    
+    const oldLength = this.workingBits.length;
+    const newLength = bits.length;
+    
+    // Track edit type for batching
+    if (addToHistory) {
+      const now = Date.now();
+      const editType = newLength > oldLength ? 'insert' : newLength < oldLength ? 'delete' : 'replace';
+      
+      // If within 500ms of last edit, batch them
+      if (now - this.lastEditTimestamp < 500 && this.pendingEditBatch?.type === editType) {
+        this.pendingEditBatch.count++;
+      } else {
+        this.pendingEditBatch = { type: editType, count: 1 };
+      }
+      
+      this.lastEditTimestamp = now;
+    }
+    
     this.workingBits = bits;
-    this.undoStack = [];
-    this.redoStack = [];
     this.notifyListeners();
+  }
+
+  // Load bits without adding to history or resetting undo/redo
+  loadBitsNoHistory(bits: string): void {
+    this.workingBits = bits;
+    this.notifyListeners();
+  }
+
+  // Get description of batched edits
+  getBatchedEditDescription(): string {
+    if (!this.pendingEditBatch) return 'Manual edit';
+    
+    const { type, count } = this.pendingEditBatch;
+    const plural = count > 1 ? 's' : '';
+    
+    switch (type) {
+      case 'insert': return `Manual edit: +${count} bit${plural}`;
+      case 'delete': return `Manual edit: -${count} bit${plural}`;
+      case 'replace': return `Manual edit: ${count} change${plural}`;
+      default: return 'Manual edit';
+    }
+  }
+
+  // Clear pending edit batch
+  clearEditBatch(): void {
+    this.pendingEditBatch = null;
   }
 
   // Reset to original

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { BinaryMetrics, SequenceMatch } from '@/lib/binaryMetrics';
+import { BinaryMetrics } from '@/lib/binaryMetrics';
+import { FileState, SavedSequence } from '@/lib/fileState';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Card } from './ui/card';
@@ -7,46 +8,34 @@ import { Search, X, Grid, List, Eye, EyeOff } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { Checkbox } from './ui/checkbox';
-
-interface SavedSequence extends SequenceMatch {
-  id: string;
-  serialNumber: number;
-  color: string;
-  highlighted: boolean;
-}
+import { toast } from 'sonner';
 
 interface SequencesPanelProps {
-  bits: string;
+  fileState: FileState;
   onJumpTo: (index: number) => void;
-  onHighlight: (ranges: Array<{ start: number; end: number; color: string }>) => void;
 }
 
-export const SequencesPanel = ({ bits, onJumpTo, onHighlight }: SequencesPanelProps) => {
+export const SequencesPanel = ({ fileState, onJumpTo }: SequencesPanelProps) => {
   const [searchInput, setSearchInput] = useState('');
-  const [savedSequences, setSavedSequences] = useState<SavedSequence[]>([]);
   const [colorInput, setColorInput] = useState('#FF00FF');
   const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
   const [sortFilter, setSortFilter] = useState<string>('serial');
-  const [nextSerial, setNextSerial] = useState(1);
+  const [savedSequences, setSavedSequences] = useState<SavedSequence[]>([]);
 
-  // Update highlights whenever savedSequences or bits change
+  const bits = fileState.model.getBits();
+
+  // Sync local state with fileState
   useEffect(() => {
-    const highlightRanges: Array<{ start: number; end: number; color: string }> = [];
-    savedSequences.forEach(seq => {
-      if (seq.highlighted) {
-        // Re-search for the sequence in the current bits
-        const matches = BinaryMetrics.searchSequence(bits, seq.sequence);
-        matches.positions.forEach(pos => {
-          highlightRanges.push({
-            start: pos,
-            end: pos + seq.sequence.length - 1,
-            color: seq.color,
-          });
-        });
-      }
+    setSavedSequences(fileState.savedSequences);
+  }, [fileState.savedSequences]);
+
+  // Subscribe to file state changes
+  useEffect(() => {
+    const unsubscribe = fileState.subscribe(() => {
+      setSavedSequences([...fileState.savedSequences]);
     });
-    onHighlight(highlightRanges);
-  }, [bits, savedSequences, onHighlight]);
+    return unsubscribe;
+  }, [fileState]);
 
   const handleSearch = () => {
     const sequences = searchInput
@@ -54,46 +43,42 @@ export const SequencesPanel = ({ bits, onJumpTo, onHighlight }: SequencesPanelPr
       .map(s => s.trim())
       .filter(s => /^[01]+$/.test(s));
 
-    if (sequences.length === 0) return;
+    if (sequences.length === 0) {
+      toast.error('Please enter valid binary sequences');
+      return;
+    }
 
     const matches = BinaryMetrics.searchMultipleSequences(bits, sequences);
     
-    // Add new sequences to saved list
-    const newSequences: SavedSequence[] = [];
+    let addedCount = 0;
     matches.forEach(match => {
-      if (!savedSequences.find(s => s.sequence === match.sequence)) {
-        const newSeq: SavedSequence = {
-          ...match,
-          id: `seq-${Date.now()}-${Math.random()}`,
-          serialNumber: nextSerial,
-          color: colorInput,
-          highlighted: true,
-        };
-        newSequences.push(newSeq);
-        setNextSerial(prev => prev + 1);
+      if (!fileState.savedSequences.find(s => s.sequence === match.sequence)) {
+        fileState.addSequence(match, colorInput);
+        addedCount++;
       }
     });
 
-    if (newSequences.length > 0) {
-      setSavedSequences(prev => [...prev, ...newSequences]);
+    if (addedCount > 0) {
+      toast.success(`Added ${addedCount} sequence${addedCount > 1 ? 's' : ''}`);
+    } else {
+      toast.info('All sequences already added');
     }
 
     setSearchInput('');
   };
 
   const handleToggleHighlight = (id: string) => {
-    setSavedSequences(prev => 
-      prev.map(s => s.id === id ? { ...s, highlighted: !s.highlighted } : s)
-    );
+    fileState.toggleSequenceHighlight(id);
   };
 
   const handleRemoveSequence = (id: string) => {
-    setSavedSequences(prev => prev.filter(s => s.id !== id));
+    fileState.removeSequence(id);
+    toast.success('Sequence removed');
   };
 
   const handleClearAll = () => {
-    setSavedSequences([]);
-    setNextSerial(1);
+    fileState.clearAllSequences();
+    toast.success('All sequences cleared');
   };
 
   const sortedSequences = [...savedSequences].sort((a, b) => {
