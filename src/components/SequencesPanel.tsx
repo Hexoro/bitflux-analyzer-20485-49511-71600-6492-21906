@@ -26,13 +26,13 @@ export const SequencesPanel = ({ fileState, onJumpTo }: SequencesPanelProps) => 
 
   // Sync local state with fileState
   useEffect(() => {
-    setSavedSequences(fileState.savedSequences);
+    setSavedSequences(Array.isArray(fileState.savedSequences) ? fileState.savedSequences : []);
   }, [fileState.savedSequences]);
 
   // Subscribe to file state changes
   useEffect(() => {
     const unsubscribe = fileState.subscribe(() => {
-      setSavedSequences([...fileState.savedSequences]);
+      setSavedSequences(Array.isArray(fileState.savedSequences) ? [...fileState.savedSequences] : []);
     });
     return unsubscribe;
   }, [fileState]);
@@ -81,7 +81,7 @@ export const SequencesPanel = ({ fileState, onJumpTo }: SequencesPanelProps) => 
     toast.success('All sequences cleared');
   };
 
-  const sortedSequences = [...savedSequences].sort((a, b) => {
+  const sortedSequences = (Array.isArray(savedSequences) ? [...savedSequences] : []).sort((a, b) => {
     switch (sortFilter) {
       case 'serial': return a.serialNumber - b.serialNumber;
       case 'count': return b.count - a.count;
