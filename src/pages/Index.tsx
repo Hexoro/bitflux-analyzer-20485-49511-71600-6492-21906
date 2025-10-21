@@ -18,6 +18,9 @@ import { JumpToDialog } from '@/components/JumpToDialog';
 import { ConverterDialog } from '@/components/ConverterDialog';
 import { FileSystemSidebar } from '@/components/FileSystemSidebar';
 import { Toolbar } from '@/components/Toolbar';
+import { MatrixEffectsDialog } from '@/components/MatrixEffectsDialog';
+import { DataGraphsDialog } from '@/components/DataGraphsDialog';
+import { AudioVisualizerDialog } from '@/components/AudioVisualizerDialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable';
 import { toast } from 'sonner';
@@ -35,6 +38,9 @@ const Index = () => {
   const [compareDialogOpen, setCompareDialogOpen] = useState(false);
   const [editMode, setEditMode] = useState(true);
   const [historyGroups, setHistoryGroups] = useState<any[]>([]);
+  const [matrixDialogOpen, setMatrixDialogOpen] = useState(false);
+  const [graphsDialogOpen, setGraphsDialogOpen] = useState(false);
+  const [audioDialogOpen, setAudioDialogOpen] = useState(false);
   const viewerRef = useRef<any>(null);
 
   // Subscribe to file system changes
@@ -365,6 +371,9 @@ const Index = () => {
         onFind={() => setActiveTab('sequences')}
         onConvert={() => setConverterDialogOpen(true)}
         onToggleEdit={() => setEditMode(!editMode)}
+        onMatrixEffects={() => setMatrixDialogOpen(true)}
+        onDataGraphs={() => setGraphsDialogOpen(true)}
+        onAudioVisualizer={() => setAudioDialogOpen(true)}
         canUndo={(activeFile.state.model as any).undoStack?.length > 0}
         canRedo={(activeFile.state.model as any).redoStack?.length > 0}
         editMode={editMode}
@@ -481,6 +490,25 @@ const Index = () => {
         open={converterDialogOpen}
         onOpenChange={setConverterDialogOpen}
         onConvert={handleConvert}
+      />
+
+      <MatrixEffectsDialog
+        open={matrixDialogOpen}
+        onOpenChange={setMatrixDialogOpen}
+        binaryData={bits}
+      />
+
+      <DataGraphsDialog
+        open={graphsDialogOpen}
+        onOpenChange={setGraphsDialogOpen}
+        binaryData={bits}
+        partitions={partitions}
+      />
+
+      <AudioVisualizerDialog
+        open={audioDialogOpen}
+        onOpenChange={setAudioDialogOpen}
+        binaryData={bits}
       />
 
       {compareFile && stats && (

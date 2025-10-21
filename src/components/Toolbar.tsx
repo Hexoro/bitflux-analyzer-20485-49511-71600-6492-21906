@@ -11,6 +11,8 @@ import {
   Navigation,
   ArrowLeftRight,
   Edit,
+  BarChart3,
+  Music,
 } from 'lucide-react';
 
 interface ToolbarProps {
@@ -24,6 +26,9 @@ interface ToolbarProps {
   onFind: () => void;
   onConvert: () => void;
   onToggleEdit: () => void;
+  onMatrixEffects: () => void;
+  onDataGraphs: () => void;
+  onAudioVisualizer: () => void;
   canUndo: boolean;
   canRedo: boolean;
   editMode: boolean;
@@ -40,6 +45,9 @@ export const Toolbar = ({
   onFind,
   onConvert,
   onToggleEdit,
+  onMatrixEffects,
+  onDataGraphs,
+  onAudioVisualizer,
   canUndo,
   canRedo,
   editMode,
@@ -124,6 +132,24 @@ export const Toolbar = ({
         >
           <Edit className="w-4 h-4 mr-2" />
           Edit
+        </Button>
+      </div>
+
+      <Separator orientation="vertical" className="h-6" />
+
+      {/* Visualizations */}
+      <div className="flex items-center gap-1">
+        <Button onClick={onMatrixEffects} variant="outline" size="sm">
+          <Sparkles className="w-4 h-4 mr-2" />
+          Matrix
+        </Button>
+        <Button onClick={onDataGraphs} variant="outline" size="sm">
+          <BarChart3 className="w-4 h-4 mr-2" />
+          Graphs
+        </Button>
+        <Button onClick={onAudioVisualizer} variant="outline" size="sm">
+          <Music className="w-4 h-4 mr-2" />
+          Audio
         </Button>
       </div>
     </div>
