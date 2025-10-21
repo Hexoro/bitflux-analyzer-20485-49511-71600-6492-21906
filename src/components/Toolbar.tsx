@@ -26,7 +26,6 @@ interface ToolbarProps {
   onFind: () => void;
   onConvert: () => void;
   onToggleEdit: () => void;
-  onMatrixEffects: () => void;
   onDataGraphs: () => void;
   onAudioVisualizer: () => void;
   canUndo: boolean;
@@ -45,7 +44,6 @@ export const Toolbar = ({
   onFind,
   onConvert,
   onToggleEdit,
-  onMatrixEffects,
   onDataGraphs,
   onAudioVisualizer,
   canUndo,
@@ -139,10 +137,6 @@ export const Toolbar = ({
 
       {/* Visualizations */}
       <div className="flex items-center gap-1">
-        <Button onClick={onMatrixEffects} variant="outline" size="sm">
-          <Sparkles className="w-4 h-4 mr-2" />
-          Matrix
-        </Button>
         <Button onClick={onDataGraphs} variant="outline" size="sm">
           <BarChart3 className="w-4 h-4 mr-2" />
           Graphs

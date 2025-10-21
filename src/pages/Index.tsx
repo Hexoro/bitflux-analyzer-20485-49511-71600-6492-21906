@@ -18,7 +18,6 @@ import { JumpToDialog } from '@/components/JumpToDialog';
 import { ConverterDialog } from '@/components/ConverterDialog';
 import { FileSystemSidebar } from '@/components/FileSystemSidebar';
 import { Toolbar } from '@/components/Toolbar';
-import { MatrixEffectsDialog } from '@/components/MatrixEffectsDialog';
 import { DataGraphsDialog } from '@/components/DataGraphsDialog';
 import { AudioVisualizerDialog } from '@/components/AudioVisualizerDialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -38,7 +37,6 @@ const Index = () => {
   const [compareDialogOpen, setCompareDialogOpen] = useState(false);
   const [editMode, setEditMode] = useState(true);
   const [historyGroups, setHistoryGroups] = useState<any[]>([]);
-  const [matrixDialogOpen, setMatrixDialogOpen] = useState(false);
   const [graphsDialogOpen, setGraphsDialogOpen] = useState(false);
   const [audioDialogOpen, setAudioDialogOpen] = useState(false);
   const viewerRef = useRef<any>(null);
@@ -371,7 +369,6 @@ const Index = () => {
         onFind={() => setActiveTab('sequences')}
         onConvert={() => setConverterDialogOpen(true)}
         onToggleEdit={() => setEditMode(!editMode)}
-        onMatrixEffects={() => setMatrixDialogOpen(true)}
         onDataGraphs={() => setGraphsDialogOpen(true)}
         onAudioVisualizer={() => setAudioDialogOpen(true)}
         canUndo={(activeFile.state.model as any).undoStack?.length > 0}
@@ -490,12 +487,6 @@ const Index = () => {
         open={converterDialogOpen}
         onOpenChange={setConverterDialogOpen}
         onConvert={handleConvert}
-      />
-
-      <MatrixEffectsDialog
-        open={matrixDialogOpen}
-        onOpenChange={setMatrixDialogOpen}
-        binaryData={bits}
       />
 
       <DataGraphsDialog
