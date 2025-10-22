@@ -49,9 +49,13 @@ export const AudioVisualizerDialog = ({ open, onOpenChange, binaryData }: AudioV
   }, [open]);
 
   useEffect(() => {
-    if (!generatorRef.current || !open) return;
-    const buffer = generatorRef.current.generateFromBinary(binaryData.slice(0, 50000), audioMode);
-    audioBufferRef.current = buffer;
+    if (!generatorRef.current || !open || !binaryData) return;
+    try {
+      const buffer = generatorRef.current.generateFromBinary(binaryData.slice(0, 50000), audioMode);
+      audioBufferRef.current = buffer;
+    } catch (error) {
+      console.error('Failed to generate audio buffer:', error);
+    }
   }, [binaryData, audioMode, open]);
 
   const handlePlay = () => {
@@ -326,8 +330,13 @@ export const AudioVisualizerDialog = ({ open, onOpenChange, binaryData }: AudioV
           <DialogTitle>Audio Visualizer & Generator</DialogTitle>
         </DialogHeader>
 
-        <div className="flex-1 flex flex-col gap-4">
-          <canvas ref={canvasRef} className="w-full h-80 bg-black rounded border border-border" />
+        {!binaryData || binaryData.length === 0 ? (
+          <div className="flex-1 flex items-center justify-center">
+            <p className="text-muted-foreground">No binary data available. Please load or generate data first.</p>
+          </div>
+        ) : (
+          <div className="flex-1 flex flex-col gap-4">
+            <canvas ref={canvasRef} className="w-full h-80 bg-black rounded border border-border" />
 
           <div className="grid grid-cols-3 gap-4">
             <div>
@@ -412,6 +421,7 @@ export const AudioVisualizerDialog = ({ open, onOpenChange, binaryData }: AudioV
             </Button>
           </div>
         </div>
+        )}
       </DialogContent>
     </Dialog>
   );

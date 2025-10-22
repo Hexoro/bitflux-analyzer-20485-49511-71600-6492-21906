@@ -172,23 +172,33 @@ export const DataGraphsDialog = ({ open, onOpenChange, binaryData, partitions }:
         <DialogHeader>
           <DialogTitle className="flex items-center justify-between">
             <span>Binary Data Analysis & Visualizations</span>
-            <div className="flex items-center gap-4 text-sm font-normal">
-              <div className="flex items-center gap-2">
-                <Switch id="grid" checked={showGrid} onCheckedChange={setShowGrid} />
-                <Label htmlFor="grid">Grid</Label>
+            {binaryData && binaryData.length > 0 && (
+              <div className="flex items-center gap-4 text-sm font-normal">
+                <div className="flex items-center gap-2">
+                  <Switch id="grid" checked={showGrid} onCheckedChange={setShowGrid} />
+                  <Label htmlFor="grid">Grid</Label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Switch id="animate" checked={animate} onCheckedChange={setAnimate} />
+                  <Label htmlFor="animate">Animate</Label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Switch id="legend" checked={showLegend} onCheckedChange={setShowLegend} />
+                  <Label htmlFor="legend">Legend</Label>
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                <Switch id="animate" checked={animate} onCheckedChange={setAnimate} />
-                <Label htmlFor="animate">Animate</Label>
-              </div>
-              <div className="flex items-center gap-2">
-                <Switch id="legend" checked={showLegend} onCheckedChange={setShowLegend} />
-                <Label htmlFor="legend">Legend</Label>
-              </div>
-            </div>
+            )}
           </DialogTitle>
         </DialogHeader>
 
+        {!binaryData || binaryData.length === 0 ? (
+          <div className="flex items-center justify-center min-h-[400px]">
+            <div className="text-center">
+              <p className="text-lg text-muted-foreground">No binary data available</p>
+              <p className="text-sm text-muted-foreground mt-2">Please load or generate data first</p>
+            </div>
+          </div>
+        ) : (
         <div className="space-y-6">
           {/* Overview Stats */}
           <div className="grid grid-cols-4 gap-4">
@@ -395,7 +405,8 @@ export const DataGraphsDialog = ({ open, onOpenChange, binaryData, partitions }:
               </div>
             </div>
           )}
-        </div>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );
