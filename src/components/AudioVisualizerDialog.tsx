@@ -35,6 +35,7 @@ export const AudioVisualizerDialog = ({ open, onOpenChange, binaryData }: AudioV
   const [smoothing, setSmoothing] = useState([80]);
   const [barSpacing, setBarSpacing] = useState([2]);
   const [glowIntensity, setGlowIntensity] = useState([15]);
+  const [progress, setProgress] = useState(0);
 
   // Initialize audio generator
   useEffect(() => {
@@ -146,6 +147,15 @@ export const AudioVisualizerDialog = ({ open, onOpenChange, binaryData }: AudioV
       if (!canvas || !ctx) return;
 
       analyser.getByteFrequencyData(dataArray);
+
+      // Update progress
+      if (generatorRef.current) {
+        const currentTime = generatorRef.current.getCurrentTime();
+        const duration = generatorRef.current.getDuration();
+        if (duration > 0) {
+          setProgress((currentTime % duration) / duration * 100);
+        }
+      }
 
       const width = canvas.offsetWidth;
       const height = canvas.offsetHeight;
@@ -403,7 +413,23 @@ export const AudioVisualizerDialog = ({ open, onOpenChange, binaryData }: AudioV
           </div>
         ) : (
           <div className="flex-1 flex flex-col gap-4">
-            <canvas ref={canvasRef} className="w-full h-80 bg-black rounded border border-border" />
+            <div className="space-y-2">
+              <canvas ref={canvasRef} className="w-full h-80 bg-black rounded border border-border" />
+              {isPlaying && (
+                <div className="space-y-1">
+                  <div className="flex justify-between text-xs text-muted-foreground">
+                    <span>Progress</span>
+                    <span>{progress.toFixed(1)}%</span>
+                  </div>
+                  <div className="w-full h-2 bg-secondary rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-primary transition-all duration-100" 
+                      style={{ width: `${progress}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
 
           <div className="grid grid-cols-3 gap-4">
             <div>

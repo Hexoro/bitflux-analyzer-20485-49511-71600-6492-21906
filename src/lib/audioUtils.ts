@@ -5,6 +5,7 @@ export class BinaryAudioGenerator {
   private sourceNode: AudioBufferSourceNode | null = null;
   private gainNode: GainNode | null = null;
   private analyserNode: AnalyserNode | null = null;
+  private startTime: number = 0;
 
   constructor() {
     if (typeof window !== 'undefined') {
@@ -105,9 +106,20 @@ export class BinaryAudioGenerator {
     this.sourceNode = this.audioContext.createBufferSource();
     this.sourceNode.buffer = buffer;
     this.sourceNode.playbackRate.value = playbackRate;
+    this.sourceNode.loop = true; // Enable looping
     this.sourceNode.connect(this.gainNode);
     this.gainNode.gain.value = volume;
+    this.startTime = this.audioContext.currentTime;
     this.sourceNode.start(0);
+  }
+
+  getCurrentTime(): number {
+    if (!this.audioContext || !this.sourceNode) return 0;
+    return this.audioContext.currentTime - this.startTime;
+  }
+
+  getDuration(): number {
+    return this.sourceNode?.buffer?.duration || 0;
   }
 
   stop() {
