@@ -142,6 +142,8 @@ Powerful bit manipulation operations:
 - **Replace All**: Replace all occurrences
 - **Validation**: Ensures valid binary patterns
 
+**Note**: Transformations are disabled until binary data is generated or loaded.
+
 ### History Tab
 Complete edit tracking and version management:
 
@@ -361,6 +363,85 @@ Built with modern web technologies for performance and maintainability:
 ## 📄 License
 
 MIT License - Feel free to use and modify for your needs
+
+---
+
+## 🚧 Planned Features (TODO)
+
+### Neural Network Tab
+**Goal**: Train a neural network to optimize transformations applied to binary files.
+
+**Concept**: 
+- Model binary file transformations as a learning problem
+- Train a neural network to find the minimum number of transformations needed to convert one binary pattern to another
+- Learn optimal transformation sequences for specific goals (compression, pattern generation, etc.)
+- Use the existing transformation operations (NOT, AND, OR, XOR, shifts, rotates) as building blocks
+- Network learns to minimize transformation count while achieving desired output
+
+**Potential Applications**:
+- Automatic file compression optimization
+- Pattern generation with minimal operations
+- Reverse engineering transformation sequences
+- Data obfuscation optimization
+
+### AI Analysis Tab
+**Goal**: AI-powered analysis and insights on binary data.
+
+**Features**:
+- **Smart Analysis**: Connect to AI that reads all binary file data
+- **Pattern Discovery**: Automatically identify most frequent sequences
+- **Statistical Insights**: AI-generated summaries and interpretations
+- **Anomaly Explanation**: AI explains why certain patterns are anomalous
+- **Structure Detection**: AI suggests possible file structure and format
+- **Query Interface**: Ask questions about the data in natural language
+  - "What are the most common byte patterns?"
+  - "Are there any repeated sections?"
+  - "What's the entropy distribution across the file?"
+  - "Find all palindromes longer than 16 bits"
+
+**Implementation**:
+- Integrate with AI model (GPT, Claude, or similar)
+- Send binary data context with queries
+- Generate human-readable insights from statistical data
+
+### Code Execution Tab
+**Goal**: Run Python code directly on binary data for advanced analysis and visualization.
+
+**Features**:
+- **Python Environment**: Execute Python code in browser or backend
+- **Pandas Integration**: Use pandas DataFrames for data manipulation
+- **Graph Generation**: Create custom visualizations with matplotlib/plotly
+- **Statistical Analysis**: Run scipy/numpy operations
+- **Custom Scripts**: Save and reuse analysis scripts
+
+**Example Use Cases**:
+```python
+# Frequency analysis
+import pandas as pd
+byte_values = [int(bits[i:i+8], 2) for i in range(0, len(bits), 8)]
+df = pd.DataFrame({'bytes': byte_values})
+df['bytes'].value_counts().plot(kind='bar')
+```
+
+```python
+# Sliding window entropy
+import numpy as np
+from scipy.stats import entropy
+window_size = 100
+entropies = []
+for i in range(0, len(bits) - window_size, 10):
+    window = bits[i:i+window_size]
+    counts = [window.count('0'), window.count('1')]
+    entropies.append(entropy(counts, base=2))
+plt.plot(entropies)
+```
+
+**Technical Approach**:
+- Pyodide for in-browser Python execution, OR
+- Backend Python service with API integration
+- Sandbox environment for security
+- Pre-loaded data science libraries
+- Visual output rendering in UI
 
 ---
 
