@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { FileSystemManager, BinaryFile } from '@/lib/fileSystemManager';
 import { BinaryMetrics } from '@/lib/binaryMetrics';
 import { BinaryModel } from '@/lib/binaryModel';
