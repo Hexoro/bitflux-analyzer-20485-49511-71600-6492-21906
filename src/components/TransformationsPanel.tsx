@@ -77,114 +77,129 @@ export const TransformationsPanel = ({ bits, selectedRange, onTransform }: Trans
     onTransform(replaced, `Replaced ${count} occurrence(s) of "${findPattern}"`);
   };
 
+  const hasData = bits && bits.length > 0;
+
   return (
     <ScrollArea className="h-full p-4">
       <div className="space-y-4">
         <h3 className="text-lg font-semibold text-primary">Transformations</h3>
 
-        {/* Bitwise Operations */}
-        <Card className="p-4 bg-card border-border">
-          <h4 className="text-sm font-semibold text-primary mb-3">Bitwise Operations</h4>
-          <div className="space-y-2">
-            {selectedRange && (
-              <Button
-                onClick={handleDelete}
-                variant="destructive"
-                className="w-full justify-start"
-                size="sm"
-              >
-                Delete Selection
-              </Button>
-            )}
-            <Button
-              onClick={handleInvert}
-              variant="outline"
-              className="w-full justify-start"
-              size="sm"
-            >
-              <FlipHorizontal className="w-4 h-4 mr-2" />
-              Invert (NOT) {selectedRange ? 'Selection' : 'All'}
-            </Button>
-            <Button
-              onClick={handleReverse}
-              variant="outline"
-              className="w-full justify-start"
-              size="sm"
-            >
-              <Shuffle className="w-4 h-4 mr-2" />
-              Reverse {selectedRange ? 'Selection' : 'All'}
-            </Button>
-          </div>
-        </Card>
-
-        {/* Shift Operations */}
-        <Card className="p-4 bg-card border-border">
-          <h4 className="text-sm font-semibold text-primary mb-3">Shift Operations</h4>
-          <div className="space-y-2">
-            <Button
-              onClick={handleShiftLeft}
-              variant="outline"
-              className="w-full justify-start"
-              size="sm"
-            >
-              ← Shift Left (Rotate)
-            </Button>
-            <Button
-              onClick={handleShiftRight}
-              variant="outline"
-              className="w-full justify-start"
-              size="sm"
-            >
-              → Shift Right (Rotate)
-            </Button>
-          </div>
-        </Card>
-
-        {/* Find and Replace */}
-        <Card className="p-4 bg-card border-border">
-          <h4 className="text-sm font-semibold text-primary mb-3">Find & Replace</h4>
-          <div className="space-y-3">
-            <div>
-              <Label htmlFor="find" className="text-xs">Find Pattern</Label>
-              <Input
-                id="find"
-                value={findPattern}
-                onChange={(e) => setFindPattern(e.target.value)}
-                placeholder="e.g., 1010"
-                className="font-mono text-sm"
-              />
-            </div>
-            <div>
-              <Label htmlFor="replace" className="text-xs">Replace With</Label>
-              <Input
-                id="replace"
-                value={replacePattern}
-                onChange={(e) => setReplacePattern(e.target.value)}
-                placeholder="e.g., 0101"
-                className="font-mono text-sm"
-              />
-            </div>
-            <Button
-              onClick={handleFindReplace}
-              variant="default"
-              className="w-full"
-              size="sm"
-              disabled={!findPattern || !replacePattern}
-            >
-              <Replace className="w-4 h-4 mr-2" />
-              Replace All
-            </Button>
-          </div>
-        </Card>
-
-        {selectedRange && (
-          <Card className="p-3 bg-secondary/50 border-border">
-            <p className="text-xs text-muted-foreground">
-              Current selection: {selectedRange.end - selectedRange.start + 1} bits
-              <br />
-              Position: {selectedRange.start} - {selectedRange.end}
+        {!hasData && (
+          <Card className="p-4 bg-secondary/20 border-border">
+            <p className="text-sm text-muted-foreground text-center">
+              No binary data available. Please generate or load a file first.
             </p>
           </Card>
+        )}
+
+
+        {hasData && (
+          <>
+            {/* Bitwise Operations */}
+            <Card className="p-4 bg-card border-border">
+              <h4 className="text-sm font-semibold text-primary mb-3">Bitwise Operations</h4>
+              <div className="space-y-2">
+                {selectedRange && (
+                  <Button
+                    onClick={handleDelete}
+                    variant="destructive"
+                    className="w-full justify-start"
+                    size="sm"
+                  >
+                    Delete Selection
+                  </Button>
+                )}
+                <Button
+                  onClick={handleInvert}
+                  variant="outline"
+                  className="w-full justify-start"
+                  size="sm"
+                >
+                  <FlipHorizontal className="w-4 h-4 mr-2" />
+                  Invert (NOT) {selectedRange ? 'Selection' : 'All'}
+                </Button>
+                <Button
+                  onClick={handleReverse}
+                  variant="outline"
+                  className="w-full justify-start"
+                  size="sm"
+                >
+                  <Shuffle className="w-4 h-4 mr-2" />
+                  Reverse {selectedRange ? 'Selection' : 'All'}
+                </Button>
+              </div>
+            </Card>
+
+            {/* Shift Operations */}
+            <Card className="p-4 bg-card border-border">
+              <h4 className="text-sm font-semibold text-primary mb-3">Shift Operations</h4>
+              <div className="space-y-2">
+                <Button
+                  onClick={handleShiftLeft}
+                  variant="outline"
+                  className="w-full justify-start"
+                  size="sm"
+                >
+                  ← Shift Left (Rotate)
+                </Button>
+                <Button
+                  onClick={handleShiftRight}
+                  variant="outline"
+                  className="w-full justify-start"
+                  size="sm"
+                >
+                  → Shift Right (Rotate)
+                </Button>
+              </div>
+            </Card>
+
+            {/* Find and Replace */}
+            <Card className="p-4 bg-card border-border">
+              <h4 className="text-sm font-semibold text-primary mb-3">Find & Replace</h4>
+              <div className="space-y-3">
+                <div>
+                  <Label htmlFor="find" className="text-xs">Find Pattern</Label>
+                  <Input
+                    id="find"
+                    value={findPattern}
+                    onChange={(e) => setFindPattern(e.target.value)}
+                    placeholder="e.g., 1010"
+                    className="font-mono text-sm"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="replace" className="text-xs">Replace With</Label>
+                  <Input
+                    id="replace"
+                    value={replacePattern}
+                    onChange={(e) => setReplacePattern(e.target.value)}
+                    placeholder="e.g., 0101"
+                    className="font-mono text-sm"
+                  />
+                </div>
+                <Button
+                  onClick={handleFindReplace}
+                  variant="default"
+                  className="w-full"
+                  size="sm"
+                  disabled={!findPattern || !replacePattern}
+                >
+                  <Replace className="w-4 h-4 mr-2" />
+                  Replace All
+                </Button>
+              </div>
+            </Card>
+
+            {selectedRange && (
+              <Card className="p-3 bg-secondary/50 border-border">
+                <p className="text-xs text-muted-foreground">
+                  Current selection: {selectedRange.end - selectedRange.start + 1} bits
+                  <br />
+                  Position: {selectedRange.start} - {selectedRange.end}
+                </p>
+              </Card>
+            )}
+          </>
         )}
       </div>
     </ScrollArea>
