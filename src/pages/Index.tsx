@@ -496,11 +496,13 @@ const Index = () => {
         partitions={partitions}
       />
 
-      <AudioVisualizerDialog
-        open={audioDialogOpen}
-        onOpenChange={setAudioDialogOpen}
-        binaryData={bits}
-      />
+      {activeFile && (
+        <AudioVisualizerDialog
+          open={audioDialogOpen}
+          onOpenChange={setAudioDialogOpen}
+          binaryData={bits}
+        />
+      )}
 
       {compareFile && stats && (
         <ComparisonDialog
