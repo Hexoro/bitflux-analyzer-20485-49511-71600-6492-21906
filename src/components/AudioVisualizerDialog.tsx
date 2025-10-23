@@ -26,12 +26,15 @@ export const AudioVisualizerDialog = ({ open, onOpenChange, binaryData }: AudioV
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [volume, setVolume] = useState([50]);
-  const [playbackRate, setPlaybackRate] = useState([100]);
+  const [playbackRate, setPlaybackRate] = useState([25]);
   const [audioMode, setAudioMode] = useState<AudioMode>('frequency');
   const [visualStyle, setVisualStyle] = useState<VisualizerStyle>('bars');
   const [showMirror, setShowMirror] = useState(false);
-  const [colorCycle, setColorCycle] = useState(true);
+  const [colorCycle, setColorCycle] = useState(false);
   const [sensitivity, setSensitivity] = useState([100]);
+  const [smoothing, setSmoothing] = useState([80]);
+  const [barSpacing, setBarSpacing] = useState([2]);
+  const [glowIntensity, setGlowIntensity] = useState([15]);
 
   // Initialize audio generator
   useEffect(() => {
@@ -124,6 +127,8 @@ export const AudioVisualizerDialog = ({ open, onOpenChange, binaryData }: AudioV
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
+    analyser.smoothingTimeConstant = smoothing[0] / 100;
+
     const updateCanvasSize = () => {
       canvas.width = canvas.offsetWidth * window.devicePixelRatio;
       canvas.height = canvas.offsetHeight * window.devicePixelRatio;
@@ -134,7 +139,8 @@ export const AudioVisualizerDialog = ({ open, onOpenChange, binaryData }: AudioV
 
     const bufferLength = analyser.frequencyBinCount;
     const dataArray = new Uint8Array(bufferLength);
-    let hueOffset = 0;
+    let colorIndex = 0;
+    const colors = ['#00FFFF', '#FF0000', '#C0C0C0', '#808080'];
 
   const draw = () => {
       if (!canvas || !ctx) return;
@@ -144,28 +150,28 @@ export const AudioVisualizerDialog = ({ open, onOpenChange, binaryData }: AudioV
       const width = canvas.offsetWidth;
       const height = canvas.offsetHeight;
 
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.15)';
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
       ctx.fillRect(0, 0, width, height);
 
       if (colorCycle) {
-        hueOffset = (hueOffset + 1) % 360;
+        colorIndex = (colorIndex + 0.01) % colors.length;
       }
 
       switch (visualStyle) {
         case 'waveform':
-          drawWaveform(ctx, analyser, width, height, hueOffset);
+          drawWaveform(ctx, analyser, width, height, colors);
           break;
         case 'bars':
-          drawBars(ctx, dataArray, width, height, hueOffset);
+          drawBars(ctx, dataArray, width, height, colors, colorIndex);
           break;
         case 'circle':
-          drawCircle(ctx, dataArray, width, height, hueOffset);
+          drawCircle(ctx, dataArray, width, height, colors, colorIndex);
           break;
         case 'particles':
-          drawParticles(ctx, dataArray, width, height, hueOffset);
+          drawParticles(ctx, dataArray, width, height, colors, colorIndex);
           break;
         case 'spiral':
-          drawSpiral(ctx, dataArray, width, height, hueOffset);
+          drawSpiral(ctx, dataArray, width, height, colors, colorIndex);
           break;
       }
 
@@ -175,15 +181,15 @@ export const AudioVisualizerDialog = ({ open, onOpenChange, binaryData }: AudioV
     draw();
   };
 
-  const drawWaveform = (ctx: CanvasRenderingContext2D, analyser: AnalyserNode, width: number, height: number, hueOffset: number) => {
+  const drawWaveform = (ctx: CanvasRenderingContext2D, analyser: AnalyserNode, width: number, height: number, colors: string[]) => {
     const bufferLength = analyser.frequencyBinCount;
     const dataArray = new Uint8Array(bufferLength);
     analyser.getByteTimeDomainData(dataArray);
 
     const sens = sensitivity[0] / 100;
 
-    ctx.lineWidth = 3;
-    ctx.beginPath();
+    ctx.lineWidth = 2;
+    ctx.shadowBlur = glowIntensity[0];
 
     const sliceWidth = width / bufferLength;
     let x = 0;
@@ -192,55 +198,69 @@ export const AudioVisualizerDialog = ({ open, onOpenChange, binaryData }: AudioV
       const v = ((dataArray[i] / 128.0) - 1) * sens;
       const y = (v * height / 2) + (height / 2);
 
-      const hue = colorCycle ? (hueOffset + (i / bufferLength) * 120) % 360 : 180;
-      ctx.strokeStyle = `hsl(${hue}, 80%, 60%)`;
+      const color = colors[Math.floor((i / bufferLength) * colors.length)];
+      ctx.strokeStyle = color;
+      ctx.shadowColor = color;
 
+      ctx.beginPath();
       if (i === 0) {
         ctx.moveTo(x, y);
       } else {
+        ctx.moveTo(x - sliceWidth, height / 2);
         ctx.lineTo(x, y);
       }
+      ctx.stroke();
 
       x += sliceWidth;
     }
-
-    ctx.stroke();
 
     if (showMirror) {
       ctx.save();
       ctx.scale(1, -1);
       ctx.translate(0, -height);
       ctx.globalAlpha = 0.3;
-      ctx.stroke();
+      x = 0;
+      for (let i = 0; i < bufferLength; i++) {
+        const v = ((dataArray[i] / 128.0) - 1) * sens;
+        const y = (v * height / 2) + (height / 2);
+        ctx.beginPath();
+        ctx.moveTo(x - sliceWidth, height / 2);
+        ctx.lineTo(x, y);
+        ctx.stroke();
+        x += sliceWidth;
+      }
       ctx.restore();
     }
   };
 
-  const drawBars = (ctx: CanvasRenderingContext2D, dataArray: Uint8Array, width: number, height: number, hueOffset: number) => {
-    const barCount = Math.min(dataArray.length, 128);
-    const barWidth = width / barCount;
+  const drawBars = (ctx: CanvasRenderingContext2D, dataArray: Uint8Array, width: number, height: number, colors: string[], colorIndex: number) => {
+    const barCount = Math.min(dataArray.length, 64);
+    const barWidth = (width / barCount) - barSpacing[0];
     const sens = sensitivity[0] / 100;
 
     for (let i = 0; i < barCount; i++) {
       const barHeight = (dataArray[i] / 255) * height * sens;
-      const x = i * barWidth;
+      const x = i * (barWidth + barSpacing[0]);
       
-      const hue = colorCycle ? (hueOffset + (i / barCount) * 360) % 360 : 180;
-      ctx.fillStyle = `hsl(${hue}, 100%, 50%)`;
-      ctx.shadowBlur = 15;
-      ctx.shadowColor = `hsl(${hue}, 100%, 50%)`;
+      const color = colorCycle 
+        ? colors[Math.floor((colorIndex + (i / barCount)) % colors.length)]
+        : colors[i % colors.length];
       
-      ctx.fillRect(x, height - barHeight, barWidth - 2, barHeight);
+      ctx.fillStyle = color;
+      ctx.shadowBlur = glowIntensity[0];
+      ctx.shadowColor = color;
+      
+      ctx.fillRect(x, height - barHeight, barWidth, barHeight);
 
       if (showMirror) {
-        ctx.globalAlpha = 0.3;
-        ctx.fillRect(x, 0, barWidth - 2, barHeight);
+        ctx.globalAlpha = 0.4;
+        ctx.fillRect(x, 0, barWidth, barHeight);
         ctx.globalAlpha = 1;
       }
     }
   };
 
-  const drawCircle = (ctx: CanvasRenderingContext2D, dataArray: Uint8Array, width: number, height: number, hueOffset: number) => {
+  const drawCircle = (ctx: CanvasRenderingContext2D, dataArray: Uint8Array, width: number, height: number, colors: string[], colorIndex: number) => {
     const centerX = width / 2;
     const centerY = height / 2;
     const radius = Math.min(width, height) / 3;
@@ -256,11 +276,14 @@ export const AudioVisualizerDialog = ({ open, onOpenChange, binaryData }: AudioV
       const x2 = centerX + Math.cos(angle) * (radius + barLength);
       const y2 = centerY + Math.sin(angle) * (radius + barLength);
 
-      const hue = colorCycle ? (hueOffset + (i / barCount) * 360) % 360 : 180;
-      ctx.strokeStyle = `hsl(${hue}, 100%, 50%)`;
-      ctx.lineWidth = 3;
-      ctx.shadowBlur = 15;
-      ctx.shadowColor = `hsl(${hue}, 100%, 50%)`;
+      const color = colorCycle 
+        ? colors[Math.floor((colorIndex + (i / barCount)) % colors.length)]
+        : colors[i % colors.length];
+      
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      ctx.shadowBlur = glowIntensity[0];
+      ctx.shadowColor = color;
 
       ctx.beginPath();
       ctx.moveTo(x1, y1);
@@ -270,7 +293,7 @@ export const AudioVisualizerDialog = ({ open, onOpenChange, binaryData }: AudioV
       if (showMirror) {
         const innerX = centerX + Math.cos(angle) * (radius - barLength);
         const innerY = centerY + Math.sin(angle) * (radius - barLength);
-        ctx.globalAlpha = 0.3;
+        ctx.globalAlpha = 0.4;
         ctx.beginPath();
         ctx.moveTo(x1, y1);
         ctx.lineTo(innerX, innerY);
@@ -280,7 +303,7 @@ export const AudioVisualizerDialog = ({ open, onOpenChange, binaryData }: AudioV
     }
   };
 
-  const drawParticles = (ctx: CanvasRenderingContext2D, dataArray: Uint8Array, width: number, height: number, hueOffset: number) => {
+  const drawParticles = (ctx: CanvasRenderingContext2D, dataArray: Uint8Array, width: number, height: number, colors: string[], colorIndex: number) => {
     const sens = sensitivity[0] / 100;
 
     // Add new particles based on audio
@@ -306,15 +329,18 @@ export const AudioVisualizerDialog = ({ open, onOpenChange, binaryData }: AudioV
 
       if (p.life <= 0) return false;
 
-      const size = p.life * 8;
-      const hue = colorCycle ? (hueOffset + (p.x / width) * 360) % 360 : 180;
-      ctx.fillStyle = `hsla(${hue}, 100%, 50%, ${p.life})`;
-      ctx.shadowBlur = 20;
-      ctx.shadowColor = `hsl(${hue}, 100%, 50%)`;
+      const size = p.life * 6;
+      const color = colors[Math.floor(Math.random() * colors.length)];
+      
+      ctx.fillStyle = color;
+      ctx.globalAlpha = p.life * 0.8;
+      ctx.shadowBlur = glowIntensity[0];
+      ctx.shadowColor = color;
 
       ctx.beginPath();
       ctx.arc(p.x, p.y, size, 0, Math.PI * 2);
       ctx.fill();
+      ctx.globalAlpha = 1;
 
       return true;
     });
@@ -325,7 +351,7 @@ export const AudioVisualizerDialog = ({ open, onOpenChange, binaryData }: AudioV
     }
   };
 
-  const drawSpiral = (ctx: CanvasRenderingContext2D, dataArray: Uint8Array, width: number, height: number, hueOffset: number) => {
+  const drawSpiral = (ctx: CanvasRenderingContext2D, dataArray: Uint8Array, width: number, height: number, colors: string[], colorIndex: number) => {
     const centerX = width / 2;
     const centerY = height / 2;
     const barCount = Math.min(dataArray.length, 128);
@@ -340,11 +366,14 @@ export const AudioVisualizerDialog = ({ open, onOpenChange, binaryData }: AudioV
       const x = centerX + Math.cos(angle) * (radius + amplitude);
       const y = centerY + Math.sin(angle) * (radius + amplitude);
 
-      const hue = colorCycle ? (hueOffset + (i / barCount) * 360) % 360 : 180;
-      ctx.strokeStyle = `hsl(${hue}, 100%, 50%)`;
+      const color = colorCycle 
+        ? colors[Math.floor((colorIndex + (i / barCount)) % colors.length)]
+        : colors[i % colors.length];
+      
+      ctx.strokeStyle = color;
       ctx.lineWidth = 2;
-      ctx.shadowBlur = 10;
-      ctx.shadowColor = `hsl(${hue}, 100%, 50%)`;
+      ctx.shadowBlur = glowIntensity[0];
+      ctx.shadowColor = color;
 
       if (i === 0) {
         ctx.moveTo(x, y);
@@ -433,7 +462,7 @@ export const AudioVisualizerDialog = ({ open, onOpenChange, binaryData }: AudioV
               <Label className="text-xs text-muted-foreground mb-2 block">
                 Playback Speed: {(playbackRate[0] / 100).toFixed(2)}x
               </Label>
-              <Slider value={playbackRate} onValueChange={setPlaybackRate} min={25} max={400} step={25} />
+              <Slider value={playbackRate} onValueChange={setPlaybackRate} min={10} max={200} step={5} />
             </div>
 
             <div>
@@ -441,6 +470,27 @@ export const AudioVisualizerDialog = ({ open, onOpenChange, binaryData }: AudioV
                 Visual Sensitivity: {sensitivity[0]}%
               </Label>
               <Slider value={sensitivity} onValueChange={setSensitivity} min={10} max={300} step={10} />
+            </div>
+
+            <div>
+              <Label className="text-xs text-muted-foreground mb-2 block">
+                Smoothing: {smoothing[0]}%
+              </Label>
+              <Slider value={smoothing} onValueChange={setSmoothing} min={0} max={95} step={5} />
+            </div>
+
+            <div>
+              <Label className="text-xs text-muted-foreground mb-2 block">
+                Bar Spacing: {barSpacing[0]}px
+              </Label>
+              <Slider value={barSpacing} onValueChange={setBarSpacing} min={0} max={10} step={1} />
+            </div>
+
+            <div>
+              <Label className="text-xs text-muted-foreground mb-2 block">
+                Glow Intensity: {glowIntensity[0]}
+              </Label>
+              <Slider value={glowIntensity} onValueChange={setGlowIntensity} min={0} max={40} step={5} />
             </div>
           </div>
 
