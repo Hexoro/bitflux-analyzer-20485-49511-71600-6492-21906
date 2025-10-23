@@ -33,30 +33,68 @@ export const AudioVisualizerDialog = ({ open, onOpenChange, binaryData }: AudioV
   const [colorCycle, setColorCycle] = useState(true);
   const [sensitivity, setSensitivity] = useState([100]);
 
+  // Initialize audio generator
   useEffect(() => {
     if (open && !generatorRef.current) {
       generatorRef.current = new BinaryAudioGenerator();
     }
     return () => {
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+      }
       if (generatorRef.current) {
         generatorRef.current.cleanup();
         generatorRef.current = null;
       }
-      if (animationRef.current) {
-        cancelAnimationFrame(animationRef.current);
-      }
     };
   }, [open]);
 
+  // Generate audio buffer when data or mode changes
   useEffect(() => {
-    if (!generatorRef.current || !open || !binaryData) return;
+    if (!generatorRef.current || !open || !binaryData || binaryData.length === 0) {
+      audioBufferRef.current = null;
+      return;
+    }
     try {
       const buffer = generatorRef.current.generateFromBinary(binaryData.slice(0, 50000), audioMode);
       audioBufferRef.current = buffer;
     } catch (error) {
       console.error('Failed to generate audio buffer:', error);
+      audioBufferRef.current = null;
     }
   }, [binaryData, audioMode, open]);
+
+  // Start idle visualization when dialog opens
+  useEffect(() => {
+    if (!open || !canvasRef.current) return;
+    
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const updateCanvasSize = () => {
+      canvas.width = canvas.offsetWidth * window.devicePixelRatio;
+      canvas.height = canvas.offsetHeight * window.devicePixelRatio;
+      ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+    };
+    
+    updateCanvasSize();
+    
+    // Draw idle state
+    const width = canvas.offsetWidth;
+    const height = canvas.offsetHeight;
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, width, height);
+    
+    // Draw center line
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, height / 2);
+    ctx.lineTo(width, height / 2);
+    ctx.stroke();
+    
+  }, [open]);
 
   const handlePlay = () => {
     if (!generatorRef.current || !audioBufferRef.current) return;
@@ -98,8 +136,8 @@ export const AudioVisualizerDialog = ({ open, onOpenChange, binaryData }: AudioV
     const dataArray = new Uint8Array(bufferLength);
     let hueOffset = 0;
 
-    const draw = () => {
-      if (!isPlaying) return;
+  const draw = () => {
+      if (!canvas || !ctx) return;
 
       analyser.getByteFrequencyData(dataArray);
 
