@@ -1,11 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
 import { Button } from './ui/button';
 import { Slider } from './ui/slider';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Switch } from './ui/switch';
 import { Label } from './ui/label';
-import { Play, Pause, Square, Volume2, Download } from 'lucide-react';
+import { Play, Pause, Square, Volume2 } from 'lucide-react';
 import { BinaryAudioGenerator } from '@/lib/audioUtils';
 
 interface AudioVisualizerDialogProps {
