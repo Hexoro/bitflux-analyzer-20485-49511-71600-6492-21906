@@ -48,6 +48,144 @@ export class BinaryModel {
     return this.workingBits.length;
   }
 
+  // Insert bits at a specific index
+  insertBits(index: number, bits: string): void {
+    if (index < 0 || index > this.workingBits.length) return;
+    if (!bits) return;
+
+    this.pushUndo({
+      type: 'insert',
+      range: { start: index, end: index },
+      oldBits: '',
+      newBits: bits,
+    });
+
+    this.workingBits = 
+      this.workingBits.substring(0, index) + 
+      bits + 
+      this.workingBits.substring(index);
+    
+    this.notifyListeners();
+  }
+
+  // Delete bits in a range
+  deleteBits(start: number, end: number): void {
+    if (start < 0 || end > this.workingBits.length || start >= end) return;
+
+    const deletedBits = this.workingBits.substring(start, end);
+
+    this.pushUndo({
+      type: 'delete',
+      range: { start, end },
+      oldBits: deletedBits,
+      newBits: '',
+    });
+
+    this.workingBits = 
+      this.workingBits.substring(0, start) + 
+      this.workingBits.substring(end);
+    
+    this.notifyListeners();
+  }
+
+  // Peek at bits without modifying (read-only)
+  peekBits(start: number, length: number): string {
+    if (start < 0 || start >= this.workingBits.length) return '';
+    return this.workingBits.substring(start, start + length);
+  }
+
+  // Move bits from one location to another
+  moveBits(srcStart: number, srcEnd: number, destIndex: number): void {
+    if (srcStart < 0 || srcEnd > this.workingBits.length || srcStart >= srcEnd) return;
+    
+    const movedBits = this.workingBits.substring(srcStart, srcEnd);
+    const afterDelete = this.workingBits.substring(0, srcStart) + this.workingBits.substring(srcEnd);
+    
+    if (destIndex < 0) destIndex = 0;
+    if (destIndex > afterDelete.length) destIndex = afterDelete.length;
+    
+    const newBits = afterDelete.substring(0, destIndex) + movedBits + afterDelete.substring(destIndex);
+
+    this.pushUndo({
+      type: 'edit',
+      range: { start: 0, end: this.workingBits.length },
+      oldBits: this.workingBits,
+      newBits: newBits,
+    });
+
+    this.workingBits = newBits;
+    this.notifyListeners();
+  }
+
+  // Apply bit mask using AND, OR, or XOR
+  applyMask(mask: string, operation: 'AND' | 'OR' | 'XOR'): void {
+    if (!mask) return;
+
+    // Extend mask to match length
+    const extendedMask = mask.repeat(Math.ceil(this.workingBits.length / mask.length))
+      .substring(0, this.workingBits.length);
+
+    let newBits = '';
+    for (let i = 0; i < this.workingBits.length; i++) {
+      const a = this.workingBits[i];
+      const b = extendedMask[i];
+      
+      switch (operation) {
+        case 'AND':
+          newBits += (a === '1' && b === '1') ? '1' : '0';
+          break;
+        case 'OR':
+          newBits += (a === '1' || b === '1') ? '1' : '0';
+          break;
+        case 'XOR':
+          newBits += a !== b ? '1' : '0';
+          break;
+      }
+    }
+
+    this.pushUndo({
+      type: 'edit',
+      range: { start: 0, end: this.workingBits.length },
+      oldBits: this.workingBits,
+      newBits: newBits,
+    });
+
+    this.workingBits = newBits;
+    this.notifyListeners();
+  }
+
+  // Append bits to the end
+  appendBits(bits: string): void {
+    if (!bits) return;
+
+    this.pushUndo({
+      type: 'insert',
+      range: { start: this.workingBits.length, end: this.workingBits.length },
+      oldBits: '',
+      newBits: bits,
+    });
+
+    this.workingBits += bits;
+    this.notifyListeners();
+  }
+
+  // Truncate to specified length
+  truncateTo(length: number): void {
+    if (length < 0 || length >= this.workingBits.length) return;
+
+    const truncatedBits = this.workingBits.substring(length);
+
+    this.pushUndo({
+      type: 'delete',
+      range: { start: length, end: this.workingBits.length },
+      oldBits: truncatedBits,
+      newBits: '',
+    });
+
+    this.workingBits = this.workingBits.substring(0, length);
+    this.notifyListeners();
+  }
+
   // Set bit at position
   setBit(index: number, value: '0' | '1'): void {
     if (index < 0 || index >= this.workingBits.length) return;
