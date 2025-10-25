@@ -209,6 +209,12 @@ export const AnalysisPanel = ({ stats, bits, bitsPerRow, onJumpTo }: AnalysisPan
         <h3 className="text-sm font-semibold text-primary mb-3">Advanced Statistics</h3>
         <div className="space-y-2 text-sm">
           <div className="flex justify-between">
+            <span className="text-muted-foreground">Population Count:</span>
+            <span className="text-foreground font-mono">
+              {stats.oneCount} (Hamming weight)
+            </span>
+          </div>
+          <div className="flex justify-between">
             <span className="text-muted-foreground">Transitions:</span>
             <span className="text-foreground font-mono">
               {bits.split('').reduce((acc, bit, i) => 
@@ -228,6 +234,12 @@ export const AnalysisPanel = ({ stats, bits, bitsPerRow, onJumpTo }: AnalysisPan
             <span className="text-muted-foreground">Est. Bit Density:</span>
             <span className="text-foreground font-mono">
               {(stats.oneCount / Math.max(1, stats.totalBits)).toFixed(4)}
+            </span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Nibble Alignment:</span>
+            <span className="text-foreground font-mono">
+              {bits.length % 4 === 0 ? '✓ Aligned' : `✗ ${bits.length % 4} extra bits`}
             </span>
           </div>
         </div>

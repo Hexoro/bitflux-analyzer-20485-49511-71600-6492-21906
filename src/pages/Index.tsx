@@ -12,6 +12,7 @@ import { HistoryPanelNew } from '@/components/HistoryPanelNew';
 import { TransformationsPanel } from '@/components/TransformationsPanel';
 import { AnomaliesPanel } from '@/components/AnomaliesPanel';
 import { NotesPanel } from '@/components/NotesPanel';
+import { BitstreamAnalysisPanel } from '@/components/BitstreamAnalysisPanel';
 import { ComparisonDialog } from '@/components/ComparisonDialog';
 import { GenerateDialog } from '@/components/GenerateDialog';
 import { JumpToDialog } from '@/components/JumpToDialog';
@@ -402,6 +403,7 @@ const Index = () => {
           <Tabs value={activeTab} onValueChange={setActiveTab} className="h-full flex flex-col">
             <TabsList className="w-full justify-start rounded-none border-b">
               <TabsTrigger value="analysis">Analysis</TabsTrigger>
+              <TabsTrigger value="bitstream">Bitstream</TabsTrigger>
               <TabsTrigger value="sequences">Sequences</TabsTrigger>
               <TabsTrigger value="boundaries">Boundaries</TabsTrigger>
               <TabsTrigger value="partitions">Partitions</TabsTrigger>
@@ -414,6 +416,10 @@ const Index = () => {
             <div className="flex-1 overflow-hidden">
               <TabsContent value="analysis" className="h-full m-0">
                 {stats && <AnalysisPanel stats={stats} bits={bits} bitsPerRow={bitsPerRow} onJumpTo={handleJumpTo} />}
+              </TabsContent>
+
+              <TabsContent value="bitstream" className="h-full m-0">
+                <BitstreamAnalysisPanel bits={bits} onJumpTo={handleJumpTo} />
               </TabsContent>
 
               <TabsContent value="sequences" className="h-full m-0">

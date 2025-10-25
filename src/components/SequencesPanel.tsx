@@ -67,6 +67,54 @@ export const SequencesPanel = ({ fileState, onJumpTo }: SequencesPanelProps) => 
     setSearchInput('');
   };
 
+  const handleFindAll = () => {
+    if (savedSequences.length === 0) {
+      toast.info('No sequences to find');
+      return;
+    }
+
+    // Re-search all saved sequences to update positions
+    const allSequences = savedSequences.map(s => s.sequence);
+    const matches = BinaryMetrics.searchMultipleSequences(bits, allSequences);
+    
+    matches.forEach(match => {
+      const existing = fileState.savedSequences.find(s => s.sequence === match.sequence);
+      if (existing) {
+        // Update the sequence with new positions
+        fileState.removeSequence(existing.id);
+        fileState.addSequence(match, existing.color);
+      }
+    });
+
+    toast.success('Updated all sequence positions');
+  };
+
+  const handleExportSequences = () => {
+    if (savedSequences.length === 0) {
+      toast.info('No sequences to export');
+      return;
+    }
+
+    const exportData = savedSequences.map(seq => ({
+      sequence: seq.sequence,
+      color: seq.color,
+      count: seq.count,
+      positions: seq.positions,
+      meanDistance: seq.meanDistance,
+      varianceDistance: seq.varianceDistance
+    }));
+
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `sequences_export_${Date.now()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    
+    toast.success('Sequences exported');
+  };
+
   const handleToggleHighlight = (id: string) => {
     fileState.toggleSequenceHighlight(id);
   };
@@ -118,9 +166,17 @@ export const SequencesPanel = ({ fileState, onJumpTo }: SequencesPanelProps) => 
             </div>
           </div>
           {savedSequences.length > 0 && (
-            <Button onClick={handleClearAll} variant="outline" size="sm" className="w-full">
-              Clear All Results
-            </Button>
+            <div className="flex gap-2">
+              <Button onClick={handleFindAll} variant="outline" size="sm" className="flex-1">
+                Find All
+              </Button>
+              <Button onClick={handleExportSequences} variant="outline" size="sm" className="flex-1">
+                Export
+              </Button>
+              <Button onClick={handleClearAll} variant="outline" size="sm" className="flex-1">
+                Clear
+              </Button>
+            </div>
           )}
           <p className="text-xs text-muted-foreground">
             Separate multiple sequences with commas or spaces. Choose color before searching.

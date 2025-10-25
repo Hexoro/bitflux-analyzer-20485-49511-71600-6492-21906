@@ -19,7 +19,7 @@ import {
   Plus,
   Minus
 } from 'lucide-react';
-import { LogicGates, ShiftOperations, BitManipulation, BitPacking, AdvancedBitOperations } from '@/lib/binaryOperations';
+import { LogicGates, ShiftOperations, BitManipulation, BitPacking, AdvancedBitOperations, ArithmeticOperations } from '@/lib/binaryOperations';
 import { Separator } from './ui/separator';
 import { Badge } from './ui/badge';
 
@@ -42,6 +42,7 @@ export const TransformationsPanel = ({ bits, selectedRange, onTransform }: Trans
   const [peekResult, setPeekResult] = useState('');
   const [padLength, setPadLength] = useState('');
   const [logicOperandB, setLogicOperandB] = useState('');
+  const [operand, setOperand] = useState('10');
 
   const hasData = bits && bits.length > 0;
 
@@ -526,6 +527,111 @@ export const TransformationsPanel = ({ bits, selectedRange, onTransform }: Trans
                     {bits.length % 8 !== 0 && ` (needs ${8 - (bits.length % 8)} bits for byte)`}
                   </p>
                 </div>
+              </AccordionContent>
+            </AccordionItem>
+
+            {/* ARITHMETIC OPERATIONS */}
+            <AccordionItem value="arithmetic" className="border rounded-lg bg-card px-4">
+              <AccordionTrigger className="text-sm font-semibold hover:no-underline">
+                <div className="flex items-center gap-2">
+                  <Plus className="w-4 h-4" />
+                  Binary Arithmetic
+                </div>
+              </AccordionTrigger>
+              <AccordionContent className="space-y-3 pt-2">
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium">Operand (binary or decimal)</Label>
+                  <Input
+                    placeholder="1010 or 10"
+                    value={operand}
+                    onChange={(e) => setOperand(e.target.value)}
+                    className="font-mono text-xs"
+                  />
+                </div>
+                
+                <div className="grid grid-cols-3 gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      const op = operand.match(/^[01]+$/) ? operand : ArithmeticOperations.fromDecimal(parseInt(operand) || 0);
+                      const result = ArithmeticOperations.add(bits, op);
+                      onTransform(result, `Added ${operand}`);
+                    }}
+                    className="text-xs"
+                  >
+                    Add
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      const op = operand.match(/^[01]+$/) ? operand : ArithmeticOperations.fromDecimal(parseInt(operand) || 0);
+                      const result = ArithmeticOperations.subtract(bits, op);
+                      onTransform(result, `Subtracted ${operand}`);
+                    }}
+                    className="text-xs"
+                  >
+                    Subtract
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      const op = operand.match(/^[01]+$/) ? operand : ArithmeticOperations.fromDecimal(parseInt(operand) || 0);
+                      const result = ArithmeticOperations.multiply(bits, op);
+                      onTransform(result, `Multiplied by ${operand}`);
+                    }}
+                    className="text-xs"
+                  >
+                    Multiply
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      const op = operand.match(/^[01]+$/) ? operand : ArithmeticOperations.fromDecimal(parseInt(operand) || 0);
+                      const divResult = ArithmeticOperations.divide(bits, op);
+                      onTransform(divResult.quotient, `Divided by ${operand}`);
+                    }}
+                    className="text-xs"
+                  >
+                    Divide
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      const op = operand.match(/^[01]+$/) ? operand : ArithmeticOperations.fromDecimal(parseInt(operand) || 0);
+                      const result = ArithmeticOperations.modulo(bits, op);
+                      onTransform(result, `Modulo ${operand}`);
+                    }}
+                    className="text-xs"
+                  >
+                    Modulo
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      const exp = operand;
+                      const result = ArithmeticOperations.power(bits, exp);
+                      onTransform(result, `Raised to power ${exp}`);
+                    }}
+                    className="text-xs"
+                  >
+                    Power
+                  </Button>
+                </div>
+                
+                <Card className="p-3 bg-secondary/50">
+                  <div className="space-y-1 text-xs">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Current value (decimal):</span>
+                      <span className="font-mono">{ArithmeticOperations.toDecimal(bits)}</span>
+                    </div>
+                  </div>
+                </Card>
               </AccordionContent>
             </AccordionItem>
 
