@@ -8,6 +8,12 @@ import { HistoryManager, HistoryEntry } from './historyManager';
 import { PartitionManager, Partition, Boundary } from './partitionManager';
 import { NotesManager } from './notesManager';
 
+export interface BitRange {
+  id: string;
+  start: number;
+  end: number;
+}
+
 export interface SavedSequence extends SequenceMatch {
   id: string;
   serialNumber: number;
@@ -32,6 +38,7 @@ export class FileState {
   public notesManager: NotesManager;
   public stats: BinaryStats | null = null;
   public savedSequences: SavedSequence[] = [];
+  public selectedRanges: BitRange[] = [];
   private nextSerial: number = 1;
   private listeners: Set<() => void> = new Set();
   private editDebounceTimer: NodeJS.Timeout | null = null;
@@ -97,7 +104,16 @@ export class FileState {
   getHighlightRanges(): Array<{ start: number; end: number; color: string }> {
     const boundaryRanges = this.partitionManager.getHighlightRanges();
     const sequenceRanges = this.getSequenceHighlightRanges();
-    return [...sequenceRanges, ...boundaryRanges];
+    const selectionRanges = this.getSelectionHighlightRanges();
+    return [...sequenceRanges, ...boundaryRanges, ...selectionRanges];
+  }
+
+  private getSelectionHighlightRanges(): Array<{ start: number; end: number; color: string }> {
+    return this.selectedRanges.map(range => ({
+      start: range.start,
+      end: range.end,
+      color: '#fbbf24', // amber-400 for selection highlight
+    }));
   }
 
   private getSequenceHighlightRanges(): Array<{ start: number; end: number; color: string }> {
@@ -152,6 +168,21 @@ export class FileState {
   clearAllSequences(): void {
     this.savedSequences = [];
     this.nextSerial = 1;
+    this.notifyListeners();
+  }
+
+  // Bit range selection methods
+  setSelectedRanges(ranges: BitRange[]): void {
+    this.selectedRanges = ranges;
+    this.notifyListeners();
+  }
+
+  getSelectedRanges(): BitRange[] {
+    return this.selectedRanges;
+  }
+
+  clearSelectedRanges(): void {
+    this.selectedRanges = [];
     this.notifyListeners();
   }
 

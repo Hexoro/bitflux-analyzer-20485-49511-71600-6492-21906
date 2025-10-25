@@ -21,9 +21,11 @@ import { FileSystemSidebar } from '@/components/FileSystemSidebar';
 import { Toolbar } from '@/components/Toolbar';
 import { DataGraphsDialog } from '@/components/DataGraphsDialog';
 import { AudioVisualizerDialog } from '@/components/AudioVisualizerDialog';
+import { BitSelectionDialog } from '@/components/BitSelectionDialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable';
 import { toast } from 'sonner';
+import { BitRange } from '@/lib/fileState';
 
 const Index = () => {
   const [fileSystem] = useState(() => new FileSystemManager());
@@ -303,6 +305,17 @@ const Index = () => {
     );
   };
 
+  const handleApplySelection = (ranges: BitRange[]) => {
+    if (!activeFile) return;
+    activeFile.state.setSelectedRanges(ranges);
+    if (ranges.length > 0) {
+      const totalBits = ranges.reduce((sum, r) => sum + (r.end - r.start + 1), 0);
+      toast.success(`Selected ${totalBits} bits in ${ranges.length} range${ranges.length !== 1 ? 's' : ''}`);
+    } else {
+      toast.info('Selection cleared');
+    }
+  };
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!activeFile) return;
@@ -356,6 +369,7 @@ const Index = () => {
   const boundaries = activeFile.state.getBoundaries();
   const partitions = activeFile.state.getPartitions();
   const highlightRanges = activeFile.state.getHighlightRanges();
+  const selectedRanges = activeFile.state.getSelectedRanges();
 
   return (
     <div className="h-screen flex flex-col bg-background text-foreground">
@@ -451,11 +465,22 @@ const Index = () => {
               </TabsContent>
 
               <TabsContent value="transformations" className="h-full m-0">
-                <TransformationsPanel
-                  bits={bits}
-                  selectedRange={null}
-                  onTransform={handleTransform}
-                />
+                <div className="h-full flex flex-col">
+                  <div className="p-4 border-b">
+                    <BitSelectionDialog
+                      maxBits={bits.length}
+                      onApplySelection={handleApplySelection}
+                      currentSelection={selectedRanges}
+                    />
+                  </div>
+                  <div className="flex-1 overflow-hidden">
+                    <TransformationsPanel
+                      bits={bits}
+                      selectedRanges={selectedRanges}
+                      onTransform={handleTransform}
+                    />
+                  </div>
+                </div>
               </TabsContent>
 
               <TabsContent value="history" className="h-full m-0">

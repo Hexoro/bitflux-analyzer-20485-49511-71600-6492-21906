@@ -22,14 +22,15 @@ import {
 import { LogicGates, ShiftOperations, BitManipulation, BitPacking, AdvancedBitOperations, ArithmeticOperations } from '@/lib/binaryOperations';
 import { Separator } from './ui/separator';
 import { Badge } from './ui/badge';
+import { BitRange } from '@/lib/fileState';
 
 interface TransformationsPanelProps {
   bits: string;
-  selectedRange: { start: number; end: number } | null;
+  selectedRanges: BitRange[];
   onTransform: (newBits: string, description: string) => void;
 }
 
-export const TransformationsPanel = ({ bits, selectedRange, onTransform }: TransformationsPanelProps) => {
+export const TransformationsPanel = ({ bits, selectedRanges, onTransform }: TransformationsPanelProps) => {
   const [findPattern, setFindPattern] = useState('');
   const [replacePattern, setReplacePattern] = useState('');
   const [shiftAmount, setShiftAmount] = useState('1');
@@ -45,39 +46,56 @@ export const TransformationsPanel = ({ bits, selectedRange, onTransform }: Trans
   const [operand, setOperand] = useState('10');
 
   const hasData = bits && bits.length > 0;
+  const hasSelection = selectedRanges.length > 0;
 
-  // Get selected bits or entire bit string
-  const getTargetBits = () => {
-    if (selectedRange) {
-      return bits.substring(selectedRange.start, selectedRange.end + 1);
+  // Apply transformation to selected ranges or entire bitstring
+  const applyTransformation = (transformFn: (input: string) => string, description: string) => {
+    if (!hasSelection) {
+      // No selection - apply to entire bitstring
+      const result = transformFn(bits);
+      onTransform(result, description);
+      return;
     }
-    return bits;
-  };
 
-  const applyToSelection = (transformed: string, description: string) => {
-    if (selectedRange) {
-      const before = bits.substring(0, selectedRange.start);
-      const after = bits.substring(selectedRange.end + 1);
-      onTransform(before + transformed + after, description);
-    } else {
-      onTransform(transformed, description);
-    }
+    // Apply to each selected range
+    let result = bits;
+    let offset = 0;
+
+    // Sort ranges by start position
+    const sortedRanges = [...selectedRanges].sort((a, b) => a.start - b.start);
+
+    sortedRanges.forEach((range) => {
+      const adjustedStart = range.start + offset;
+      const adjustedEnd = range.end + offset;
+      
+      const before = result.substring(0, adjustedStart);
+      const selected = result.substring(adjustedStart, adjustedEnd + 1);
+      const after = result.substring(adjustedEnd + 1);
+      
+      const transformed = transformFn(selected);
+      result = before + transformed + after;
+      
+      // Update offset for next iteration
+      offset += transformed.length - selected.length;
+    });
+
+    const rangeDesc = sortedRanges.length === 1 
+      ? `range ${sortedRanges[0].start}-${sortedRanges[0].end}`
+      : `${sortedRanges.length} ranges`;
+    onTransform(result, `${description} (${rangeDesc})`);
   };
 
   // ============= LOGIC GATES =============
   const handleLogicGate = (operation: keyof typeof LogicGates) => {
     if (!logicOperandB || !/^[01]+$/.test(logicOperandB)) return;
     
-    const targetBits = getTargetBits();
-    let result: string;
-    
-    if (operation === 'NOT') {
-      result = LogicGates.NOT(targetBits);
-    } else {
-      result = LogicGates[operation](targetBits, logicOperandB);
-    }
-    
-    applyToSelection(result, `Applied ${operation} gate${selectedRange ? ' to selection' : ''}`);
+    applyTransformation((input) => {
+      if (operation === 'NOT') {
+        return LogicGates.NOT(input);
+      } else {
+        return LogicGates[operation](input, logicOperandB);
+      }
+    }, `Applied ${operation} gate`);
   };
 
   // ============= SHIFT & ROTATE =============
@@ -85,45 +103,63 @@ export const TransformationsPanel = ({ bits, selectedRange, onTransform }: Trans
     const amount = parseInt(shiftAmount) || 1;
     if (amount < 1) return;
     
-    const targetBits = getTargetBits();
-    let result: string;
     let desc: string;
+    let transformFn: (input: string) => string;
     
     switch (type) {
       case 'logicalLeft':
-        result = ShiftOperations.logicalShiftLeft(targetBits, amount);
+        transformFn = (input) => ShiftOperations.logicalShiftLeft(input, amount);
         desc = `Logical shift left by ${amount}`;
         break;
       case 'logicalRight':
-        result = ShiftOperations.logicalShiftRight(targetBits, amount);
+        transformFn = (input) => ShiftOperations.logicalShiftRight(input, amount);
         desc = `Logical shift right by ${amount}`;
         break;
       case 'arithmeticLeft':
-        result = ShiftOperations.arithmeticShiftLeft(targetBits, amount);
+        transformFn = (input) => ShiftOperations.arithmeticShiftLeft(input, amount);
         desc = `Arithmetic shift left by ${amount}`;
         break;
       case 'arithmeticRight':
-        result = ShiftOperations.arithmeticShiftRight(targetBits, amount);
+        transformFn = (input) => ShiftOperations.arithmeticShiftRight(input, amount);
         desc = `Arithmetic shift right by ${amount}`;
         break;
       case 'rotateLeft':
-        result = ShiftOperations.rotateLeft(targetBits, amount);
+        transformFn = (input) => ShiftOperations.rotateLeft(input, amount);
         desc = `Rotated left by ${amount}`;
         break;
       case 'rotateRight':
-        result = ShiftOperations.rotateRight(targetBits, amount);
+        transformFn = (input) => ShiftOperations.rotateRight(input, amount);
         desc = `Rotated right by ${amount}`;
         break;
+      default:
+        return;
     }
     
-    applyToSelection(result, desc + (selectedRange ? ' (selection)' : ''));
+    applyTransformation(transformFn, desc);
   };
 
   // ============= BIT MANIPULATION =============
+  // Bit manipulation operations don't use applyTransformation as they work on absolute positions
   const handleDelete = () => {
-    if (!selectedRange) return;
-    const result = BitManipulation.deleteBits(bits, selectedRange.start, selectedRange.end + 1);
-    onTransform(result, `Deleted bits ${selectedRange.start}-${selectedRange.end}`);
+    if (!hasSelection) return;
+    
+    let result = bits;
+    let offset = 0;
+    
+    // Sort ranges by start position and delete from left to right
+    const sortedRanges = [...selectedRanges].sort((a, b) => a.start - b.start);
+    
+    sortedRanges.forEach((range) => {
+      const adjustedStart = range.start - offset;
+      const adjustedEnd = range.end - offset;
+      result = BitManipulation.deleteBits(result, adjustedStart, adjustedEnd + 1);
+      offset += (range.end - range.start + 1);
+    });
+    
+    const rangeDesc = sortedRanges.length === 1 
+      ? `${sortedRanges[0].start}-${sortedRanges[0].end}`
+      : `${sortedRanges.length} ranges`;
+    onTransform(result, `Deleted bits ${rangeDesc}`);
   };
 
   const handleInsert = () => {
@@ -136,12 +172,13 @@ export const TransformationsPanel = ({ bits, selectedRange, onTransform }: Trans
   };
 
   const handleMove = () => {
-    if (!selectedRange) return;
+    if (!hasSelection || selectedRanges.length !== 1) return;
     const dest = parseInt(moveDestination);
     if (isNaN(dest) || dest < 0) return;
     
-    const result = BitManipulation.moveBits(bits, selectedRange.start, selectedRange.end + 1, dest);
-    onTransform(result, `Moved bits ${selectedRange.start}-${selectedRange.end} to position ${dest}`);
+    const range = selectedRanges[0];
+    const result = BitManipulation.moveBits(bits, range.start, range.end + 1, dest);
+    onTransform(result, `Moved bits ${range.start}-${range.end} to position ${dest}`);
   };
 
   const handlePeek = () => {
@@ -156,15 +193,11 @@ export const TransformationsPanel = ({ bits, selectedRange, onTransform }: Trans
   const handleMask = (operation: 'AND' | 'OR' | 'XOR') => {
     if (!maskPattern || !/^[01]+$/.test(maskPattern)) return;
     
-    const targetBits = getTargetBits();
-    const result = BitManipulation.applyMask(targetBits, maskPattern, operation);
-    applyToSelection(result, `Applied ${operation} mask${selectedRange ? ' to selection' : ''}`);
+    applyTransformation((input) => BitManipulation.applyMask(input, maskPattern, operation), `Applied ${operation} mask`);
   };
 
   const handleReverse = () => {
-    const targetBits = getTargetBits();
-    const result = AdvancedBitOperations.reverseBits(targetBits);
-    applyToSelection(result, `Reversed${selectedRange ? ' selection' : ' all bits'}`);
+    applyTransformation((input) => AdvancedBitOperations.reverseBits(input), 'Reversed bits');
   };
 
   const handleFindReplace = () => {
@@ -199,20 +232,41 @@ export const TransformationsPanel = ({ bits, selectedRange, onTransform }: Trans
     onTransform(result, `Aligned to ${type} boundary (+${padded} bits)`);
   };
 
+  // ============= ARITHMETIC OPERATIONS =============
+  const handleArithmetic = (operation: 'add' | 'subtract' | 'multiply' | 'divide' | 'modulo' | 'power') => {
+    const op = operand.match(/^[01]+$/) ? operand : ArithmeticOperations.fromDecimal(parseInt(operand) || 0);
+    
+    applyTransformation((input) => {
+      switch (operation) {
+        case 'add':
+          return ArithmeticOperations.add(input, op);
+        case 'subtract':
+          return ArithmeticOperations.subtract(input, op);
+        case 'multiply':
+          return ArithmeticOperations.multiply(input, op);
+        case 'divide':
+          return ArithmeticOperations.divide(input, op).quotient;
+        case 'modulo':
+          return ArithmeticOperations.modulo(input, op);
+        case 'power':
+          return ArithmeticOperations.power(input, op);
+        default:
+          return input;
+      }
+    }, `${operation.charAt(0).toUpperCase() + operation.slice(1)} ${operand}`);
+  };
+
   // ============= ADVANCED OPERATIONS =============
   const handleGrayCode = (direction: 'toGray' | 'fromGray') => {
-    const targetBits = getTargetBits();
-    const result = direction === 'toGray'
-      ? AdvancedBitOperations.binaryToGray(targetBits)
-      : AdvancedBitOperations.grayToBinary(targetBits);
+    const transformFn = direction === 'toGray'
+      ? (input: string) => AdvancedBitOperations.binaryToGray(input)
+      : (input: string) => AdvancedBitOperations.grayToBinary(input);
     
-    applyToSelection(result, `Converted ${direction === 'toGray' ? 'to' : 'from'} Gray code${selectedRange ? ' (selection)' : ''}`);
+    applyTransformation(transformFn, `Converted ${direction === 'toGray' ? 'to' : 'from'} Gray code`);
   };
 
   const handleSwapEndianness = () => {
-    const targetBits = getTargetBits();
-    const result = AdvancedBitOperations.swapEndianness(targetBits);
-    applyToSelection(result, `Swapped endianness${selectedRange ? ' (selection)' : ''}`);
+    applyTransformation((input) => AdvancedBitOperations.swapEndianness(input), 'Swapped endianness');
   };
 
   const popCount = hasData ? AdvancedBitOperations.populationCount(bits) : 0;
@@ -276,7 +330,7 @@ export const TransformationsPanel = ({ bits, selectedRange, onTransform }: Trans
                   <Button onClick={() => handleLogicGate('XNOR')} variant="outline" size="sm">XNOR</Button>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  {selectedRange ? 'Applied to selection' : 'Applied to entire stream'}
+                  {hasSelection ? `Applied to ${selectedRanges.length} range${selectedRanges.length !== 1 ? 's' : ''}` : 'Applied to entire stream'}
                 </p>
               </AccordionContent>
             </AccordionItem>
@@ -350,7 +404,7 @@ export const TransformationsPanel = ({ bits, selectedRange, onTransform }: Trans
               </AccordionTrigger>
               <AccordionContent className="space-y-3 pt-2">
                 {/* Delete */}
-                {selectedRange && (
+                {hasSelection && (
                   <>
                     <Button
                       onClick={handleDelete}
@@ -359,7 +413,7 @@ export const TransformationsPanel = ({ bits, selectedRange, onTransform }: Trans
                       size="sm"
                     >
                       <Delete className="w-4 h-4 mr-2" />
-                      Delete Selection ({selectedRange.end - selectedRange.start + 1} bits)
+                      Delete Selection ({selectedRanges.reduce((sum, r) => sum + (r.end - r.start + 1), 0)} bits in {selectedRanges.length} range{selectedRanges.length !== 1 ? 's' : ''})
                     </Button>
                     <Separator />
                   </>
@@ -390,7 +444,7 @@ export const TransformationsPanel = ({ bits, selectedRange, onTransform }: Trans
                 <Separator />
 
                 {/* Move */}
-                {selectedRange && (
+                {hasSelection && selectedRanges.length === 1 && (
                   <>
                     <div className="space-y-2">
                       <Label className="text-xs font-medium">Move Selection</Label>
@@ -469,7 +523,7 @@ export const TransformationsPanel = ({ bits, selectedRange, onTransform }: Trans
                   size="sm"
                 >
                   <Shuffle className="w-4 h-4 mr-2" />
-                  Reverse {selectedRange ? 'Selection' : 'All'}
+                  Reverse {hasSelection ? 'Selection' : 'All'}
                 </Button>
               </AccordionContent>
             </AccordionItem>
@@ -553,11 +607,7 @@ export const TransformationsPanel = ({ bits, selectedRange, onTransform }: Trans
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => {
-                      const op = operand.match(/^[01]+$/) ? operand : ArithmeticOperations.fromDecimal(parseInt(operand) || 0);
-                      const result = ArithmeticOperations.add(bits, op);
-                      onTransform(result, `Added ${operand}`);
-                    }}
+                    onClick={() => handleArithmetic('add')}
                     className="text-xs"
                   >
                     Add
@@ -565,11 +615,7 @@ export const TransformationsPanel = ({ bits, selectedRange, onTransform }: Trans
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => {
-                      const op = operand.match(/^[01]+$/) ? operand : ArithmeticOperations.fromDecimal(parseInt(operand) || 0);
-                      const result = ArithmeticOperations.subtract(bits, op);
-                      onTransform(result, `Subtracted ${operand}`);
-                    }}
+                    onClick={() => handleArithmetic('subtract')}
                     className="text-xs"
                   >
                     Subtract
@@ -577,11 +623,7 @@ export const TransformationsPanel = ({ bits, selectedRange, onTransform }: Trans
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => {
-                      const op = operand.match(/^[01]+$/) ? operand : ArithmeticOperations.fromDecimal(parseInt(operand) || 0);
-                      const result = ArithmeticOperations.multiply(bits, op);
-                      onTransform(result, `Multiplied by ${operand}`);
-                    }}
+                    onClick={() => handleArithmetic('multiply')}
                     className="text-xs"
                   >
                     Multiply
@@ -589,11 +631,7 @@ export const TransformationsPanel = ({ bits, selectedRange, onTransform }: Trans
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => {
-                      const op = operand.match(/^[01]+$/) ? operand : ArithmeticOperations.fromDecimal(parseInt(operand) || 0);
-                      const divResult = ArithmeticOperations.divide(bits, op);
-                      onTransform(divResult.quotient, `Divided by ${operand}`);
-                    }}
+                    onClick={() => handleArithmetic('divide')}
                     className="text-xs"
                   >
                     Divide
@@ -601,11 +639,7 @@ export const TransformationsPanel = ({ bits, selectedRange, onTransform }: Trans
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => {
-                      const op = operand.match(/^[01]+$/) ? operand : ArithmeticOperations.fromDecimal(parseInt(operand) || 0);
-                      const result = ArithmeticOperations.modulo(bits, op);
-                      onTransform(result, `Modulo ${operand}`);
-                    }}
+                    onClick={() => handleArithmetic('modulo')}
                     className="text-xs"
                   >
                     Modulo
@@ -613,11 +647,7 @@ export const TransformationsPanel = ({ bits, selectedRange, onTransform }: Trans
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => {
-                      const exp = operand;
-                      const result = ArithmeticOperations.power(bits, exp);
-                      onTransform(result, `Raised to power ${exp}`);
-                    }}
+                    onClick={() => handleArithmetic('power')}
                     className="text-xs"
                   >
                     Power
@@ -732,13 +762,21 @@ export const TransformationsPanel = ({ bits, selectedRange, onTransform }: Trans
           </Accordion>
         )}
 
-        {selectedRange && hasData && (
+        {hasSelection && hasData && (
           <Card className="p-3 bg-primary/10 border-primary/20">
-            <p className="text-xs text-muted-foreground">
-              <strong>Current selection:</strong> {selectedRange.end - selectedRange.start + 1} bits
-              <br />
-              Position: {selectedRange.start} - {selectedRange.end}
+            <p className="text-xs font-mono text-sm">
+              <strong className="text-primary">Selection Active:</strong>
             </p>
+            <div className="mt-2 space-y-1">
+              {selectedRanges.map((range, idx) => (
+                <div key={range.id} className="text-xs text-muted-foreground">
+                  Range {idx + 1}: {range.start} - {range.end} ({range.end - range.start + 1} bits)
+                </div>
+              ))}
+              <div className="text-xs text-primary font-medium mt-2">
+                Total: {selectedRanges.reduce((sum, r) => sum + (r.end - r.start + 1), 0)} bits
+              </div>
+            </div>
           </Card>
         )}
       </div>
