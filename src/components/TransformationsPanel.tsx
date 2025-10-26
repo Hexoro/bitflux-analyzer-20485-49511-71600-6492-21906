@@ -87,7 +87,8 @@ export const TransformationsPanel = ({ bits, selectedRanges, onTransform }: Tran
 
   // ============= LOGIC GATES =============
   const handleLogicGate = (operation: keyof typeof LogicGates) => {
-    if (!logicOperandB || !/^[01]+$/.test(logicOperandB)) return;
+    // NOT gate doesn't need operand B
+    if (operation !== 'NOT' && (!logicOperandB || !/^[01]+$/.test(logicOperandB))) return;
     
     applyTransformation((input) => {
       if (operation === 'NOT') {

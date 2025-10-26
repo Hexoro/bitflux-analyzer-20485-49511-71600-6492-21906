@@ -1,7 +1,11 @@
 import { CompressionMetrics } from '@/lib/enhancedMetrics';
 import { BinaryStats } from '@/lib/binaryMetrics';
+import { IdealityMetrics } from '@/lib/idealityMetrics';
 import { Button } from './ui/button';
 import { Card } from './ui/card';
+import { Input } from './ui/input';
+import { Label } from './ui/label';
+import { useState } from 'react';
 
 interface AnalysisPanelProps {
   stats: BinaryStats;
@@ -11,6 +15,10 @@ interface AnalysisPanelProps {
 }
 
 export const AnalysisPanel = ({ stats, bits, bitsPerRow, onJumpTo }: AnalysisPanelProps) => {
+  const [idealityWindowSize, setIdealityWindowSize] = useState('4');
+  const [idealityStart, setIdealityStart] = useState('0');
+  const [idealityEnd, setIdealityEnd] = useState(String(bits.length - 1));
+
   const formatBytes = (bytes: number) => {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(2)} KB`;
@@ -18,6 +26,21 @@ export const AnalysisPanel = ({ stats, bits, bitsPerRow, onJumpTo }: AnalysisPan
   };
 
   const enhanced = CompressionMetrics.analyze(bits, stats.entropy);
+
+  // Calculate file ideality
+  const calculateCurrentIdeality = () => {
+    const windowSize = parseInt(idealityWindowSize) || 4;
+    const start = Math.max(0, parseInt(idealityStart) || 0);
+    const end = Math.min(bits.length - 1, parseInt(idealityEnd) || bits.length - 1);
+    
+    if (windowSize < 2 || start >= end) {
+      return { idealityPercentage: 0, windowSize, repeatingCount: 0, totalBits: 0 };
+    }
+    
+    return IdealityMetrics.calculateIdeality(bits, windowSize, start, end);
+  };
+
+  const currentIdeality = calculateCurrentIdeality();
 
   return (
     <div className="h-full overflow-auto p-4 space-y-4 scrollbar-thin">
@@ -241,6 +264,75 @@ export const AnalysisPanel = ({ stats, bits, bitsPerRow, onJumpTo }: AnalysisPan
             <span className="text-foreground font-mono">
               {bits.length % 4 === 0 ? '✓ Aligned' : `✗ ${bits.length % 4} extra bits`}
             </span>
+          </div>
+        </div>
+      </Card>
+
+      {/* File Ideality */}
+      <Card className="p-4 bg-card border-border">
+        <h3 className="text-sm font-semibold text-primary mb-3">File Ideality</h3>
+        <div className="space-y-3">
+          <div className="grid grid-cols-3 gap-2">
+            <div>
+              <Label htmlFor="ideality-window" className="text-xs">Window Size</Label>
+              <Input
+                id="ideality-window"
+                type="number"
+                min="2"
+                value={idealityWindowSize}
+                onChange={(e) => setIdealityWindowSize(e.target.value)}
+                className="font-mono text-sm h-8"
+              />
+            </div>
+            <div>
+              <Label htmlFor="ideality-start" className="text-xs">Start Index</Label>
+              <Input
+                id="ideality-start"
+                type="number"
+                min="0"
+                max={bits.length - 1}
+                value={idealityStart}
+                onChange={(e) => setIdealityStart(e.target.value)}
+                className="font-mono text-sm h-8"
+              />
+            </div>
+            <div>
+              <Label htmlFor="ideality-end" className="text-xs">End Index</Label>
+              <Input
+                id="ideality-end"
+                type="number"
+                min="0"
+                max={bits.length - 1}
+                value={idealityEnd}
+                onChange={(e) => setIdealityEnd(e.target.value)}
+                className="font-mono text-sm h-8"
+              />
+            </div>
+          </div>
+          
+          <div className="space-y-2 text-sm">
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Ideality Percentage:</span>
+              <span className="text-foreground font-mono font-bold">
+                {currentIdeality.idealityPercentage}%
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Repeating Bits:</span>
+              <span className="text-foreground font-mono">
+                {currentIdeality.repeatingCount} / {currentIdeality.totalBits}
+              </span>
+            </div>
+            <div className="h-2 bg-secondary rounded-full overflow-hidden">
+              <div 
+                className="h-full bg-accent transition-all"
+                style={{ width: `${currentIdeality.idealityPercentage}%` }}
+              />
+            </div>
+          </div>
+          
+          <div className="mt-3 p-2 bg-secondary/50 rounded text-xs text-muted-foreground">
+            Ideality measures consecutive repeating patterns. Higher percentage means more repetition.
           </div>
         </div>
       </Card>

@@ -4,8 +4,10 @@ import { Card } from './ui/card';
 import { Button } from './ui/button';
 import { Switch } from './ui/switch';
 import { Label } from './ui/label';
+import { Input } from './ui/input';
 import { BarChart, Bar, LineChart, Line, AreaChart, Area, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { BinaryMetrics } from '@/lib/binaryMetrics';
+import { IdealityMetrics } from '@/lib/idealityMetrics';
 import type { Partition } from '@/lib/partitionManager';
 import { Download } from 'lucide-react';
 
@@ -20,6 +22,8 @@ export const DataGraphsDialog = ({ open, onOpenChange, binaryData, partitions }:
   const [showGrid, setShowGrid] = useState(true);
   const [animate, setAnimate] = useState(true);
   const [showLegend, setShowLegend] = useState(true);
+  const [idealityStart, setIdealityStart] = useState('0');
+  const [idealityEnd, setIdealityEnd] = useState(String(binaryData.length - 1));
 
   const stats = useMemo(() => BinaryMetrics.analyze(binaryData), [binaryData]);
 
@@ -153,6 +157,17 @@ export const DataGraphsDialog = ({ open, onOpenChange, binaryData, partitions }:
     }
     return data;
   }, [binaryData]);
+
+  const topIdealityWindows = useMemo(() => {
+    const start = Math.max(0, parseInt(idealityStart) || 0);
+    const end = Math.min(binaryData.length - 1, parseInt(idealityEnd) || binaryData.length - 1);
+    
+    if (start >= end || end - start < 4) {
+      return [];
+    }
+    
+    return IdealityMetrics.getTopIdealityWindows(binaryData, 10, start, end);
+  }, [binaryData, idealityStart, idealityEnd]);
 
   const exportChart = (chartId: string) => {
     // Future enhancement: export chart as PNG
@@ -356,6 +371,73 @@ export const DataGraphsDialog = ({ open, onOpenChange, binaryData, partitions }:
                   <Scatter data={complexityMetrics} fill={colors.primary} animationDuration={animate ? 1000 : 0} />
                 </ScatterChart>
               </ResponsiveContainer>
+            </Card>
+
+            {/* File Ideality - Top Window Sizes */}
+            <Card className="p-4">
+              <div className="flex items-center justify-between mb-4">
+                <div className="space-y-1">
+                  <h3 className="text-sm font-semibold">Top 10 Window Sizes by Ideality</h3>
+                  <div className="flex gap-2 items-center">
+                    <div className="flex items-center gap-1">
+                      <Label htmlFor="ideality-start-graph" className="text-xs">Start:</Label>
+                      <Input
+                        id="ideality-start-graph"
+                        type="number"
+                        min="0"
+                        max={binaryData.length - 1}
+                        value={idealityStart}
+                        onChange={(e) => setIdealityStart(e.target.value)}
+                        className="font-mono text-xs h-6 w-20"
+                      />
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Label htmlFor="ideality-end-graph" className="text-xs">End:</Label>
+                      <Input
+                        id="ideality-end-graph"
+                        type="number"
+                        min="0"
+                        max={binaryData.length - 1}
+                        value={idealityEnd}
+                        onChange={(e) => setIdealityEnd(e.target.value)}
+                        className="font-mono text-xs h-6 w-20"
+                      />
+                    </div>
+                  </div>
+                </div>
+                <Button size="sm" variant="ghost" onClick={() => exportChart('ideality')}>
+                  <Download className="w-3 h-3" />
+                </Button>
+              </div>
+              {topIdealityWindows.length > 0 ? (
+                <ResponsiveContainer width="100%" height={220}>
+                  <BarChart data={topIdealityWindows}>
+                    {showGrid && <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />}
+                    <XAxis 
+                      dataKey="windowSize" 
+                      stroke="hsl(var(--foreground))" 
+                      label={{ value: 'Window Size', position: 'insideBottom', offset: -5 }}
+                    />
+                    <YAxis 
+                      stroke="hsl(var(--foreground))" 
+                      label={{ value: 'Ideality %', angle: -90, position: 'insideLeft' }}
+                      domain={[0, 100]}
+                    />
+                    <Tooltip 
+                      contentStyle={{ backgroundColor: 'hsl(var(--background))', border: '1px solid hsl(var(--border))' }}
+                      formatter={(value: any, name: string, props: any) => [
+                        `${value}% (${props.payload.repeatingCount}/${props.payload.totalBits} bits)`,
+                        'Ideality'
+                      ]}
+                    />
+                    <Bar dataKey="idealityPercentage" fill={colors.accent} animationDuration={animate ? 1000 : 0} />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex items-center justify-center h-[220px] text-sm text-muted-foreground">
+                  Section too small for ideality analysis
+                </div>
+              )}
             </Card>
           </div>
 
