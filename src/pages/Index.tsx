@@ -42,6 +42,7 @@ const Index = () => {
   const [historyGroups, setHistoryGroups] = useState<any[]>([]);
   const [graphsDialogOpen, setGraphsDialogOpen] = useState(false);
   const [audioDialogOpen, setAudioDialogOpen] = useState(false);
+  const [idealBitIndices, setIdealBitIndices] = useState<number[]>([]);
   const viewerRef = useRef<any>(null);
 
   // Subscribe to file system changes
@@ -408,6 +409,7 @@ const Index = () => {
             bitsPerRow={bitsPerRow}
             highlightRanges={highlightRanges}
             editMode={editMode}
+            idealBitIndices={idealBitIndices}
           />
         </ResizablePanel>
 
@@ -429,7 +431,15 @@ const Index = () => {
 
             <div className="flex-1 overflow-hidden">
               <TabsContent value="analysis" className="h-full m-0">
-                {stats && <AnalysisPanel stats={stats} bits={bits} bitsPerRow={bitsPerRow} onJumpTo={handleJumpTo} />}
+                {stats && (
+                  <AnalysisPanel 
+                    stats={stats} 
+                    bits={bits} 
+                    bitsPerRow={bitsPerRow} 
+                    onJumpTo={handleJumpTo}
+                    onIdealityChange={setIdealBitIndices}
+                  />
+                )}
               </TabsContent>
 
               <TabsContent value="bitstream" className="h-full m-0">

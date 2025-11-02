@@ -12,12 +12,14 @@ interface AnalysisPanelProps {
   bits: string;
   bitsPerRow: number;
   onJumpTo: (index: number) => void;
+  onIdealityChange: (idealBitIndices: number[]) => void;
 }
 
-export const AnalysisPanel = ({ stats, bits, bitsPerRow, onJumpTo }: AnalysisPanelProps) => {
+export const AnalysisPanel = ({ stats, bits, bitsPerRow, onJumpTo, onIdealityChange }: AnalysisPanelProps) => {
   const [idealityWindowSize, setIdealityWindowSize] = useState('4');
   const [idealityStart, setIdealityStart] = useState('0');
   const [idealityEnd, setIdealityEnd] = useState(String(bits.length - 1));
+  const [showIdealBits, setShowIdealBits] = useState(false);
 
   const formatBytes = (bytes: number) => {
     if (bytes < 1024) return `${bytes} B`;
@@ -34,7 +36,7 @@ export const AnalysisPanel = ({ stats, bits, bitsPerRow, onJumpTo }: AnalysisPan
     const end = Math.min(bits.length - 1, parseInt(idealityEnd) || bits.length - 1);
     
     if (windowSize < 2 || start >= end) {
-      return { idealityPercentage: 0, windowSize, repeatingCount: 0, totalBits: 0 };
+      return { idealityPercentage: 0, windowSize, repeatingCount: 0, totalBits: 0, idealBitIndices: [] };
     }
     
     return IdealityMetrics.calculateIdeality(bits, windowSize, start, end);
@@ -309,6 +311,21 @@ export const AnalysisPanel = ({ stats, bits, bitsPerRow, onJumpTo }: AnalysisPan
               />
             </div>
           </div>
+          
+          <Button
+            onClick={() => {
+              setShowIdealBits(!showIdealBits);
+              if (!showIdealBits) {
+                onIdealityChange(currentIdeality.idealBitIndices);
+              } else {
+                onIdealityChange([]);
+              }
+            }}
+            variant={showIdealBits ? "default" : "outline"}
+            className="w-full mb-2"
+          >
+            {showIdealBits ? 'Hide Ideal Bits' : 'Show Ideal Bits'}
+          </Button>
           
           <div className="space-y-2 text-sm">
             <div className="flex justify-between">

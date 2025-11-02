@@ -6,13 +6,15 @@ interface BinaryViewerProps {
   bitsPerRow: number;
   highlightRanges?: Array<{ start: number; end: number; color: string }>;
   editMode: boolean;
+  idealBitIndices?: number[]; // Indices of bits that should be underlined
 }
 
 export const BinaryViewer = forwardRef<any, BinaryViewerProps>(({ 
   model, 
   bitsPerRow, 
   highlightRanges = [],
-  editMode
+  editMode,
+  idealBitIndices = []
 }, ref) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [cursorPosition, setCursorPosition] = useState(0);
@@ -217,6 +219,7 @@ export const BinaryViewer = forwardRef<any, BinaryViewerProps>(({
           {Array.from(rowBits).map((bit, colIndex) => {
             const bitIndex = startIndex + colIndex;
             const isCursor = editMode && bitIndex === cursorPosition && !selectedRange;
+            const isIdeal = idealBitIndices.includes(bitIndex);
             
             return (
               <span
@@ -227,12 +230,14 @@ export const BinaryViewer = forwardRef<any, BinaryViewerProps>(({
                   hover:brightness-125 transition-all
                   select-none font-bold px-1 rounded relative
                   ${isCursor ? 'ring-2 ring-primary animate-pulse' : ''}
+                  ${isIdeal ? 'underline decoration-2' : ''}
                 `}
                 style={{
                   backgroundColor: getBitBackground(bitIndex),
+                  textDecorationColor: isIdeal ? (bit === '1' ? 'hsl(var(--primary))' : 'hsl(var(--primary) / 0.6)') : undefined,
                 }}
                 onClick={() => handleBitClick(bitIndex)}
-                title={`Bit ${bitIndex}`}
+                title={`Bit ${bitIndex}${isIdeal ? ' (ideal)' : ''}`}
               >
                 {bit}
               </span>

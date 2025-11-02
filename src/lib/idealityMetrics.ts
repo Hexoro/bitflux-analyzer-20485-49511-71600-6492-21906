@@ -7,6 +7,7 @@ export interface IdealityResult {
   repeatingCount: number;
   totalBits: number;
   idealityPercentage: number;
+  idealBitIndices: number[]; // Global indices of bits that are part of repeating sequences
 }
 
 export class IdealityMetrics {
@@ -32,6 +33,7 @@ export class IdealityMetrics {
         repeatingCount: 0,
         totalBits: section.length,
         idealityPercentage: 0,
+        idealBitIndices: [],
       };
     }
 
@@ -69,8 +71,11 @@ export class IdealityMetrics {
       }
     }
 
-    // Count marked bits
+    // Count marked bits and get their global indices
     const repeatingCount = isIdealBit.filter(Boolean).length;
+    const idealBitIndices = isIdealBit
+      .map((isIdeal, idx) => (isIdeal ? startIndex + idx : -1))
+      .filter(idx => idx !== -1);
     const idealityPercentage = Math.floor((repeatingCount / section.length) * 100);
 
     return {
@@ -78,6 +83,7 @@ export class IdealityMetrics {
       repeatingCount,
       totalBits: section.length,
       idealityPercentage,
+      idealBitIndices,
     };
   }
 
