@@ -35,37 +35,42 @@ export class IdealityMetrics {
       };
     }
 
-    let repeatingCount = 0;
-    let i = 0;
+    // Track which bits are part of repeating sequences
+    const isIdealBit = new Array(section.length).fill(false);
 
-    while (i <= section.length - windowSize * 2) {
-      const pattern = section.substring(i, i + windowSize);
-      const nextPattern = section.substring(i + windowSize, i + windowSize * 2);
+    // Sliding window approach - try all starting positions
+    for (let n = 0; n <= section.length - windowSize * 2; n++) {
+      const pattern = section.substring(n, n + windowSize);
+      const nextPattern = section.substring(n + windowSize, n + windowSize * 2);
       
       if (pattern === nextPattern) {
-        // Found a repeating sequence
-        let repetitions = 2;
-        let currentPos = i + windowSize * 2;
+        // Found a repeating sequence, mark all bits in it
+        let currentPos = n;
         
-        // Check for more repetitions
+        // Mark the first two patterns
+        for (let i = n; i < n + windowSize * 2; i++) {
+          isIdealBit[i] = true;
+        }
+        
+        // Check for more consecutive repetitions
+        currentPos = n + windowSize * 2;
         while (currentPos + windowSize <= section.length) {
           const testPattern = section.substring(currentPos, currentPos + windowSize);
           if (testPattern === pattern) {
-            repetitions++;
+            // Mark this repetition too
+            for (let i = currentPos; i < currentPos + windowSize; i++) {
+              isIdealBit[i] = true;
+            }
             currentPos += windowSize;
           } else {
             break;
           }
         }
-        
-        // Count all bits in the repeating sequence
-        repeatingCount += repetitions * windowSize;
-        i = currentPos; // Skip past the repeating sequence
-      } else {
-        i++; // Move to next position
       }
     }
 
+    // Count marked bits
+    const repeatingCount = isIdealBit.filter(Boolean).length;
     const idealityPercentage = Math.floor((repeatingCount / section.length) * 100);
 
     return {
