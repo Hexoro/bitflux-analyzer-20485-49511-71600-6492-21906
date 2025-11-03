@@ -5,7 +5,7 @@ import { Slider } from './ui/slider';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Switch } from './ui/switch';
 import { Label } from './ui/label';
-import { Play, Pause, Square, Volume2, Download } from 'lucide-react';
+import { Play, Pause, Square, Volume2, Download, Repeat } from 'lucide-react';
 import { AudioExporter } from '@/lib/audioExport';
 import { useToast } from '@/hooks/use-toast';
 import { BinaryAudioGenerator } from '@/lib/audioUtils';
@@ -39,6 +39,7 @@ export const AudioVisualizerDialog = ({ open, onOpenChange, binaryData }: AudioV
   const [barSpacing, setBarSpacing] = useState([2]);
   const [glowIntensity, setGlowIntensity] = useState([15]);
   const [progress, setProgress] = useState(0);
+  const [isLooping, setIsLooping] = useState(false);
 
   // Initialize audio generator
   useEffect(() => {
@@ -163,6 +164,14 @@ export const AudioVisualizerDialog = ({ open, onOpenChange, binaryData }: AudioV
     }
   };
 
+  const handleToggleLoop = () => {
+    if (generatorRef.current) {
+      const newLoopState = !isLooping;
+      setIsLooping(newLoopState);
+      generatorRef.current.setLoop(newLoopState);
+    }
+  };
+
   const startVisualization = () => {
     const canvas = canvasRef.current;
     const analyser = generatorRef.current?.getAnalyser();
@@ -197,10 +206,10 @@ export const AudioVisualizerDialog = ({ open, onOpenChange, binaryData }: AudioV
         const duration = generatorRef.current.getDuration();
         if (duration > 0) {
           const progressPercent = (currentTime / duration) * 100;
-          setProgress(progressPercent);
+          setProgress(Math.min(progressPercent, 100));
           
-          // Stop when reaching end
-          if (progressPercent >= 99.9) {
+          // Stop when reaching end (if not looping)
+          if (progressPercent >= 99.9 && !generatorRef.current.getLoop()) {
             handleStop();
           }
         }
@@ -582,6 +591,14 @@ export const AudioVisualizerDialog = ({ open, onOpenChange, binaryData }: AudioV
               <Button onClick={handleStop} variant="outline" size="lg">
                 <Square className="w-4 h-4 mr-2" />
                 Stop
+              </Button>
+              <Button 
+                onClick={handleToggleLoop} 
+                variant={isLooping ? "default" : "outline"} 
+                size="lg"
+              >
+                <Repeat className="w-4 h-4 mr-2" />
+                Loop
               </Button>
             </div>
             <div className="flex gap-2">

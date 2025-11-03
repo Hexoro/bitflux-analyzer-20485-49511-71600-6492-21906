@@ -8,6 +8,10 @@ export class BinaryAudioGenerator {
   private startTime: number = 0;
   private pausedAt: number = 0;
   private isPlaying: boolean = false;
+  private isLooping: boolean = false;
+  private currentBuffer: AudioBuffer | null = null;
+  private currentVolume: number = 0.5;
+  private currentPlaybackRate: number = 1;
 
   constructor() {
     if (typeof window !== 'undefined') {
@@ -105,11 +109,31 @@ export class BinaryAudioGenerator {
 
     this.stop();
     
+    this.currentBuffer = buffer;
+    this.currentVolume = volume;
+    this.currentPlaybackRate = playbackRate;
+    
     this.sourceNode = this.audioContext.createBufferSource();
     this.sourceNode.buffer = buffer;
     this.sourceNode.playbackRate.value = playbackRate;
     this.sourceNode.connect(this.gainNode);
     this.gainNode.gain.value = volume;
+    
+    // Handle looping
+    if (this.isLooping) {
+      this.sourceNode.loop = true;
+    } else {
+      this.sourceNode.onended = () => {
+        if (this.isLooping && this.currentBuffer) {
+          // Restart playback
+          this.play(this.currentBuffer, this.currentVolume, this.currentPlaybackRate, 0);
+        } else {
+          this.isPlaying = false;
+          this.pausedAt = 0;
+        }
+      };
+    }
+    
     this.startTime = this.audioContext.currentTime - offset;
     this.pausedAt = offset;
     this.isPlaying = true;
@@ -147,6 +171,17 @@ export class BinaryAudioGenerator {
 
   getIsPlaying(): boolean {
     return this.isPlaying;
+  }
+
+  setLoop(loop: boolean) {
+    this.isLooping = loop;
+    if (this.sourceNode) {
+      this.sourceNode.loop = loop;
+    }
+  }
+
+  getLoop(): boolean {
+    return this.isLooping;
   }
 
   getDuration(): number {
