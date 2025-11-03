@@ -198,8 +198,6 @@ export const AudioVisualizerDialog = ({ open, onOpenChange, binaryData }: AudioV
   const draw = () => {
       if (!canvas || !ctx) return;
 
-      analyser.getByteFrequencyData(dataArray);
-
       // Update progress
       if (generatorRef.current) {
         const currentTime = generatorRef.current.getCurrentTime();
@@ -218,27 +216,40 @@ export const AudioVisualizerDialog = ({ open, onOpenChange, binaryData }: AudioV
       const width = canvas.offsetWidth;
       const height = canvas.offsetHeight;
 
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
-      ctx.fillRect(0, 0, width, height);
+      // Clear canvas differently based on visual style
+      if (visualStyle === 'particles') {
+        // Trail effect for particles
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+        ctx.fillRect(0, 0, width, height);
+      } else {
+        // Full clear for other styles
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, width, height);
+      }
 
       if (colorCycle) {
         colorIndex = (colorIndex + 0.01) % colors.length;
       }
 
+      // Get appropriate data for visualization
       switch (visualStyle) {
         case 'waveform':
           drawWaveform(ctx, analyser, width, height, colors);
           break;
         case 'bars':
+          analyser.getByteFrequencyData(dataArray);
           drawBars(ctx, dataArray, width, height, colors, colorIndex);
           break;
         case 'circle':
+          analyser.getByteFrequencyData(dataArray);
           drawCircle(ctx, dataArray, width, height, colors, colorIndex);
           break;
         case 'particles':
+          analyser.getByteFrequencyData(dataArray);
           drawParticles(ctx, dataArray, width, height, colors, colorIndex);
           break;
         case 'spiral':
+          analyser.getByteFrequencyData(dataArray);
           drawSpiral(ctx, dataArray, width, height, colors, colorIndex);
           break;
       }
