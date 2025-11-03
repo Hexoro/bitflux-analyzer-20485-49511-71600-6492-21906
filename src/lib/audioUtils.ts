@@ -6,6 +6,8 @@ export class BinaryAudioGenerator {
   private gainNode: GainNode | null = null;
   private analyserNode: AnalyserNode | null = null;
   private startTime: number = 0;
+  private pausedAt: number = 0;
+  private isPlaying: boolean = false;
 
   constructor() {
     if (typeof window !== 'undefined') {
@@ -98,7 +100,7 @@ export class BinaryAudioGenerator {
     }
   }
 
-  play(buffer: AudioBuffer, volume: number = 0.5, playbackRate: number = 1) {
+  play(buffer: AudioBuffer, volume: number = 0.5, playbackRate: number = 1, offset: number = 0) {
     if (!this.audioContext || !this.gainNode) return;
 
     this.stop();
@@ -106,16 +108,45 @@ export class BinaryAudioGenerator {
     this.sourceNode = this.audioContext.createBufferSource();
     this.sourceNode.buffer = buffer;
     this.sourceNode.playbackRate.value = playbackRate;
-    this.sourceNode.loop = true; // Enable looping
     this.sourceNode.connect(this.gainNode);
     this.gainNode.gain.value = volume;
-    this.startTime = this.audioContext.currentTime;
-    this.sourceNode.start(0);
+    this.startTime = this.audioContext.currentTime - offset;
+    this.pausedAt = offset;
+    this.isPlaying = true;
+    this.sourceNode.start(0, offset);
+  }
+
+  pause() {
+    if (!this.audioContext || !this.sourceNode || !this.isPlaying) return;
+    
+    this.pausedAt = this.audioContext.currentTime - this.startTime;
+    this.stop();
+    this.isPlaying = false;
+  }
+
+  resume(buffer: AudioBuffer, volume: number = 0.5, playbackRate: number = 1) {
+    if (!this.audioContext) return;
+    this.play(buffer, volume, playbackRate, this.pausedAt);
+  }
+
+  seek(buffer: AudioBuffer, time: number, volume: number = 0.5, playbackRate: number = 1) {
+    const wasPlaying = this.isPlaying;
+    this.stop();
+    if (wasPlaying) {
+      this.play(buffer, volume, playbackRate, time);
+    } else {
+      this.pausedAt = time;
+    }
   }
 
   getCurrentTime(): number {
-    if (!this.audioContext || !this.sourceNode) return 0;
+    if (!this.audioContext) return this.pausedAt;
+    if (!this.isPlaying) return this.pausedAt;
     return this.audioContext.currentTime - this.startTime;
+  }
+
+  getIsPlaying(): boolean {
+    return this.isPlaying;
   }
 
   getDuration(): number {
@@ -132,6 +163,9 @@ export class BinaryAudioGenerator {
       this.sourceNode.disconnect();
       this.sourceNode = null;
     }
+    this.isPlaying = false;
+    this.pausedAt = 0;
+    this.startTime = 0;
   }
 
   getAnalyser(): AnalyserNode | null {

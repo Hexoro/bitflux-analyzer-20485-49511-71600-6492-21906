@@ -5,7 +5,9 @@ import { Slider } from './ui/slider';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Switch } from './ui/switch';
 import { Label } from './ui/label';
-import { Play, Pause, Square, Volume2 } from 'lucide-react';
+import { Play, Pause, Square, Volume2, Download } from 'lucide-react';
+import { AudioExporter } from '@/lib/audioExport';
+import { useToast } from '@/hooks/use-toast';
 import { BinaryAudioGenerator } from '@/lib/audioUtils';
 
 interface AudioVisualizerDialogProps {
@@ -23,6 +25,7 @@ export const AudioVisualizerDialog = ({ open, onOpenChange, binaryData }: AudioV
   const animationRef = useRef<number>();
   const audioBufferRef = useRef<AudioBuffer | null>(null);
   const particlesRef = useRef<Array<{ x: number; y: number; vx: number; vy: number; life: number }>>([]);
+  const { toast } = useToast();
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [volume, setVolume] = useState([50]);
@@ -102,14 +105,18 @@ export const AudioVisualizerDialog = ({ open, onOpenChange, binaryData }: AudioV
 
   const handlePlay = () => {
     if (!generatorRef.current || !audioBufferRef.current) return;
-    generatorRef.current.play(audioBufferRef.current, volume[0] / 100, playbackRate[0] / 100);
+    if (generatorRef.current.getIsPlaying()) {
+      generatorRef.current.resume(audioBufferRef.current, volume[0] / 100, playbackRate[0] / 100);
+    } else {
+      generatorRef.current.play(audioBufferRef.current, volume[0] / 100, playbackRate[0] / 100);
+    }
     setIsPlaying(true);
     startVisualization();
   };
 
   const handlePause = () => {
     if (!generatorRef.current) return;
-    generatorRef.current.stop();
+    generatorRef.current.pause();
     setIsPlaying(false);
     if (animationRef.current) {
       cancelAnimationFrame(animationRef.current);
@@ -117,7 +124,43 @@ export const AudioVisualizerDialog = ({ open, onOpenChange, binaryData }: AudioV
   };
 
   const handleStop = () => {
-    handlePause();
+    if (!generatorRef.current) return;
+    generatorRef.current.stop();
+    setIsPlaying(false);
+    setProgress(0);
+    if (animationRef.current) {
+      cancelAnimationFrame(animationRef.current);
+    }
+  };
+
+  const handleSeek = (value: number[]) => {
+    if (!generatorRef.current || !audioBufferRef.current) return;
+    const duration = generatorRef.current.getDuration();
+    const seekTime = (value[0] / 100) * duration;
+    generatorRef.current.seek(audioBufferRef.current, seekTime, volume[0] / 100, playbackRate[0] / 100);
+    setProgress(value[0]);
+  };
+
+  const handleExportWAV = async () => {
+    if (!audioBufferRef.current) return;
+    try {
+      const blob = AudioExporter.toWAV(audioBufferRef.current);
+      AudioExporter.downloadBlob(blob, 'binary-audio.wav');
+      toast({ title: 'Success', description: 'Audio exported as WAV' });
+    } catch (error) {
+      toast({ title: 'Error', description: 'Failed to export audio', variant: 'destructive' });
+    }
+  };
+
+  const handleExportMP3 = async () => {
+    if (!audioBufferRef.current) return;
+    try {
+      const blob = await AudioExporter.toMP3(audioBufferRef.current);
+      AudioExporter.downloadBlob(blob, 'binary-audio.mp3');
+      toast({ title: 'Success', description: 'Audio exported as MP3' });
+    } catch (error) {
+      toast({ title: 'Error', description: 'Failed to export audio', variant: 'destructive' });
+    }
   };
 
   const startVisualization = () => {
@@ -153,7 +196,13 @@ export const AudioVisualizerDialog = ({ open, onOpenChange, binaryData }: AudioV
         const currentTime = generatorRef.current.getCurrentTime();
         const duration = generatorRef.current.getDuration();
         if (duration > 0) {
-          setProgress((currentTime % duration) / duration * 100);
+          const progressPercent = (currentTime / duration) * 100;
+          setProgress(progressPercent);
+          
+          // Stop when reaching end
+          if (progressPercent >= 99.9) {
+            handleStop();
+          }
         }
       }
 
@@ -415,20 +464,20 @@ export const AudioVisualizerDialog = ({ open, onOpenChange, binaryData }: AudioV
           <div className="flex-1 flex flex-col gap-4">
             <div className="space-y-2">
               <canvas ref={canvasRef} className="w-full h-80 bg-black rounded border border-border" />
-              {isPlaying && (
-                <div className="space-y-1">
-                  <div className="flex justify-between text-xs text-muted-foreground">
-                    <span>Progress</span>
-                    <span>{progress.toFixed(1)}%</span>
-                  </div>
-                  <div className="w-full h-2 bg-secondary rounded-full overflow-hidden">
-                    <div 
-                      className="h-full bg-primary transition-all duration-100" 
-                      style={{ width: `${progress}%` }}
-                    />
-                  </div>
+              <div className="space-y-1">
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>Progress</span>
+                  <span>{progress.toFixed(1)}%</span>
                 </div>
-              )}
+                <Slider 
+                  value={[progress]} 
+                  onValueChange={handleSeek}
+                  min={0} 
+                  max={100} 
+                  step={0.1}
+                  className="cursor-pointer"
+                />
+              </div>
             </div>
 
           <div className="grid grid-cols-3 gap-4">
@@ -520,19 +569,31 @@ export const AudioVisualizerDialog = ({ open, onOpenChange, binaryData }: AudioV
             </div>
           </div>
 
-          <div className="flex gap-2 justify-center pt-2">
-            <Button onClick={handlePlay} disabled={isPlaying} size="lg">
-              <Play className="w-4 h-4 mr-2" />
-              Play
-            </Button>
-            <Button onClick={handlePause} disabled={!isPlaying} variant="outline" size="lg">
-              <Pause className="w-4 h-4 mr-2" />
-              Pause
-            </Button>
-            <Button onClick={handleStop} variant="outline" size="lg">
-              <Square className="w-4 h-4 mr-2" />
-              Stop
-            </Button>
+          <div className="flex gap-2 justify-center pt-2 flex-wrap">
+            <div className="flex gap-2">
+              <Button onClick={handlePlay} disabled={isPlaying} size="lg">
+                <Play className="w-4 h-4 mr-2" />
+                Play
+              </Button>
+              <Button onClick={handlePause} disabled={!isPlaying} variant="outline" size="lg">
+                <Pause className="w-4 h-4 mr-2" />
+                Pause
+              </Button>
+              <Button onClick={handleStop} variant="outline" size="lg">
+                <Square className="w-4 h-4 mr-2" />
+                Stop
+              </Button>
+            </div>
+            <div className="flex gap-2">
+              <Button onClick={handleExportWAV} variant="secondary" size="lg">
+                <Download className="w-4 h-4 mr-2" />
+                Export WAV
+              </Button>
+              <Button onClick={handleExportMP3} variant="secondary" size="lg">
+                <Download className="w-4 h-4 mr-2" />
+                Export MP3
+              </Button>
+            </div>
           </div>
         </div>
         )}

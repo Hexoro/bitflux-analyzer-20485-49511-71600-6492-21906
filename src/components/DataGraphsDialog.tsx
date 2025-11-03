@@ -9,7 +9,9 @@ import { BarChart, Bar, LineChart, Line, AreaChart, Area, RadarChart, Radar, Pol
 import { BinaryMetrics } from '@/lib/binaryMetrics';
 import { IdealityMetrics } from '@/lib/idealityMetrics';
 import type { Partition } from '@/lib/partitionManager';
-import { Download } from 'lucide-react';
+import { Download, FileDown } from 'lucide-react';
+import { ChartExporter } from '@/lib/chartExport';
+import { useToast } from '@/hooks/use-toast';
 
 interface DataGraphsDialogProps {
   open: boolean;
@@ -19,6 +21,7 @@ interface DataGraphsDialogProps {
 }
 
 export const DataGraphsDialog = ({ open, onOpenChange, binaryData, partitions }: DataGraphsDialogProps) => {
+  const { toast } = useToast();
   const [showGrid, setShowGrid] = useState(true);
   const [animate, setAnimate] = useState(true);
   const [showLegend, setShowLegend] = useState(true);
@@ -169,9 +172,33 @@ export const DataGraphsDialog = ({ open, onOpenChange, binaryData, partitions }:
     return IdealityMetrics.getTopIdealityWindows(binaryData, 10, start, end);
   }, [binaryData, idealityStart, idealityEnd]);
 
-  const exportChart = (chartId: string) => {
-    // Future enhancement: export chart as PNG
-    console.log('Export chart:', chartId);
+  const exportChart = async (chartId: string, data: any[]) => {
+    try {
+      const element = document.getElementById(chartId);
+      if (!element) {
+        toast({ title: 'Error', description: 'Chart not found', variant: 'destructive' });
+        return;
+      }
+      
+      // Export as PNG
+      await ChartExporter.toPNG(element, `${chartId}.png`);
+      toast({ title: 'Success', description: 'Chart exported as PNG' });
+    } catch (error) {
+      toast({ title: 'Error', description: 'Failed to export chart', variant: 'destructive' });
+    }
+  };
+
+  const exportChartData = (chartId: string, data: any[], format: 'csv' | 'json') => {
+    try {
+      if (format === 'csv') {
+        ChartExporter.toCSV(data, `${chartId}.csv`);
+      } else {
+        ChartExporter.toJSON(data, `${chartId}.json`);
+      }
+      toast({ title: 'Success', description: `Data exported as ${format.toUpperCase()}` });
+    } catch (error) {
+      toast({ title: 'Error', description: 'Failed to export data', variant: 'destructive' });
+    }
   };
 
   const colors = {
@@ -237,12 +264,17 @@ export const DataGraphsDialog = ({ open, onOpenChange, binaryData, partitions }:
 
           <div className="grid grid-cols-2 gap-6">
             {/* Bit Distribution */}
-            <Card className="p-4">
+            <Card className="p-4" id="bit-distribution-chart">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-sm font-semibold">Bit Distribution</h3>
-                <Button size="sm" variant="ghost" onClick={() => exportChart('distribution')}>
-                  <Download className="w-3 h-3" />
-                </Button>
+                <div className="flex gap-1">
+                  <Button size="sm" variant="ghost" onClick={() => exportChart('bit-distribution-chart', bitDistribution)}>
+                    <Download className="w-3 h-3" />
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => exportChartData('bit-distribution', bitDistribution, 'csv')}>
+                    <FileDown className="w-3 h-3" />
+                  </Button>
+                </div>
               </div>
               <ResponsiveContainer width="100%" height={220}>
                 <BarChart data={bitDistribution}>
@@ -263,12 +295,17 @@ export const DataGraphsDialog = ({ open, onOpenChange, binaryData, partitions }:
             </Card>
 
             {/* Entropy Over Position */}
-            <Card className="p-4">
+            <Card className="p-4" id="entropy-chart">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-sm font-semibold">Entropy Analysis (Sliding Window)</h3>
-                <Button size="sm" variant="ghost" onClick={() => exportChart('entropy')}>
-                  <Download className="w-3 h-3" />
-                </Button>
+                <div className="flex gap-1">
+                  <Button size="sm" variant="ghost" onClick={() => exportChart('entropy-chart', entropyOverTime)}>
+                    <Download className="w-3 h-3" />
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => exportChartData('entropy', entropyOverTime, 'csv')}>
+                    <FileDown className="w-3 h-3" />
+                  </Button>
+                </div>
               </div>
               <ResponsiveContainer width="100%" height={220}>
                 <AreaChart data={entropyOverTime}>
@@ -284,12 +321,17 @@ export const DataGraphsDialog = ({ open, onOpenChange, binaryData, partitions }:
             </Card>
 
             {/* Byte Value Distribution */}
-            <Card className="p-4">
+            <Card className="p-4" id="byte-distribution-chart">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-sm font-semibold">Top 30 Byte Values (Frequency)</h3>
-                <Button size="sm" variant="ghost" onClick={() => exportChart('bytes')}>
-                  <Download className="w-3 h-3" />
-                </Button>
+                <div className="flex gap-1">
+                  <Button size="sm" variant="ghost" onClick={() => exportChart('byte-distribution-chart', byteDistribution)}>
+                    <Download className="w-3 h-3" />
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => exportChartData('byte-distribution', byteDistribution, 'csv')}>
+                    <FileDown className="w-3 h-3" />
+                  </Button>
+                </div>
               </div>
               <ResponsiveContainer width="100%" height={220}>
                 <BarChart data={byteDistribution}>
@@ -309,12 +351,17 @@ export const DataGraphsDialog = ({ open, onOpenChange, binaryData, partitions }:
             </Card>
 
             {/* Run Length Analysis */}
-            <Card className="p-4">
+            <Card className="p-4" id="run-length-chart">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-sm font-semibold">Run Length Distribution</h3>
-                <Button size="sm" variant="ghost" onClick={() => exportChart('runs')}>
-                  <Download className="w-3 h-3" />
-                </Button>
+                <div className="flex gap-1">
+                  <Button size="sm" variant="ghost" onClick={() => exportChart('run-length-chart', runLengthAnalysis)}>
+                    <Download className="w-3 h-3" />
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => exportChartData('run-length', runLengthAnalysis, 'csv')}>
+                    <FileDown className="w-3 h-3" />
+                  </Button>
+                </div>
               </div>
               <ResponsiveContainer width="100%" height={220}>
                 <LineChart data={runLengthAnalysis}>
@@ -330,12 +377,17 @@ export const DataGraphsDialog = ({ open, onOpenChange, binaryData, partitions }:
             </Card>
 
             {/* Autocorrelation */}
-            <Card className="p-4">
+            <Card className="p-4" id="autocorrelation-chart">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-sm font-semibold">Autocorrelation (Pattern Detection)</h3>
-                <Button size="sm" variant="ghost" onClick={() => exportChart('autocorr')}>
-                  <Download className="w-3 h-3" />
-                </Button>
+                <div className="flex gap-1">
+                  <Button size="sm" variant="ghost" onClick={() => exportChart('autocorrelation-chart', autocorrelation)}>
+                    <Download className="w-3 h-3" />
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => exportChartData('autocorrelation', autocorrelation, 'csv')}>
+                    <FileDown className="w-3 h-3" />
+                  </Button>
+                </div>
               </div>
               <ResponsiveContainer width="100%" height={220}>
                 <LineChart data={autocorrelation}>
@@ -349,12 +401,17 @@ export const DataGraphsDialog = ({ open, onOpenChange, binaryData, partitions }:
             </Card>
 
             {/* Complexity Metrics */}
-            <Card className="p-4">
+            <Card className="p-4" id="complexity-chart">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-sm font-semibold">Complexity Analysis</h3>
-                <Button size="sm" variant="ghost" onClick={() => exportChart('complexity')}>
-                  <Download className="w-3 h-3" />
-                </Button>
+                <div className="flex gap-1">
+                  <Button size="sm" variant="ghost" onClick={() => exportChart('complexity-chart', complexityMetrics)}>
+                    <Download className="w-3 h-3" />
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => exportChartData('complexity', complexityMetrics, 'csv')}>
+                    <FileDown className="w-3 h-3" />
+                  </Button>
+                </div>
               </div>
               <ResponsiveContainer width="100%" height={220}>
                 <ScatterChart>
@@ -374,7 +431,7 @@ export const DataGraphsDialog = ({ open, onOpenChange, binaryData, partitions }:
             </Card>
 
             {/* File Ideality - Top Window Sizes */}
-            <Card className="p-4">
+            <Card className="p-4" id="ideality-chart">
               <div className="flex items-center justify-between mb-4">
                 <div className="space-y-1">
                   <h3 className="text-sm font-semibold">Top 10 Window Sizes by Ideality</h3>
@@ -405,9 +462,14 @@ export const DataGraphsDialog = ({ open, onOpenChange, binaryData, partitions }:
                     </div>
                   </div>
                 </div>
-                <Button size="sm" variant="ghost" onClick={() => exportChart('ideality')}>
-                  <Download className="w-3 h-3" />
-                </Button>
+                <div className="flex gap-1">
+                  <Button size="sm" variant="ghost" onClick={() => exportChart('ideality-chart', topIdealityWindows)}>
+                    <Download className="w-3 h-3" />
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => exportChartData('ideality', topIdealityWindows, 'csv')}>
+                    <FileDown className="w-3 h-3" />
+                  </Button>
+                </div>
               </div>
               {topIdealityWindows.length > 0 ? (
                 <ResponsiveContainer width="100%" height={220}>
@@ -447,12 +509,17 @@ export const DataGraphsDialog = ({ open, onOpenChange, binaryData, partitions }:
               <h3 className="text-lg font-semibold">Partition Analysis</h3>
               
               <div className="grid grid-cols-2 gap-6">
-                <Card className="p-4">
+                <Card className="p-4" id="partitions-chart">
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="text-sm font-semibold">Partition Sizes & Bit Counts</h3>
-                    <Button size="sm" variant="ghost" onClick={() => exportChart('partitions')}>
-                      <Download className="w-3 h-3" />
-                    </Button>
+                    <div className="flex gap-1">
+                      <Button size="sm" variant="ghost" onClick={() => exportChart('partitions-chart', partitionComparison)}>
+                        <Download className="w-3 h-3" />
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => exportChartData('partitions', partitionComparison, 'csv')}>
+                        <FileDown className="w-3 h-3" />
+                      </Button>
+                    </div>
                   </div>
                   <ResponsiveContainer width="100%" height={250}>
                     <BarChart data={partitionComparison}>
@@ -467,12 +534,17 @@ export const DataGraphsDialog = ({ open, onOpenChange, binaryData, partitions }:
                   </ResponsiveContainer>
                 </Card>
 
-                <Card className="p-4">
+                <Card className="p-4" id="partition-entropy-chart">
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="text-sm font-semibold">Partition Entropy Comparison</h3>
-                    <Button size="sm" variant="ghost" onClick={() => exportChart('partition-entropy')}>
-                      <Download className="w-3 h-3" />
-                    </Button>
+                    <div className="flex gap-1">
+                      <Button size="sm" variant="ghost" onClick={() => exportChart('partition-entropy-chart', partitionComparison)}>
+                        <Download className="w-3 h-3" />
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => exportChartData('partition-entropy', partitionComparison, 'csv')}>
+                        <FileDown className="w-3 h-3" />
+                      </Button>
+                    </div>
                   </div>
                   <ResponsiveContainer width="100%" height={250}>
                     <RadarChart data={partitionComparison}>
