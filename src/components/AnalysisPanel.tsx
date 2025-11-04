@@ -35,7 +35,7 @@ export const AnalysisPanel = ({ stats, bits, bitsPerRow, onJumpTo, onIdealityCha
     const start = Math.max(0, parseInt(idealityStart) || 0);
     const end = Math.min(bits.length - 1, parseInt(idealityEnd) || bits.length - 1);
     
-    if (windowSize < 2 || start >= end) {
+    if (windowSize < 1 || start >= end) {
       return { idealityPercentage: 0, windowSize, repeatingCount: 0, totalBits: 0, idealBitIndices: [] };
     }
     
