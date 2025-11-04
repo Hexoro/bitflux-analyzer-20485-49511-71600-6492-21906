@@ -13,6 +13,7 @@ import {
   Edit,
   BarChart3,
   Music,
+  Grid3x3,
 } from 'lucide-react';
 
 interface ToolbarProps {
@@ -28,6 +29,7 @@ interface ToolbarProps {
   onToggleEdit: () => void;
   onDataGraphs: () => void;
   onAudioVisualizer: () => void;
+  onPatternHeatmap: () => void;
   canUndo: boolean;
   canRedo: boolean;
   editMode: boolean;
@@ -46,6 +48,7 @@ export const Toolbar = ({
   onToggleEdit,
   onDataGraphs,
   onAudioVisualizer,
+  onPatternHeatmap,
   canUndo,
   canRedo,
   editMode,
@@ -144,6 +147,10 @@ export const Toolbar = ({
         <Button onClick={onAudioVisualizer} variant="outline" size="sm">
           <Music className="w-4 h-4 mr-2" />
           Audio
+        </Button>
+        <Button onClick={onPatternHeatmap} variant="outline" size="sm">
+          <Grid3x3 className="w-4 h-4 mr-2" />
+          Heatmap
         </Button>
       </div>
     </div>

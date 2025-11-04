@@ -21,6 +21,7 @@ import { FileSystemSidebar } from '@/components/FileSystemSidebar';
 import { Toolbar } from '@/components/Toolbar';
 import { DataGraphsDialog } from '@/components/DataGraphsDialog';
 import { AudioVisualizerDialog } from '@/components/AudioVisualizerDialog';
+import { PatternHeatmapDialog } from '@/components/PatternHeatmapDialog';
 import { BitSelectionDialog } from '@/components/BitSelectionDialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable';
@@ -42,6 +43,7 @@ const Index = () => {
   const [historyGroups, setHistoryGroups] = useState<any[]>([]);
   const [graphsDialogOpen, setGraphsDialogOpen] = useState(false);
   const [audioDialogOpen, setAudioDialogOpen] = useState(false);
+  const [heatmapDialogOpen, setHeatmapDialogOpen] = useState(false);
   const [idealBitIndices, setIdealBitIndices] = useState<number[]>([]);
   const viewerRef = useRef<any>(null);
 
@@ -387,6 +389,7 @@ const Index = () => {
         onToggleEdit={() => setEditMode(!editMode)}
         onDataGraphs={() => setGraphsDialogOpen(true)}
         onAudioVisualizer={() => setAudioDialogOpen(true)}
+        onPatternHeatmap={() => setHeatmapDialogOpen(true)}
         canUndo={(activeFile.state.model as any).undoStack?.length > 0}
         canRedo={(activeFile.state.model as any).redoStack?.length > 0}
         editMode={editMode}
@@ -544,6 +547,12 @@ const Index = () => {
           binaryData={bits}
         />
       )}
+
+      <PatternHeatmapDialog
+        open={heatmapDialogOpen}
+        onOpenChange={setHeatmapDialogOpen}
+        binaryData={bits}
+      />
 
       {compareFile && stats && (
         <ComparisonDialog
