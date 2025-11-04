@@ -105,7 +105,7 @@ export class IdealityMetrics {
 
     const results: IdealityResult[] = [];
     
-    for (let windowSize = 2; windowSize <= maxWindowSize; windowSize++) {
+    for (let windowSize = 1; windowSize <= maxWindowSize; windowSize++) {
       const result = this.calculateIdeality(bits, windowSize, startIndex, endIndex);
       results.push(result);
     }
