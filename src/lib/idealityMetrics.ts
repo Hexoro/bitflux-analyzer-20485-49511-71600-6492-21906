@@ -22,7 +22,8 @@ export class IdealityMetrics {
     bits: string,
     windowSize: number,
     startIndex: number = 0,
-    endIndex?: number
+    endIndex?: number,
+    excludedBitIndices: Set<number> = new Set()
   ): IdealityResult {
     const end = endIndex ?? bits.length - 1;
     const section = bits.substring(startIndex, end + 1);
@@ -42,10 +43,29 @@ export class IdealityMetrics {
 
     // Sliding window approach - try all starting positions
     for (let n = 0; n <= section.length - windowSize * 2; n++) {
+      // Skip if this position is already marked in a higher window size
+      const globalIndex = startIndex + n;
+      if (excludedBitIndices.has(globalIndex)) {
+        continue;
+      }
+
       const pattern = section.substring(n, n + windowSize);
       const nextPattern = section.substring(n + windowSize, n + windowSize * 2);
       
       if (pattern === nextPattern) {
+        // Check if any bits in this potential sequence are already excluded
+        let hasExcludedBit = false;
+        for (let i = n; i < n + windowSize * 2; i++) {
+          if (excludedBitIndices.has(startIndex + i)) {
+            hasExcludedBit = true;
+            break;
+          }
+        }
+        
+        if (hasExcludedBit) {
+          continue;
+        }
+
         // Found a repeating sequence, mark all bits in it
         let currentPos = n;
         
@@ -59,6 +79,19 @@ export class IdealityMetrics {
         while (currentPos + windowSize <= section.length) {
           const testPattern = section.substring(currentPos, currentPos + windowSize);
           if (testPattern === pattern) {
+            // Check if this repetition has excluded bits
+            let hasExcluded = false;
+            for (let i = currentPos; i < currentPos + windowSize; i++) {
+              if (excludedBitIndices.has(startIndex + i)) {
+                hasExcluded = true;
+                break;
+              }
+            }
+            
+            if (hasExcluded) {
+              break;
+            }
+
             // Mark this repetition too
             for (let i = currentPos; i < currentPos + windowSize; i++) {
               isIdealBit[i] = true;
@@ -88,7 +121,9 @@ export class IdealityMetrics {
   }
 
   /**
-   * Calculate ideality for all window sizes from 2 to half of file size
+   * Calculate ideality for all window sizes from 1 to half of file size
+   * Higher window sizes take precedence - bits counted in larger patterns
+   * are excluded from smaller pattern calculations
    */
   static calculateAllIdealities(
     bits: string,
@@ -99,15 +134,23 @@ export class IdealityMetrics {
     const sectionLength = end - startIndex + 1;
     const maxWindowSize = Math.floor(sectionLength / 2);
     
-    if (maxWindowSize < 2) {
+    if (maxWindowSize < 1) {
       return [];
     }
 
     const results: IdealityResult[] = [];
+    const excludedBits = new Set<number>();
     
-    for (let windowSize = 1; windowSize <= maxWindowSize; windowSize++) {
-      const result = this.calculateIdeality(bits, windowSize, startIndex, endIndex);
-      results.push(result);
+    // Process from largest window size to smallest
+    // so larger patterns take precedence
+    for (let windowSize = maxWindowSize; windowSize >= 1; windowSize--) {
+      const result = this.calculateIdeality(bits, windowSize, startIndex, endIndex, excludedBits);
+      
+      // Add this window size's ideal bits to the excluded set
+      result.idealBitIndices.forEach(idx => excludedBits.add(idx));
+      
+      // Insert at the beginning to maintain ascending order by window size
+      results.unshift(result);
     }
 
     return results;
