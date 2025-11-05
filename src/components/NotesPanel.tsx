@@ -8,6 +8,66 @@ import { Plus, Pin, PinOff, Trash2, Download, Search, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { Separator } from './ui/separator';
 
+const COMMAND_REFERENCE = `# Binary Operations Command Reference
+
+## LOGIC GATES
+AND <operand>         - Bitwise AND (e.g., AND 1010)
+OR <operand>          - Bitwise OR (e.g., OR 1100)
+XOR <operand>         - Bitwise XOR (e.g., XOR 0110)
+NOT                   - Bitwise NOT (no operand)
+NAND <operand>        - Bitwise NAND (e.g., NAND 1010)
+NOR <operand>         - Bitwise NOR (e.g., NOR 1100)
+XNOR <operand>        - Bitwise XNOR (e.g., XNOR 0110)
+
+## SHIFT & ROTATE
+SHL <amount>          - Shift Left (logical, fill with 0s) (e.g., SHL 3)
+SHR <amount>          - Shift Right (logical, fill with 0s) (e.g., SHR 2)
+SAL <amount>          - Shift Arithmetic Left (preserve sign) (e.g., SAL 1)
+SAR <amount>          - Shift Arithmetic Right (preserve sign) (e.g., SAR 4)
+ROL <amount>          - Rotate Left (circular) (e.g., ROL 5)
+ROR <amount>          - Rotate Right (circular) (e.g., ROR 2)
+
+## BIT MANIPULATION
+DELETE                - Delete selected bits (requires selection)
+INSERT <pos> <bits>   - Insert bits at position (e.g., INSERT 10 1010)
+MOVE <dest>           - Move selection to position (requires single selection)
+PEEK <start> <length> - View bits without modifying (e.g., PEEK 5 8)
+MASK <op> <pattern>   - Apply mask (e.g., MASK AND 11110000)
+                        Operations: AND, OR, XOR
+REVERSE               - Reverse bit order
+
+## PACKING & ALIGNMENT
+PAD <dir> <len> <val> - Pad bits (e.g., PAD LEFT 32 0)
+                        Direction: LEFT, RIGHT
+                        Value: 0, 1
+ALIGN <type>          - Align to boundary (e.g., ALIGN BYTE)
+                        Type: BYTE (8-bit), NIBBLE (4-bit)
+
+## ARITHMETIC
+ADD <operand>         - Binary addition (e.g., ADD 10 or ADD 1010)
+SUB <operand>         - Binary subtraction (e.g., SUB 5)
+MUL <operand>         - Binary multiplication (e.g., MUL 3)
+DIV <operand>         - Binary division (e.g., DIV 2)
+MOD <operand>         - Binary modulo (e.g., MOD 4)
+POW <operand>         - Binary power (e.g., POW 2)
+Note: Operands can be decimal or binary
+
+## ADVANCED OPERATIONS
+GRAY TO               - Convert binary to Gray code
+GRAY FROM             - Convert Gray code to binary
+ENDIAN                - Swap endianness (byte order)
+
+## FIND & REPLACE
+REPLACE <find> <repl> - Replace all occurrences (e.g., REPLACE 01 10)
+
+## NOTES
+- Commands are case-insensitive
+- Binary patterns must contain only 0s and 1s
+- Some operations require bit selection (DELETE, MOVE)
+- Press Enter to execute command
+- Check command result for errors`;
+
+
 interface NotesPanelProps {
   notesManager: NotesManager;
   onUpdate?: () => void;
@@ -24,6 +84,13 @@ export const NotesPanel = ({ notesManager, onUpdate }: NotesPanelProps) => {
 
   useEffect(() => {
     refreshNotes();
+    // Add command reference note on first load
+    const existingNotes = notesManager.getNotes();
+    const hasCommandRef = existingNotes.some(n => n.tags?.includes('command-reference'));
+    if (!hasCommandRef) {
+      notesManager.addNote(COMMAND_REFERENCE, ['command-reference', 'documentation']);
+      refreshNotes();
+    }
   }, [notesManager]);
 
   const refreshNotes = () => {

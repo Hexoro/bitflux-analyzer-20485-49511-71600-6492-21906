@@ -5,6 +5,7 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { ScrollArea } from './ui/scroll-area';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from './ui/accordion';
+import { Textarea } from './ui/textarea';
 import { 
   FlipHorizontal, 
   Shuffle, 
@@ -17,7 +18,8 @@ import {
   Binary,
   GitBranch,
   Plus,
-  Minus
+  Minus,
+  Terminal
 } from 'lucide-react';
 import { LogicGates, ShiftOperations, BitManipulation, BitPacking, AdvancedBitOperations, ArithmeticOperations } from '@/lib/binaryOperations';
 import { Separator } from './ui/separator';
@@ -44,6 +46,8 @@ export const TransformationsPanel = ({ bits, selectedRanges, onTransform }: Tran
   const [padLength, setPadLength] = useState('');
   const [logicOperandB, setLogicOperandB] = useState('');
   const [operand, setOperand] = useState('10');
+  const [commandInput, setCommandInput] = useState('');
+  const [commandResult, setCommandResult] = useState('');
 
   const hasData = bits && bits.length > 0;
   const hasSelection = selectedRanges.length > 0;
@@ -270,6 +274,184 @@ export const TransformationsPanel = ({ bits, selectedRanges, onTransform }: Tran
     applyTransformation((input) => AdvancedBitOperations.swapEndianness(input), 'Swapped endianness');
   };
 
+  // ============= COMMAND PARSER =============
+  const parseCommand = (cmd: string): boolean => {
+    const trimmed = cmd.trim().toUpperCase();
+    const parts = trimmed.split(/\s+/);
+    
+    if (parts.length === 0) return false;
+    
+    try {
+      const command = parts[0];
+      
+      // Logic Gates
+      if (['AND', 'OR', 'XOR', 'NAND', 'NOR', 'XNOR'].includes(command)) {
+        if (parts.length < 2) throw new Error(`${command} requires operand`);
+        const operandB = parts[1];
+        if (!/^[01]+$/.test(operandB)) throw new Error('Operand must be binary');
+        applyTransformation((input) => LogicGates[command as keyof typeof LogicGates](input, operandB), `Applied ${command} gate`);
+        return true;
+      }
+      
+      if (command === 'NOT') {
+        applyTransformation((input) => LogicGates.NOT(input), 'Applied NOT gate');
+        return true;
+      }
+      
+      // Shifts & Rotations
+      if (['SHL', 'SHR', 'SAL', 'SAR', 'ROL', 'ROR'].includes(command)) {
+        const amount = parseInt(parts[1] || '1');
+        if (isNaN(amount) || amount < 1) throw new Error('Invalid shift amount');
+        
+        const shiftMap: Record<string, any> = {
+          'SHL': 'logicalLeft',
+          'SHR': 'logicalRight',
+          'SAL': 'arithmeticLeft',
+          'SAR': 'arithmeticRight',
+          'ROL': 'rotateLeft',
+          'ROR': 'rotateRight'
+        };
+        handleShift(shiftMap[command]);
+        return true;
+      }
+      
+      // Bit Manipulation
+      if (command === 'DELETE') {
+        if (!hasSelection) throw new Error('DELETE requires selection');
+        handleDelete();
+        return true;
+      }
+      
+      if (command === 'INSERT') {
+        if (parts.length < 3) throw new Error('INSERT requires position and bits');
+        const pos = parseInt(parts[1]);
+        const insertBits = parts[2];
+        if (isNaN(pos) || !/^[01]+$/.test(insertBits)) throw new Error('Invalid INSERT parameters');
+        const result = BitManipulation.insertBits(bits, pos, insertBits);
+        onTransform(result, `Inserted ${insertBits.length} bits at position ${pos}`);
+        return true;
+      }
+      
+      if (command === 'MOVE') {
+        if (!hasSelection || selectedRanges.length !== 1) throw new Error('MOVE requires single selection');
+        const dest = parseInt(parts[1]);
+        if (isNaN(dest)) throw new Error('Invalid destination');
+        const range = selectedRanges[0];
+        const result = BitManipulation.moveBits(bits, range.start, range.end + 1, dest);
+        onTransform(result, `Moved bits ${range.start}-${range.end} to position ${dest}`);
+        return true;
+      }
+      
+      if (command === 'PEEK') {
+        if (parts.length < 3) throw new Error('PEEK requires start and length');
+        const start = parseInt(parts[1]);
+        const length = parseInt(parts[2]);
+        const result = BitManipulation.peekBits(bits, start, length);
+        setCommandResult(`Peek result: ${result}`);
+        return true;
+      }
+      
+      if (command === 'MASK') {
+        if (parts.length < 3) throw new Error('MASK requires operation (AND/OR/XOR) and pattern');
+        const op = parts[1] as 'AND' | 'OR' | 'XOR';
+        const pattern = parts[2];
+        if (!['AND', 'OR', 'XOR'].includes(op)) throw new Error('Invalid mask operation');
+        if (!/^[01]+$/.test(pattern)) throw new Error('Pattern must be binary');
+        applyTransformation((input) => BitManipulation.applyMask(input, pattern, op), `Applied ${op} mask`);
+        return true;
+      }
+      
+      if (command === 'REVERSE') {
+        handleReverse();
+        return true;
+      }
+      
+      // Packing & Alignment
+      if (command === 'PAD') {
+        if (parts.length < 4) throw new Error('PAD requires direction, length, and value');
+        const direction = parts[1].toLowerCase() as 'left' | 'right';
+        const length = parseInt(parts[2]);
+        const padWith = parts[3] as '0' | '1';
+        if (!['left', 'right'].includes(direction)) throw new Error('Direction must be LEFT or RIGHT');
+        if (isNaN(length)) throw new Error('Invalid length');
+        if (!['0', '1'].includes(padWith)) throw new Error('Pad value must be 0 or 1');
+        handlePadding(direction, padWith);
+        return true;
+      }
+      
+      if (command === 'ALIGN') {
+        if (parts.length < 2) throw new Error('ALIGN requires type (BYTE/NIBBLE)');
+        const type = parts[1].toLowerCase() as 'byte' | 'nibble';
+        if (!['byte', 'nibble'].includes(type)) throw new Error('Type must be BYTE or NIBBLE');
+        handleAlign(type);
+        return true;
+      }
+      
+      // Arithmetic
+      if (['ADD', 'SUB', 'MUL', 'DIV', 'MOD', 'POW'].includes(command)) {
+        if (parts.length < 2) throw new Error(`${command} requires operand`);
+        const operandValue = parts[1];
+        const op = operandValue.match(/^[01]+$/) ? operandValue : ArithmeticOperations.fromDecimal(parseInt(operandValue) || 0);
+        
+        const opMap: Record<string, any> = {
+          'ADD': 'add',
+          'SUB': 'subtract',
+          'MUL': 'multiply',
+          'DIV': 'divide',
+          'MOD': 'modulo',
+          'POW': 'power'
+        };
+        handleArithmetic(opMap[command]);
+        return true;
+      }
+      
+      // Advanced
+      if (command === 'GRAY') {
+        if (parts.length < 2) throw new Error('GRAY requires TO or FROM');
+        const direction = parts[1];
+        if (direction === 'TO') {
+          handleGrayCode('toGray');
+        } else if (direction === 'FROM') {
+          handleGrayCode('fromGray');
+        } else {
+          throw new Error('GRAY requires TO or FROM');
+        }
+        return true;
+      }
+      
+      if (command === 'ENDIAN') {
+        handleSwapEndianness();
+        return true;
+      }
+      
+      // Find & Replace
+      if (command === 'REPLACE') {
+        if (parts.length < 3) throw new Error('REPLACE requires find and replace patterns');
+        const find = parts[1];
+        const replace = parts[2];
+        if (!/^[01]+$/.test(find) || !/^[01]+$/.test(replace)) throw new Error('Patterns must be binary');
+        const replaced = bits.split(find).join(replace);
+        const count = (bits.match(new RegExp(find, 'g')) || []).length;
+        onTransform(replaced, `Replaced ${count} occurrence(s) of "${find}"`);
+        return true;
+      }
+      
+      throw new Error(`Unknown command: ${command}`);
+    } catch (error: any) {
+      setCommandResult(`Error: ${error.message}`);
+      return false;
+    }
+  };
+
+  const handleExecuteCommand = () => {
+    if (!commandInput.trim()) return;
+    setCommandResult('');
+    const success = parseCommand(commandInput);
+    if (success) {
+      setCommandInput('');
+    }
+  };
+
   const popCount = hasData ? AdvancedBitOperations.populationCount(bits) : 0;
   const transitionCount = hasData ? AdvancedBitOperations.countTransitions(bits) : 0;
 
@@ -301,7 +483,46 @@ export const TransformationsPanel = ({ bits, selectedRanges, onTransform }: Tran
         )}
 
         {hasData && (
-          <Accordion type="multiple" defaultValue={['logic', 'shift', 'manipulation']} className="space-y-2">
+          <Accordion type="multiple" defaultValue={['command']} className="space-y-2">
+            {/* COMMAND INTERFACE */}
+            <AccordionItem value="command" className="border rounded-lg bg-card px-4">
+              <AccordionTrigger className="text-sm font-semibold hover:no-underline">
+                <div className="flex items-center gap-2">
+                  <Terminal className="w-4 h-4" />
+                  Command Interface
+                </div>
+              </AccordionTrigger>
+              <AccordionContent className="space-y-3 pt-2">
+                <div className="space-y-2">
+                  <Label htmlFor="command" className="text-xs">Enter Command</Label>
+                  <Textarea
+                    id="command"
+                    value={commandInput}
+                    onChange={(e) => setCommandInput(e.target.value)}
+                    placeholder="e.g., AND 1010, SHL 3, REPLACE 01 10"
+                    className="font-mono text-sm min-h-[60px]"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        handleExecuteCommand();
+                      }
+                    }}
+                  />
+                  <Button onClick={handleExecuteCommand} variant="default" size="sm" className="w-full">
+                    Execute Command
+                  </Button>
+                  {commandResult && (
+                    <Card className="p-2 bg-secondary/50">
+                      <p className="text-xs font-mono break-all">{commandResult}</p>
+                    </Card>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Check the Notes panel for complete command reference
+                </p>
+              </AccordionContent>
+            </AccordionItem>
+
             {/* LOGIC GATES */}
             <AccordionItem value="logic" className="border rounded-lg bg-card px-4">
               <AccordionTrigger className="text-sm font-semibold hover:no-underline">
