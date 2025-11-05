@@ -29,7 +29,7 @@ export const AnalysisPanel = ({ stats, bits, bitsPerRow, onJumpTo, onIdealityCha
 
   const enhanced = CompressionMetrics.analyze(bits, stats.entropy);
 
-  // Calculate file ideality
+  // Calculate file ideality with hierarchical exclusion
   const calculateCurrentIdeality = () => {
     const windowSize = parseInt(idealityWindowSize) || 4;
     const start = Math.max(0, parseInt(idealityStart) || 0);
@@ -39,7 +39,13 @@ export const AnalysisPanel = ({ stats, bits, bitsPerRow, onJumpTo, onIdealityCha
       return { idealityPercentage: 0, windowSize, repeatingCount: 0, totalBits: 0, idealBitIndices: [] };
     }
     
-    return IdealityMetrics.calculateIdeality(bits, windowSize, start, end);
+    // Use calculateAllIdealities to get hierarchical results (higher windows take priority)
+    const allResults = IdealityMetrics.calculateAllIdealities(bits, start, end);
+    
+    // Find the result for the requested window size
+    const result = allResults.find(r => r.windowSize === windowSize);
+    
+    return result || { idealityPercentage: 0, windowSize, repeatingCount: 0, totalBits: end - start + 1, idealBitIndices: [] };
   };
 
   const currentIdeality = calculateCurrentIdeality();
