@@ -353,13 +353,165 @@ export class BinaryModel {
     this.listeners.forEach(listener => listener());
   }
 
-  // Utility: Generate random bits
-  static generateRandom(length: number, probability: number = 0.5): string {
+  // Static utility methods
+  
+  /**
+   * Generate random binary string
+   */
+  static generateRandom(length: number, probability: number = 0.5, seed?: string): string {
+    // Simple seeded random if seed is provided
+    let random = Math.random;
+    if (seed) {
+      let seedValue = 0;
+      for (let i = 0; i < seed.length; i++) {
+        seedValue = ((seedValue << 5) - seedValue) + seed.charCodeAt(i);
+        seedValue = seedValue & seedValue;
+      }
+      random = () => {
+        seedValue = (seedValue * 9301 + 49297) % 233280;
+        return seedValue / 233280;
+      };
+    }
+    
     let bits = '';
     for (let i = 0; i < length; i++) {
-      bits += Math.random() < probability ? '1' : '0';
+      bits += random() < probability ? '1' : '0';
     }
     return bits;
+  }
+
+  /**
+   * Generate from a repeating pattern
+   */
+  static generateFromPattern(pattern: string, length: number, noise: number = 0): string {
+    if (!pattern) return '';
+    
+    let bits = '';
+    for (let i = 0; i < length; i++) {
+      const patternBit = pattern[i % pattern.length];
+      // Add noise if specified
+      if (noise > 0 && Math.random() < noise) {
+        bits += patternBit === '1' ? '0' : '1';
+      } else {
+        bits += patternBit;
+      }
+    }
+    return bits;
+  }
+
+  /**
+   * Generate structured data from templates
+   */
+  static generateStructured(template: string, length: number, blockSize?: number): string {
+    switch (template) {
+      case 'zeros':
+        return '0'.repeat(length);
+      
+      case 'ones':
+        return '1'.repeat(length);
+      
+      case 'alternating':
+        return '01'.repeat(Math.ceil(length / 2)).substring(0, length);
+      
+      case 'blocks': {
+        const size = blockSize || 8;
+        let bits = '';
+        let current = '0';
+        for (let i = 0; i < length; i += size) {
+          bits += current.repeat(Math.min(size, length - i));
+          current = current === '0' ? '1' : '0';
+        }
+        return bits;
+      }
+      
+      case 'gray-code': {
+        let bits = '';
+        for (let i = 0; i < length; i++) {
+          const grayCode = i ^ (i >> 1);
+          const bit = (grayCode >> (i % 8)) & 1;
+          bits += bit.toString();
+        }
+        return bits;
+      }
+      
+      case 'fibonacci': {
+        let bits = '';
+        let a = 0, b = 1;
+        for (let i = 0; i < length; i++) {
+          bits += (b % 2).toString();
+          const temp = a + b;
+          a = b;
+          b = temp;
+        }
+        return bits;
+      }
+      
+      default:
+        return this.generateRandom(length, 0.5);
+    }
+  }
+
+  /**
+   * Generate data with target entropy
+   */
+  static generateWithEntropy(length: number, targetEntropy: number): string {
+    // Entropy is maximized at p=0.5, minimized at p=0 or p=1
+    // For binary, entropy H = -p*log2(p) - (1-p)*log2(1-p)
+    // Solve for p given target entropy
+    
+    if (targetEntropy >= 1) {
+      return this.generateRandom(length, 0.5);
+    }
+    
+    if (targetEntropy <= 0) {
+      return '0'.repeat(length);
+    }
+    
+    // Binary search for probability that gives target entropy
+    let low = 0, high = 0.5;
+    let bestP = 0.5;
+    
+    for (let iter = 0; iter < 20; iter++) {
+      const p = (low + high) / 2;
+      const entropy = p > 0 && p < 1 
+        ? -p * Math.log2(p) - (1 - p) * Math.log2(1 - p)
+        : 0;
+      
+      if (Math.abs(entropy - targetEntropy) < 0.01) {
+        bestP = p;
+        break;
+      }
+      
+      if (entropy < targetEntropy) {
+        low = p;
+      } else {
+        high = p;
+      }
+      bestP = p;
+    }
+    
+    return this.generateRandom(length, bestP);
+  }
+
+  /**
+   * Generate file format with header, data, and checksum
+   */
+  static generateFileFormat(length: number, headerPattern: string = '11111111'): string {
+    const headerLength = headerPattern.length;
+    const checksumLength = 8;
+    const dataLength = length - headerLength - checksumLength;
+    
+    if (dataLength <= 0) {
+      return this.generateRandom(length, 0.5);
+    }
+    
+    const data = this.generateRandom(dataLength, 0.5);
+    
+    // Simple checksum (count of 1s modulo 256)
+    const onesCount = data.split('').filter(b => b === '1').length;
+    const checksum = (onesCount % 256).toString(2).padStart(8, '0');
+    
+    return headerPattern + data + checksum;
   }
 
   // Utility: Load from file (text format: only 0s and 1s)

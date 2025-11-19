@@ -1,11 +1,16 @@
 import { CompressionMetrics } from '@/lib/enhancedMetrics';
+import { AdvancedMetricsCalculator } from '@/lib/advancedMetrics';
 import { BinaryStats } from '@/lib/binaryMetrics';
+import { PatternAnalysis } from '@/lib/bitstreamAnalysis';
 import { IdealityMetrics } from '@/lib/idealityMetrics';
 import { Button } from './ui/button';
 import { Card } from './ui/card';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
-import { useState } from 'react';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from './ui/accordion';
+import { Progress } from './ui/progress';
+import { useState, useMemo } from 'react';
+import { toast } from 'sonner';
 
 interface AnalysisPanelProps {
   stats: BinaryStats;
@@ -27,9 +32,9 @@ export const AnalysisPanel = ({ stats, bits, bitsPerRow, onJumpTo, onIdealityCha
     return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
   };
 
-  const enhanced = CompressionMetrics.analyze(bits, stats.entropy);
+  const enhanced = useMemo(() => CompressionMetrics.analyze(bits, stats.entropy), [bits, stats.entropy]);
+  const advanced = useMemo(() => AdvancedMetricsCalculator.analyze(bits, stats.entropy), [bits, stats.entropy]);
 
-  // Calculate file ideality with hierarchical exclusion
   const calculateCurrentIdeality = () => {
     const windowSize = parseInt(idealityWindowSize) || 4;
     const start = Math.max(0, parseInt(idealityStart) || 0);
@@ -39,10 +44,7 @@ export const AnalysisPanel = ({ stats, bits, bitsPerRow, onJumpTo, onIdealityCha
       return { idealityPercentage: 0, windowSize, repeatingCount: 0, totalBits: 0, idealBitIndices: [] };
     }
     
-    // Use calculateAllIdealities to get hierarchical results (higher windows take priority)
     const allResults = IdealityMetrics.calculateAllIdealities(bits, start, end);
-    
-    // Find the result for the requested window size
     const result = allResults.find(r => r.windowSize === windowSize);
     
     return result || { idealityPercentage: 0, windowSize, repeatingCount: 0, totalBits: end - start + 1, idealBitIndices: [] };
@@ -50,315 +52,163 @@ export const AnalysisPanel = ({ stats, bits, bitsPerRow, onJumpTo, onIdealityCha
 
   const currentIdeality = calculateCurrentIdeality();
 
+  const topPatterns = useMemo(() => {
+    const patterns8 = PatternAnalysis.findAllPatterns(bits, 8, 2);
+    return patterns8.slice(0, 5);
+  }, [bits]);
+
+  const exportMetrics = () => {
+    const allMetrics = {
+      basic: stats,
+      enhanced,
+      advanced: {
+        ...advanced,
+        bigramDistribution: Array.from(advanced.bigramDistribution.entries()),
+        trigramDistribution: Array.from(advanced.trigramDistribution.entries()),
+        nybbleDistribution: Array.from(advanced.nybbleDistribution.entries()),
+        byteDistribution: Array.from(advanced.byteDistribution.entries()),
+      },
+      ideality: currentIdeality,
+    };
+    
+    const json = JSON.stringify(allMetrics, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'binary-analysis-metrics.json';
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success('Metrics exported successfully');
+  };
+
   return (
     <div className="h-full overflow-auto p-4 space-y-4 scrollbar-thin">
-      {/* File Info */}
-      <Card className="p-4 bg-card border-border">
-        <h3 className="text-sm font-semibold text-primary mb-3">File Information</h3>
-        <div className="space-y-2 text-sm">
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Total Size:</span>
-            <span className="text-foreground font-mono">{stats.totalBits} bits ({formatBytes(stats.totalBytes)})</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Bits per Row:</span>
-            <span className="text-foreground font-mono">{bitsPerRow}</span>
-          </div>
-        </div>
-      </Card>
+      <div className="flex justify-between items-center">
+        <h2 className="text-lg font-semibold text-primary">Comprehensive Analysis</h2>
+        <Button variant="outline" size="sm" onClick={exportMetrics}>
+          Export Metrics
+        </Button>
+      </div>
 
-      {/* Distribution */}
-      <Card className="p-4 bg-card border-border">
-        <h3 className="text-sm font-semibold text-primary mb-3">Bit Distribution</h3>
-        <div className="space-y-3">
-          <div>
-            <div className="flex justify-between text-sm mb-1">
-              <span className="text-muted-foreground">Zeros (0)</span>
-              <span className="text-foreground font-mono">{stats.zeroCount} ({stats.zeroPercent.toFixed(2)}%)</span>
-            </div>
-            <div className="h-2 bg-secondary rounded-full overflow-hidden">
-              <div 
-                className="h-full bg-primary transition-all"
-                style={{ width: `${stats.zeroPercent}%` }}
-              />
-            </div>
-          </div>
-          
-          <div>
-            <div className="flex justify-between text-sm mb-1">
-              <span className="text-muted-foreground">Ones (1)</span>
-              <span className="text-foreground font-mono">{stats.oneCount} ({stats.onePercent.toFixed(2)}%)</span>
-            </div>
-            <div className="h-2 bg-secondary rounded-full overflow-hidden">
-              <div 
-                className="h-full bg-primary transition-all"
-                style={{ width: `${stats.onePercent}%` }}
-              />
-            </div>
-          </div>
-        </div>
-      </Card>
-
-      {/* Entropy & Compression */}
-      <Card className="p-4 bg-card border-border">
-        <h3 className="text-sm font-semibold text-primary mb-3">Entropy & Compression</h3>
-        <div className="space-y-2 text-sm">
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Shannon Entropy:</span>
-            <span className="text-foreground font-mono">{stats.entropy.toFixed(4)} bits/symbol</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Hamming Weight:</span>
-            <span className="text-foreground font-mono">
-              {enhanced.hammingWeight} ({enhanced.hammingWeightPercent.toFixed(2)}%)
-            </span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Compression Ratio:</span>
-            <span className="text-foreground font-mono">{enhanced.estimatedCompressionRatio.toFixed(2)}:1</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Mean Run Length:</span>
-            <span className="text-foreground font-mono">{stats.meanRunLength.toFixed(2)} bits</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Est. Compressed:</span>
-            <span className="text-foreground font-mono">{formatBytes(stats.estimatedCompressedSize)}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Max Compressible:</span>
-            <span className="text-foreground font-mono">{formatBytes(Math.max(1, Math.ceil(stats.totalBits * stats.entropy / 8)))}</span>
-          </div>
-          {enhanced.longestRepeatedSubstring && (
-            <div className="mt-3 p-2 bg-secondary/50 rounded">
-              <div className="text-xs text-muted-foreground mb-1">Longest Repeated Pattern:</div>
-              <div className="font-mono text-xs text-primary break-all mb-1">
-                {enhanced.longestRepeatedSubstring.sequence}
+      <Accordion type="multiple" defaultValue={["file-info", "compression", "patterns"]} className="space-y-2">
+        <AccordionItem value="file-info" className="border-border">
+          <AccordionTrigger className="text-sm font-semibold text-primary hover:no-underline px-4 py-2 bg-card rounded-t-lg">
+            File Information
+          </AccordionTrigger>
+          <AccordionContent className="p-4 bg-card rounded-b-lg border-t border-border">
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Total Size:</span>
+                <span className="text-foreground font-mono">{stats.totalBits} bits ({formatBytes(stats.totalBytes)})</span>
               </div>
-              <div className="text-xs text-muted-foreground">
-                Length: {enhanced.longestRepeatedSubstring.length} bits, 
-                Occurs: {enhanced.longestRepeatedSubstring.count} times
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Bits per Row:</span>
+                <span className="text-foreground font-mono">{bitsPerRow}</span>
               </div>
             </div>
-          )}
-          <div className="mt-2 p-2 bg-secondary/50 rounded text-xs text-muted-foreground">
-            Entropy of 1.0 = maximum randomness (perfectly random)
-            <br />
-            Entropy of 0.0 = no randomness (all same bit)
-          </div>
-        </div>
-      </Card>
+          </AccordionContent>
+        </AccordionItem>
 
-      {/* Longest Sequences */}
-      <Card className="p-4 bg-card border-border">
-        <h3 className="text-sm font-semibold text-primary mb-3">Longest Sequences</h3>
-        <div className="space-y-3">
-          {stats.longestZeroRun && (
-            <div className="p-3 bg-secondary/30 rounded-lg">
-              <div className="flex justify-between items-start mb-2">
-                <span className="text-sm text-muted-foreground">Longest 0s</span>
-                <Button 
-                  size="sm" 
-                  variant="outline"
-                  onClick={() => onJumpTo(stats.longestZeroRun!.start)}
-                  className="h-6 text-xs"
-                >
-                  Jump to
-                </Button>
-              </div>
-              <div className="text-sm space-y-1">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Length:</span>
-                  <span className="text-foreground font-mono">{stats.longestZeroRun.length} bits</span>
+        <AccordionItem value="distribution" className="border-border">
+          <AccordionTrigger className="text-sm font-semibold text-primary hover:no-underline px-4 py-2 bg-card rounded-t-lg">
+            Bit Distribution
+          </AccordionTrigger>
+          <AccordionContent className="p-4 bg-card rounded-b-lg border-t border-border">
+            <div className="space-y-3">
+              <div>
+                <div className="flex justify-between text-sm mb-1">
+                  <span className="text-muted-foreground">Zeros (0)</span>
+                  <span className="text-foreground font-mono">{stats.zeroCount} ({stats.zeroPercent.toFixed(2)}%)</span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Position:</span>
-                  <span className="text-foreground font-mono">{stats.longestZeroRun.start} - {stats.longestZeroRun.end}</span>
+                <Progress value={stats.zeroPercent} className="h-2" />
+              </div>
+              <div>
+                <div className="flex justify-between text-sm mb-1">
+                  <span className="text-muted-foreground">Ones (1)</span>
+                  <span className="text-foreground font-mono">{stats.oneCount} ({stats.onePercent.toFixed(2)}%)</span>
                 </div>
+                <Progress value={stats.onePercent} className="h-2" />
               </div>
             </div>
-          )}
+          </AccordionContent>
+        </AccordionItem>
 
-          {stats.longestOneRun && (
-            <div className="p-3 bg-secondary/30 rounded-lg">
-              <div className="flex justify-between items-start mb-2">
-                <span className="text-sm text-muted-foreground">Longest 1s</span>
-                <Button 
-                  size="sm" 
-                  variant="outline"
-                  onClick={() => onJumpTo(stats.longestOneRun!.start)}
-                  className="h-6 text-xs"
-                >
-                  Jump to
-                </Button>
+        <AccordionItem value="compression" className="border-border">
+          <AccordionTrigger className="text-sm font-semibold text-primary hover:no-underline px-4 py-2 bg-card rounded-t-lg">
+            Compression & Binary Metrics
+          </AccordionTrigger>
+          <AccordionContent className="p-4 bg-card rounded-b-lg border-t border-border">
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between"><span className="text-muted-foreground">Shannon Entropy:</span><span className="text-foreground font-mono">{stats.entropy.toFixed(4)}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">RLE Ratio:</span><span className="text-foreground font-mono">{advanced.compressionEstimates.rle.toFixed(2)}:1</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Huffman (est):</span><span className="text-foreground font-mono">{advanced.compressionEstimates.huffman.toFixed(2)}:1</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Variance:</span><span className="text-foreground font-mono">{advanced.variance.toFixed(4)}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Chi-Square:</span><span className={`font-mono ${advanced.chiSquare.isRandom ? 'text-green-500' : 'text-yellow-500'}`}>{advanced.chiSquare.isRandom ? '✓ Random' : '⚠ Biased'}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Transitions:</span><span className="text-foreground font-mono">{advanced.transitionCount.total} ({(advanced.transitionRate * 100).toFixed(1)}%)</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Pattern Diversity:</span><span className="text-foreground font-mono">{(advanced.patternDiversity * 100).toFixed(1)}%</span></div>
+            </div>
+          </AccordionContent>
+        </AccordionItem>
+
+        <AccordionItem value="patterns" className="border-border">
+          <AccordionTrigger className="text-sm font-semibold text-primary hover:no-underline px-4 py-2 bg-card rounded-t-lg">
+            Top Patterns
+          </AccordionTrigger>
+          <AccordionContent className="p-4 bg-card rounded-b-lg border-t border-border">
+            {topPatterns.length > 0 ? (
+              <div className="space-y-1">
+                {topPatterns.map((p, idx) => (
+                  <div key={idx} className="flex justify-between text-xs bg-secondary/20 p-2 rounded">
+                    <span className="font-mono">{p.pattern}</span>
+                    <span className="text-muted-foreground">{p.count}x</span>
+                  </div>
+                ))}
               </div>
-              <div className="text-sm space-y-1">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Length:</span>
-                  <span className="text-foreground font-mono">{stats.longestOneRun.length} bits</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Position:</span>
-                  <span className="text-foreground font-mono">{stats.longestOneRun.start} - {stats.longestOneRun.end}</span>
-                </div>
+            ) : <div className="text-xs text-muted-foreground">No patterns</div>}
+          </AccordionContent>
+        </AccordionItem>
+
+        <AccordionItem value="sequences" className="border-border">
+          <AccordionTrigger className="text-sm font-semibold text-primary hover:no-underline px-4 py-2 bg-card rounded-t-lg">
+            Longest Runs
+          </AccordionTrigger>
+          <AccordionContent className="p-4 bg-card rounded-b-lg border-t border-border space-y-3">
+            {stats.longestZeroRun && (
+              <div className="p-2 bg-secondary/20 rounded">
+                <div className="flex justify-between mb-1"><span className="text-sm font-medium">Longest 0s</span><Button variant="outline" size="sm" onClick={() => onJumpTo(stats.longestZeroRun!.start)}>Jump</Button></div>
+                <div className="text-xs text-muted-foreground">Length: {stats.longestZeroRun.length} • Pos: {stats.longestZeroRun.start}-{stats.longestZeroRun.end}</div>
               </div>
-            </div>
-          )}
-        </div>
-      </Card>
+            )}
+            {stats.longestOneRun && (
+              <div className="p-2 bg-secondary/20 rounded">
+                <div className="flex justify-between mb-1"><span className="text-sm font-medium">Longest 1s</span><Button variant="outline" size="sm" onClick={() => onJumpTo(stats.longestOneRun!.start)}>Jump</Button></div>
+                <div className="text-xs text-muted-foreground">Length: {stats.longestOneRun.length} • Pos: {stats.longestOneRun.start}-{stats.longestOneRun.end}</div>
+              </div>
+            )}
+          </AccordionContent>
+        </AccordionItem>
 
-      {/* Data Quality */}
-      <Card className="p-4 bg-card border-border">
-        <h3 className="text-sm font-semibold text-primary mb-3">Data Quality</h3>
-        <div className="space-y-2 text-sm">
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Balance Score:</span>
-            <span className="text-foreground font-mono">
-              {(100 - Math.abs(50 - stats.onePercent) * 2).toFixed(1)}%
-            </span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Randomness:</span>
-            <span className="text-foreground font-mono">
-              {(stats.entropy * 100).toFixed(1)}%
-            </span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Byte Alignment:</span>
-            <span className="text-foreground font-mono">
-              {bits.length % 8 === 0 ? '✓ Aligned' : `✗ ${bits.length % 8} extra bits`}
-            </span>
-          </div>
-        </div>
-        <div className="mt-3 p-2 bg-secondary/50 rounded text-xs text-muted-foreground">
-          Balance shows how evenly distributed 0s and 1s are. Randomness indicates entropy level.
-        </div>
-      </Card>
-
-      {/* Statistics */}
-      <Card className="p-4 bg-card border-border">
-        <h3 className="text-sm font-semibold text-primary mb-3">Advanced Statistics</h3>
-        <div className="space-y-2 text-sm">
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Population Count:</span>
-            <span className="text-foreground font-mono">
-              {stats.oneCount} (Hamming weight)
-            </span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Transitions:</span>
-            <span className="text-foreground font-mono">
-              {bits.split('').reduce((acc, bit, i) => 
-                i > 0 && bit !== bits[i-1] ? acc + 1 : acc, 0
-              )}
-            </span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Transition Rate:</span>
-            <span className="text-foreground font-mono">
-              {((bits.split('').reduce((acc, bit, i) => 
-                i > 0 && bit !== bits[i-1] ? acc + 1 : acc, 0
-              ) / Math.max(1, bits.length - 1)) * 100).toFixed(2)}%
-            </span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Est. Bit Density:</span>
-            <span className="text-foreground font-mono">
-              {(stats.oneCount / Math.max(1, stats.totalBits)).toFixed(4)}
-            </span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Nibble Alignment:</span>
-            <span className="text-foreground font-mono">
-              {bits.length % 4 === 0 ? '✓ Aligned' : `✗ ${bits.length % 4} extra bits`}
-            </span>
-          </div>
-        </div>
-      </Card>
-
-      {/* File Ideality */}
-      <Card className="p-4 bg-card border-border">
-        <h3 className="text-sm font-semibold text-primary mb-3">File Ideality</h3>
-        <div className="space-y-3">
-          <div className="grid grid-cols-3 gap-2">
-            <div>
-              <Label htmlFor="ideality-window" className="text-xs">Window Size</Label>
-              <Input
-                id="ideality-window"
-                type="number"
-                min="2"
-                value={idealityWindowSize}
-                onChange={(e) => setIdealityWindowSize(e.target.value)}
-                className="font-mono text-sm h-8"
-              />
+        <AccordionItem value="ideality" className="border-border">
+          <AccordionTrigger className="text-sm font-semibold text-primary hover:no-underline px-4 py-2 bg-card rounded-t-lg">
+            File Ideality
+          </AccordionTrigger>
+          <AccordionContent className="p-4 bg-card rounded-b-lg border-t border-border">
+            <div className="space-y-3">
+              <div className="grid grid-cols-3 gap-2">
+                <div><Label className="text-xs">Window</Label><Input type="number" min="2" value={idealityWindowSize} onChange={(e) => setIdealityWindowSize(e.target.value)} className="h-8 text-xs font-mono bg-input"/></div>
+                <div><Label className="text-xs">Start</Label><Input type="number" min="0" value={idealityStart} onChange={(e) => setIdealityStart(e.target.value)} className="h-8 text-xs font-mono bg-input"/></div>
+                <div><Label className="text-xs">End</Label><Input type="number" min="0" value={idealityEnd} onChange={(e) => setIdealityEnd(e.target.value)} className="h-8 text-xs font-mono bg-input"/></div>
+              </div>
+              <div className="p-3 bg-secondary/30 rounded space-y-1 text-sm">
+                <div className="flex justify-between"><span className="text-muted-foreground">Score:</span><span className="text-primary font-mono font-semibold">{currentIdeality.idealityPercentage.toFixed(2)}%</span></div>
+                <div className="flex justify-between text-xs"><span className="text-muted-foreground">Repeating:</span><span className="font-mono">{currentIdeality.repeatingCount}</span></div>
+              </div>
+              <Button variant="outline" className="w-full" onClick={() => { onIdealityChange(currentIdeality.idealBitIndices); setShowIdealBits(!showIdealBits); toast.success(showIdealBits ? 'Hidden' : 'Highlighted'); }}>{showIdealBits ? 'Hide' : 'Show'} Ideal Bits</Button>
             </div>
-            <div>
-              <Label htmlFor="ideality-start" className="text-xs">Start Index</Label>
-              <Input
-                id="ideality-start"
-                type="number"
-                min="0"
-                max={bits.length - 1}
-                value={idealityStart}
-                onChange={(e) => setIdealityStart(e.target.value)}
-                className="font-mono text-sm h-8"
-              />
-            </div>
-            <div>
-              <Label htmlFor="ideality-end" className="text-xs">End Index</Label>
-              <Input
-                id="ideality-end"
-                type="number"
-                min="0"
-                max={bits.length - 1}
-                value={idealityEnd}
-                onChange={(e) => setIdealityEnd(e.target.value)}
-                className="font-mono text-sm h-8"
-              />
-            </div>
-          </div>
-          
-          <Button
-            onClick={() => {
-              setShowIdealBits(!showIdealBits);
-              if (!showIdealBits) {
-                onIdealityChange(currentIdeality.idealBitIndices);
-              } else {
-                onIdealityChange([]);
-              }
-            }}
-            variant={showIdealBits ? "default" : "outline"}
-            className="w-full mb-2"
-          >
-            {showIdealBits ? 'Hide Ideal Bits' : 'Show Ideal Bits'}
-          </Button>
-          
-          <div className="space-y-2 text-sm">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Ideality Percentage:</span>
-              <span className="text-foreground font-mono font-bold">
-                {currentIdeality.idealityPercentage}%
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Repeating Bits:</span>
-              <span className="text-foreground font-mono">
-                {currentIdeality.repeatingCount} / {currentIdeality.totalBits}
-              </span>
-            </div>
-            <div className="h-2 bg-secondary rounded-full overflow-hidden">
-              <div 
-                className="h-full bg-accent transition-all"
-                style={{ width: `${currentIdeality.idealityPercentage}%` }}
-              />
-            </div>
-          </div>
-          
-          <div className="mt-3 p-2 bg-secondary/50 rounded text-xs text-muted-foreground">
-            Ideality measures consecutive repeating patterns. Higher percentage means more repetition.
-          </div>
-        </div>
-      </Card>
+          </AccordionContent>
+        </AccordionItem>
+      </Accordion>
     </div>
   );
 };
