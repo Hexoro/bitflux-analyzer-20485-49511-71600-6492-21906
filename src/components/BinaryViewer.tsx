@@ -297,25 +297,6 @@ export const BinaryViewer = forwardRef<any, BinaryViewerProps>(({
           )}
         </div>
       )}
-      
-      {!editMode && (
-        <div className="fixed bottom-4 left-4 bg-card border border-border rounded-lg shadow-lg z-50">
-          <button
-            onClick={() => setInfoPanelCollapsed(!infoPanelCollapsed)}
-            className="w-full flex items-center justify-between px-4 py-2 hover:bg-accent/50 rounded-lg transition-colors"
-          >
-            <span className="text-muted-foreground text-xs">Edit Mode: OFF</span>
-            {infoPanelCollapsed ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-          </button>
-          {!infoPanelCollapsed && (
-            <div className="px-4 pb-2 text-xs">
-              <div className="text-foreground text-[10px]">
-                Press 'E' or click Edit button to enable editing
-              </div>
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 });
