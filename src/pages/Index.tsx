@@ -18,7 +18,8 @@ import { GenerateDialog } from '@/components/GenerateDialog';
 import { JumpToDialog } from '@/components/JumpToDialog';
 import { ConverterDialog } from '@/components/ConverterDialog';
 import { FileSystemSidebar } from '@/components/FileSystemSidebar';
-import { Toolbar } from '@/components/Toolbar';
+import { Toolbar, AppMode } from '@/components/Toolbar';
+import { AlgorithmPanel } from '@/components/AlgorithmPanel';
 import { DataGraphsDialog } from '@/components/DataGraphsDialog';
 import { AudioVisualizerDialog } from '@/components/AudioVisualizerDialog';
 import { PatternHeatmapDialog } from '@/components/PatternHeatmapDialog';
@@ -45,6 +46,7 @@ const Index = () => {
   const [audioDialogOpen, setAudioDialogOpen] = useState(false);
   const [heatmapDialogOpen, setHeatmapDialogOpen] = useState(false);
   const [idealBitIndices, setIdealBitIndices] = useState<number[]>([]);
+  const [appMode, setAppMode] = useState<AppMode>('analysis');
   const viewerRef = useRef<any>(null);
 
   // Subscribe to file system changes
@@ -393,6 +395,8 @@ const Index = () => {
         canUndo={(activeFile.state.model as any).undoStack?.length > 0}
         canRedo={(activeFile.state.model as any).redoStack?.length > 0}
         editMode={editMode}
+        currentMode={appMode}
+        onModeChange={setAppMode}
       />
 
       <ResizablePanelGroup direction="horizontal" className="flex-1">
@@ -419,98 +423,102 @@ const Index = () => {
         <ResizableHandle />
 
         <ResizablePanel defaultSize={40} minSize={20}>
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="h-full flex flex-col">
-            <TabsList className="w-full justify-start rounded-none border-b">
-              <TabsTrigger value="analysis">Analysis</TabsTrigger>
-              <TabsTrigger value="bitstream">Bitstream</TabsTrigger>
-              <TabsTrigger value="sequences">Sequences</TabsTrigger>
-              <TabsTrigger value="boundaries">Boundaries</TabsTrigger>
-              <TabsTrigger value="partitions">Partitions</TabsTrigger>
-              <TabsTrigger value="anomalies">Anomalies</TabsTrigger>
-              <TabsTrigger value="transformations">Transforms</TabsTrigger>
-              <TabsTrigger value="history">History</TabsTrigger>
-              <TabsTrigger value="notes">Notes</TabsTrigger>
-            </TabsList>
+          {appMode === 'analysis' ? (
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="h-full flex flex-col">
+              <TabsList className="w-full justify-start rounded-none border-b">
+                <TabsTrigger value="analysis">Analysis</TabsTrigger>
+                <TabsTrigger value="bitstream">Bitstream</TabsTrigger>
+                <TabsTrigger value="sequences">Sequences</TabsTrigger>
+                <TabsTrigger value="boundaries">Boundaries</TabsTrigger>
+                <TabsTrigger value="partitions">Partitions</TabsTrigger>
+                <TabsTrigger value="anomalies">Anomalies</TabsTrigger>
+                <TabsTrigger value="transformations">Transforms</TabsTrigger>
+                <TabsTrigger value="history">History</TabsTrigger>
+                <TabsTrigger value="notes">Notes</TabsTrigger>
+              </TabsList>
 
-            <div className="flex-1 overflow-hidden">
-              <TabsContent value="analysis" className="h-full m-0">
-                {stats && (
-                  <AnalysisPanel 
-                    stats={stats} 
-                    bits={bits} 
-                    bitsPerRow={bitsPerRow} 
-                    onJumpTo={handleJumpTo}
-                    onIdealityChange={setIdealBitIndices}
-                  />
-                )}
-              </TabsContent>
-
-              <TabsContent value="bitstream" className="h-full m-0">
-                <BitstreamAnalysisPanel bits={bits} onJumpTo={handleJumpTo} />
-              </TabsContent>
-
-              <TabsContent value="sequences" className="h-full m-0">
-                <SequencesPanel fileState={activeFile.state} onJumpTo={handleJumpTo} />
-              </TabsContent>
-
-              <TabsContent value="boundaries" className="h-full m-0">
-                {stats && activeFile && (
-                  <BoundariesPanel
-                    stats={stats}
-                    bits={bits}
-                    boundaries={boundaries}
-                    partitionManager={activeFile.state.partitionManager}
-                    onJumpTo={handleJumpTo}
-                    onAppendBoundary={handleAppendBoundary}
-                    onInsertBoundary={handleInsertBoundary}
-                    onRemoveBoundary={handleRemoveBoundary}
-                    onToggleHighlight={handleToggleBoundaryHighlight}
-                  />
-                )}
-              </TabsContent>
-
-              <TabsContent value="partitions" className="h-full m-0">
-                <PartitionsPanel partitions={partitions} onJumpTo={handleJumpTo} />
-              </TabsContent>
-
-              <TabsContent value="anomalies" className="h-full m-0">
-                <AnomaliesPanel bits={bits} onJumpTo={handleJumpTo} />
-              </TabsContent>
-
-              <TabsContent value="transformations" className="h-full m-0">
-                <div className="h-full flex flex-col">
-                  <div className="p-4 border-b">
-                    <BitSelectionDialog
-                      maxBits={bits.length}
-                      onApplySelection={handleApplySelection}
-                      currentSelection={selectedRanges}
+              <div className="flex-1 overflow-hidden">
+                <TabsContent value="analysis" className="h-full m-0">
+                  {stats && (
+                    <AnalysisPanel 
+                      stats={stats} 
+                      bits={bits} 
+                      bitsPerRow={bitsPerRow} 
+                      onJumpTo={handleJumpTo}
+                      onIdealityChange={setIdealBitIndices}
                     />
-                  </div>
-                  <div className="flex-1 overflow-hidden">
-                    <TransformationsPanel
+                  )}
+                </TabsContent>
+
+                <TabsContent value="bitstream" className="h-full m-0">
+                  <BitstreamAnalysisPanel bits={bits} onJumpTo={handleJumpTo} />
+                </TabsContent>
+
+                <TabsContent value="sequences" className="h-full m-0">
+                  <SequencesPanel fileState={activeFile.state} onJumpTo={handleJumpTo} />
+                </TabsContent>
+
+                <TabsContent value="boundaries" className="h-full m-0">
+                  {stats && activeFile && (
+                    <BoundariesPanel
+                      stats={stats}
                       bits={bits}
-                      selectedRanges={selectedRanges}
-                      onTransform={handleTransform}
+                      boundaries={boundaries}
+                      partitionManager={activeFile.state.partitionManager}
+                      onJumpTo={handleJumpTo}
+                      onAppendBoundary={handleAppendBoundary}
+                      onInsertBoundary={handleInsertBoundary}
+                      onRemoveBoundary={handleRemoveBoundary}
+                      onToggleHighlight={handleToggleBoundaryHighlight}
                     />
+                  )}
+                </TabsContent>
+
+                <TabsContent value="partitions" className="h-full m-0">
+                  <PartitionsPanel partitions={partitions} onJumpTo={handleJumpTo} />
+                </TabsContent>
+
+                <TabsContent value="anomalies" className="h-full m-0">
+                  <AnomaliesPanel bits={bits} onJumpTo={handleJumpTo} />
+                </TabsContent>
+
+                <TabsContent value="transformations" className="h-full m-0">
+                  <div className="h-full flex flex-col">
+                    <div className="p-4 border-b">
+                      <BitSelectionDialog
+                        maxBits={bits.length}
+                        onApplySelection={handleApplySelection}
+                        currentSelection={selectedRanges}
+                      />
+                    </div>
+                    <div className="flex-1 overflow-hidden">
+                      <TransformationsPanel
+                        bits={bits}
+                        selectedRanges={selectedRanges}
+                        onTransform={handleTransform}
+                      />
+                    </div>
                   </div>
-                </div>
-              </TabsContent>
+                </TabsContent>
 
-              <TabsContent value="history" className="h-full m-0">
-                <HistoryPanelNew
-                  groups={historyGroups}
-                  onRestoreVersion={handleRestoreVersion}
-                  onRestoreToNewFile={handleRestoreToNewFile}
-                  onCompareVersion={handleCompareVersion}
-                  onToggleGroup={handleToggleHistoryGroup}
-                />
-              </TabsContent>
+                <TabsContent value="history" className="h-full m-0">
+                  <HistoryPanelNew
+                    groups={historyGroups}
+                    onRestoreVersion={handleRestoreVersion}
+                    onRestoreToNewFile={handleRestoreToNewFile}
+                    onCompareVersion={handleCompareVersion}
+                    onToggleGroup={handleToggleHistoryGroup}
+                  />
+                </TabsContent>
 
-              <TabsContent value="notes" className="h-full m-0">
-                <NotesPanel notesManager={activeFile.state.notesManager} onUpdate={() => forceUpdate({})} />
-              </TabsContent>
-            </div>
-          </Tabs>
+                <TabsContent value="notes" className="h-full m-0">
+                  <NotesPanel notesManager={activeFile.state.notesManager} onUpdate={() => forceUpdate({})} />
+                </TabsContent>
+              </div>
+            </Tabs>
+          ) : (
+            <AlgorithmPanel />
+          )}
         </ResizablePanel>
       </ResizablePanelGroup>
 
