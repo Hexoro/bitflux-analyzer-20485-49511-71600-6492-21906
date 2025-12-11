@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { BinaryModel } from '@/lib/binaryModel';
+import { ChevronDown, ChevronUp } from 'lucide-react';
 
 interface BinaryViewerProps {
   model: BinaryModel;
@@ -20,6 +21,7 @@ export const BinaryViewer = forwardRef<any, BinaryViewerProps>(({
   const [cursorPosition, setCursorPosition] = useState(0);
   const [selectedRange, setSelectedRange] = useState<{ start: number; end: number } | null>(null);
   const [isSelecting, setIsSelecting] = useState(false);
+  const [infoPanelCollapsed, setInfoPanelCollapsed] = useState(false);
 
   useImperativeHandle(ref, () => ({
     jumpTo: (index: number) => {
@@ -268,32 +270,50 @@ export const BinaryViewer = forwardRef<any, BinaryViewerProps>(({
       )}
       
       {editMode && (
-        <div className="fixed bottom-4 left-4 bg-card border border-border rounded-lg px-4 py-2 text-xs shadow-lg z-50">
-          <div className="text-primary font-semibold mb-1">Edit Mode: ON</div>
-          <div className="text-foreground font-mono">
-            Cursor Position: {cursorPosition}
-          </div>
-          {selectedRange && (
-            <>
+        <div className="fixed bottom-4 left-4 bg-card border border-border rounded-lg shadow-lg z-50">
+          <button
+            onClick={() => setInfoPanelCollapsed(!infoPanelCollapsed)}
+            className="w-full flex items-center justify-between px-4 py-2 hover:bg-accent/50 rounded-t-lg transition-colors"
+          >
+            <span className="text-primary font-semibold text-xs">Edit Mode: ON</span>
+            {infoPanelCollapsed ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+          </button>
+          {!infoPanelCollapsed && (
+            <div className="px-4 pb-2 text-xs">
               <div className="text-foreground font-mono">
-                Selected: {selectedRange.start} - {selectedRange.end} ({selectedRange.end - selectedRange.start + 1} bits)
+                Cursor Position: {cursorPosition}
               </div>
-            </>
+              {selectedRange && (
+                <div className="text-foreground font-mono">
+                  Selected: {selectedRange.start} - {selectedRange.end} ({selectedRange.end - selectedRange.start + 1} bits)
+                </div>
+              )}
+              <div className="text-muted-foreground text-[10px] mt-2 space-y-0.5">
+                <div>Type 0/1 to insert • Shift+Arrows to select</div>
+                <div>Delete/Backspace to remove • Esc to deselect</div>
+                <div>Ctrl+Z/Y: Undo/Redo • Ctrl+C/V: Copy/Paste</div>
+              </div>
+            </div>
           )}
-          <div className="text-muted-foreground text-[10px] mt-2 space-y-0.5">
-            <div>Type 0/1 to insert • Shift+Arrows to select</div>
-            <div>Delete/Backspace to remove • Esc to deselect</div>
-            <div>Ctrl+Z/Y: Undo/Redo • Ctrl+C/V: Copy/Paste</div>
-          </div>
         </div>
       )}
       
       {!editMode && (
-        <div className="fixed bottom-4 left-4 bg-card border border-border rounded-lg px-4 py-2 text-xs shadow-lg z-50">
-          <div className="text-muted-foreground">Edit Mode: OFF</div>
-          <div className="text-foreground text-[10px] mt-1">
-            Press 'E' or click Edit button to enable editing
-          </div>
+        <div className="fixed bottom-4 left-4 bg-card border border-border rounded-lg shadow-lg z-50">
+          <button
+            onClick={() => setInfoPanelCollapsed(!infoPanelCollapsed)}
+            className="w-full flex items-center justify-between px-4 py-2 hover:bg-accent/50 rounded-lg transition-colors"
+          >
+            <span className="text-muted-foreground text-xs">Edit Mode: OFF</span>
+            {infoPanelCollapsed ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+          </button>
+          {!infoPanelCollapsed && (
+            <div className="px-4 pb-2 text-xs">
+              <div className="text-foreground text-[10px]">
+                Press 'E' or click Edit button to enable editing
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
