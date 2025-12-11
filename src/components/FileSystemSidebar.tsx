@@ -87,10 +87,11 @@ export const FileSystemSidebar = ({ fileSystem, onFileChange }: FileSystemSideba
 
   const handleCreateGroup = () => {
     if (newGroupName.trim()) {
-      // Just set flag to create group when next file is added
-      setCreatingGroup(false);
-      toast.success(`Group "${newGroupName}" will be created when you add a file to it`);
+      fileSystem.addGroup(newGroupName.trim());
+      onFileChange();
+      toast.success(`Group "${newGroupName}" created`);
       setNewGroupName('');
+      setCreatingGroup(false);
     }
   };
 

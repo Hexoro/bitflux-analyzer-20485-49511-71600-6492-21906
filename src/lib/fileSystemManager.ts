@@ -16,6 +16,7 @@ export interface BinaryFile {
 
 export class FileSystemManager {
   private files: Map<string, BinaryFile> = new Map();
+  private groups: Set<string> = new Set();
   private activeFileId: string | null = null;
   private listeners: Set<() => void> = new Set();
 
@@ -130,13 +131,33 @@ export class FileSystemManager {
     }
   }
 
-  // Get all unique groups
-  getGroups(): string[] {
-    const groups = new Set<string>();
+  // Add a new group
+  addGroup(groupName: string): void {
+    if (groupName.trim()) {
+      this.groups.add(groupName.trim());
+      this.notifyListeners();
+    }
+  }
+
+  // Delete a group
+  deleteGroup(groupName: string): void {
+    this.groups.delete(groupName);
+    // Remove group from all files that had it
     this.files.forEach(file => {
-      if (file.group) groups.add(file.group);
+      if (file.group === groupName) {
+        file.group = undefined;
+      }
     });
-    return Array.from(groups);
+    this.notifyListeners();
+  }
+
+  // Get all unique groups (combines stored groups and groups from files)
+  getGroups(): string[] {
+    const allGroups = new Set<string>(this.groups);
+    this.files.forEach(file => {
+      if (file.group) allGroups.add(file.group);
+    });
+    return Array.from(allGroups).sort();
   }
 
   // Subscribe to changes
