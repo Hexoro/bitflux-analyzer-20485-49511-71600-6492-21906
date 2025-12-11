@@ -1,6 +1,12 @@
 import { Button } from './ui/button';
 import { Separator } from './ui/separator';
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from './ui/dropdown-menu';
+import {
   FileUp,
   Save,
   Download,
@@ -14,7 +20,11 @@ import {
   BarChart3,
   Music,
   Grid3x3,
+  Layers,
+  ChevronDown,
 } from 'lucide-react';
+
+export type AppMode = 'analysis' | 'algorithm';
 
 interface ToolbarProps {
   onLoad: () => void;
@@ -33,6 +43,8 @@ interface ToolbarProps {
   canUndo: boolean;
   canRedo: boolean;
   editMode: boolean;
+  currentMode: AppMode;
+  onModeChange: (mode: AppMode) => void;
 }
 
 export const Toolbar = ({
@@ -52,7 +64,13 @@ export const Toolbar = ({
   canUndo,
   canRedo,
   editMode,
+  currentMode,
+  onModeChange,
 }: ToolbarProps) => {
+  const modeLabels: Record<AppMode, string> = {
+    analysis: 'Analysis',
+    algorithm: 'Algorithm',
+  };
   return (
     <div className="flex items-center gap-2 p-2 bg-card border-b border-border">
       {/* File Operations */}
@@ -153,6 +171,33 @@ export const Toolbar = ({
           Heatmap
         </Button>
       </div>
+
+      <Separator orientation="vertical" className="h-6" />
+
+      {/* Mode Selector */}
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="outline" size="sm">
+            <Layers className="w-4 h-4 mr-2" />
+            {modeLabels[currentMode]}
+            <ChevronDown className="w-4 h-4 ml-2" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="bg-popover border border-border z-50">
+          <DropdownMenuItem 
+            onClick={() => onModeChange('analysis')}
+            className={currentMode === 'analysis' ? 'bg-accent' : ''}
+          >
+            Analysis Mode
+          </DropdownMenuItem>
+          <DropdownMenuItem 
+            onClick={() => onModeChange('algorithm')}
+            className={currentMode === 'algorithm' ? 'bg-accent' : ''}
+          >
+            Algorithm Mode
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 };
