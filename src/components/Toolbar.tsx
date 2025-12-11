@@ -41,6 +41,7 @@ interface ToolbarProps {
   onDataGraphs: () => void;
   onAudioVisualizer: () => void;
   onPatternHeatmap: () => void;
+  onJobs: () => void;
   canUndo: boolean;
   canRedo: boolean;
   editMode: boolean;
@@ -62,6 +63,7 @@ export const Toolbar = ({
   onDataGraphs,
   onAudioVisualizer,
   onPatternHeatmap,
+  onJobs,
   canUndo,
   canRedo,
   editMode,
@@ -201,23 +203,10 @@ export const Toolbar = ({
       </DropdownMenu>
 
       {/* Jobs */}
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="sm">
-            <Briefcase className="w-4 h-4 mr-2" />
-            Jobs
-            <ChevronDown className="w-4 h-4 ml-2" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="bg-popover border border-border z-50">
-          <DropdownMenuItem disabled>
-            No active jobs
-          </DropdownMenuItem>
-          <DropdownMenuItem disabled>
-            Job queue empty
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      <Button onClick={onJobs} variant="outline" size="sm">
+        <Briefcase className="w-4 h-4 mr-2" />
+        Jobs
+      </Button>
     </div>
   );
 };
