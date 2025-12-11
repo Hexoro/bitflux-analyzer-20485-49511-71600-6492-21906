@@ -22,6 +22,7 @@ import {
   Grid3x3,
   Layers,
   ChevronDown,
+  Briefcase,
 } from 'lucide-react';
 
 export type AppMode = 'analysis' | 'algorithm';
@@ -195,6 +196,25 @@ export const Toolbar = ({
             className={currentMode === 'algorithm' ? 'bg-accent' : ''}
           >
             Algorithm Mode
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      {/* Jobs */}
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="outline" size="sm">
+            <Briefcase className="w-4 h-4 mr-2" />
+            Jobs
+            <ChevronDown className="w-4 h-4 ml-2" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="bg-popover border border-border z-50">
+          <DropdownMenuItem disabled>
+            No active jobs
+          </DropdownMenuItem>
+          <DropdownMenuItem disabled>
+            Job queue empty
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
