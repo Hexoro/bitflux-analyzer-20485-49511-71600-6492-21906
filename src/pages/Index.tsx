@@ -24,6 +24,7 @@ import { DataGraphsDialog } from '@/components/DataGraphsDialog';
 import { AudioVisualizerDialog } from '@/components/AudioVisualizerDialog';
 import { PatternHeatmapDialog } from '@/components/PatternHeatmapDialog';
 import { BitSelectionDialog } from '@/components/BitSelectionDialog';
+import { JobsDialog } from '@/components/JobsDialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable';
 import { toast } from 'sonner';
@@ -45,6 +46,7 @@ const Index = () => {
   const [graphsDialogOpen, setGraphsDialogOpen] = useState(false);
   const [audioDialogOpen, setAudioDialogOpen] = useState(false);
   const [heatmapDialogOpen, setHeatmapDialogOpen] = useState(false);
+  const [jobsDialogOpen, setJobsDialogOpen] = useState(false);
   const [idealBitIndices, setIdealBitIndices] = useState<number[]>([]);
   const [appMode, setAppMode] = useState<AppMode>('analysis');
   const viewerRef = useRef<any>(null);
@@ -392,6 +394,7 @@ const Index = () => {
         onDataGraphs={() => setGraphsDialogOpen(true)}
         onAudioVisualizer={() => setAudioDialogOpen(true)}
         onPatternHeatmap={() => setHeatmapDialogOpen(true)}
+        onJobs={() => setJobsDialogOpen(true)}
         canUndo={(activeFile.state.model as any).undoStack?.length > 0}
         canRedo={(activeFile.state.model as any).redoStack?.length > 0}
         editMode={editMode}
@@ -572,6 +575,11 @@ const Index = () => {
           compareStats={compareFile.stats}
         />
       )}
+
+      <JobsDialog
+        open={jobsDialogOpen}
+        onOpenChange={setJobsDialogOpen}
+      />
     </div>
   );
 };
