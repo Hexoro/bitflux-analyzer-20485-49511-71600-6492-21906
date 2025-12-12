@@ -26,7 +26,8 @@ import {
   FileText
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { algorithmManager, AlgorithmFile, MetricDefinition } from '@/lib/algorithmManager';
+import { algorithmManager, AlgorithmFile } from '@/lib/algorithmManager';
+import { predefinedManager, PredefinedMetric, PredefinedOperation } from '@/lib/predefinedManager';
 
 type AlgorithmTab = 'strategy' | 'presets' | 'results' | 'scoring' | 'metrics' | 'policies' | 'operations' | 'history';
 
@@ -34,6 +35,9 @@ export const AlgorithmPanel = () => {
   const [activeTab, setActiveTab] = useState<AlgorithmTab>('strategy');
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [expandedMetric, setExpandedMetric] = useState<string | null>(null);
+  const [expandedOperation, setExpandedOperation] = useState<string | null>(null);
+  const [enabledMetrics, setEnabledMetrics] = useState<Set<string>>(new Set());
+  const [enabledOperations, setEnabledOperations] = useState<Set<string>>(new Set());
   const [, forceUpdate] = useState({});
   
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -41,9 +45,46 @@ export const AlgorithmPanel = () => {
 
   useEffect(() => {
     const updateState = () => forceUpdate({});
-    const unsubscribe = algorithmManager.subscribe(updateState);
-    return unsubscribe;
+    const unsubscribe1 = algorithmManager.subscribe(updateState);
+    const unsubscribe2 = predefinedManager.subscribe(updateState);
+    
+    // Load enabled states from localStorage
+    const savedMetrics = localStorage.getItem('bitwise_enabled_metrics');
+    const savedOps = localStorage.getItem('bitwise_enabled_operations');
+    if (savedMetrics) setEnabledMetrics(new Set(JSON.parse(savedMetrics)));
+    if (savedOps) setEnabledOperations(new Set(JSON.parse(savedOps)));
+    
+    return () => {
+      unsubscribe1();
+      unsubscribe2();
+    };
   }, []);
+
+  const toggleMetricEnabled = (id: string) => {
+    setEnabledMetrics(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(id)) {
+        newSet.delete(id);
+      } else {
+        newSet.add(id);
+      }
+      localStorage.setItem('bitwise_enabled_metrics', JSON.stringify([...newSet]));
+      return newSet;
+    });
+  };
+
+  const toggleOperationEnabled = (id: string) => {
+    setEnabledOperations(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(id)) {
+        newSet.delete(id);
+      } else {
+        newSet.add(id);
+      }
+      localStorage.setItem('bitwise_enabled_operations', JSON.stringify([...newSet]));
+      return newSet;
+    });
+  };
 
   const handleUpload = (type: AlgorithmFile['type']) => {
     setUploadType(type);
@@ -360,7 +401,7 @@ end`}
           </ScrollArea>
         </TabsContent>
 
-        {/* Metrics Tab - JSON with toggle UI */}
+        {/* Metrics Tab - Shows pre-defined metrics with enable/disable */}
         <TabsContent value="metrics" className="h-full m-0">
           <ScrollArea className="h-full">
             <div className="p-4 space-y-4">
@@ -369,108 +410,76 @@ end`}
                   <CardTitle className="flex items-center justify-between text-sm">
                     <div className="flex items-center gap-2">
                       <ListChecks className="w-4 h-4" />
-                      Metrics Definitions
+                      Available Metrics ({predefinedManager.getAllMetrics().length})
                     </div>
-                    <Button size="sm" variant="outline" onClick={() => handleUpload('metrics')}>
-                      <Upload className="w-4 h-4 mr-2" />
-                      Upload JSON
-                    </Button>
+                    <Badge variant="outline" className="text-xs">
+                      {enabledMetrics.size} enabled
+                    </Badge>
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="text-sm">
                   <p className="text-muted-foreground mb-4">
-                    Upload JSON files defining metrics with formulas. Toggle metrics on/off and click to view calculation details.
+                    Toggle metrics on/off to control which ones the strategy can use. Click to view formula.
                   </p>
 
-                  <div className="mb-4 p-3 bg-muted/30 rounded-lg">
-                    <h4 className="font-medium mb-2">Metrics JSON Example</h4>
-                    <pre className="text-xs overflow-x-auto font-mono text-muted-foreground">
-{`{
-  "metrics": [
-    {
-      "id": "entropy",
-      "name": "Shannon Entropy",
-      "description": "Measures randomness",
-      "formula": "-sum(p * log2(p))",
-      "enabled": true
-    },
-    {
-      "id": "compression_ratio",
-      "name": "Compression Ratio",
-      "description": "Original / Compressed size",
-      "formula": "original_size / compressed_size",
-      "enabled": true
-    }
-  ]
-}`}
-                    </pre>
-                  </div>
-
-                  {algorithmManager.getMetricsFiles().length === 0 ? (
-                    <div className="text-center py-8 text-muted-foreground border border-dashed rounded-lg">
-                      <ListChecks className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                      <p>No metrics files uploaded</p>
-                      <p className="text-xs mt-1">Upload a .json metrics file</p>
-                    </div>
-                  ) : (
-                    <>
-                      {/* File list */}
-                      <div className="mb-4">
-                        <h4 className="font-medium mb-2 text-xs text-muted-foreground uppercase">Uploaded Files</h4>
-                        <FileList files={algorithmManager.getMetricsFiles()} showCodePreview={false} />
-                      </div>
-
-                      {/* Metrics toggle list */}
-                      <div>
-                        <h4 className="font-medium mb-2 text-xs text-muted-foreground uppercase">All Metrics</h4>
-                        <div className="space-y-1">
-                          {algorithmManager.getAllMetrics().map((metric) => (
+                  {predefinedManager.getMetricCategories().map(category => (
+                    <div key={category} className="mb-4">
+                      <h4 className="text-xs font-medium text-muted-foreground uppercase mb-2">{category}</h4>
+                      <div className="space-y-1">
+                        {predefinedManager.getAllMetrics()
+                          .filter(m => m.category === category)
+                          .map((metric) => (
                             <div
-                              key={`${metric.fileId}:${metric.id}`}
+                              key={metric.id}
                               className="border rounded-lg overflow-hidden"
                             >
                               <div
                                 className="flex items-center justify-between p-3 cursor-pointer hover:bg-muted/30"
                                 onClick={() => setExpandedMetric(
-                                  expandedMetric === `${metric.fileId}:${metric.id}` 
-                                    ? null 
-                                    : `${metric.fileId}:${metric.id}`
+                                  expandedMetric === metric.id ? null : metric.id
                                 )}
                               >
                                 <div className="flex items-center gap-3">
-                                  {expandedMetric === `${metric.fileId}:${metric.id}` 
+                                  {expandedMetric === metric.id 
                                     ? <ChevronDown className="w-4 h-4" />
                                     : <ChevronRight className="w-4 h-4" />
                                   }
                                   <div>
-                                    <p className="font-medium">{metric.name}</p>
+                                    <div className="flex items-center gap-2">
+                                      <p className="font-medium">{metric.name}</p>
+                                      {metric.unit && (
+                                        <Badge variant="secondary" className="text-xs">{metric.unit}</Badge>
+                                      )}
+                                    </div>
                                     <p className="text-xs text-muted-foreground">{metric.description}</p>
                                   </div>
                                 </div>
                                 <Switch
-                                  checked={metric.enabled}
-                                  onCheckedChange={(checked) => {
-                                    algorithmManager.toggleMetric(metric.fileId, metric.id, checked);
-                                  }}
+                                  checked={enabledMetrics.has(metric.id)}
+                                  onCheckedChange={() => toggleMetricEnabled(metric.id)}
                                   onClick={(e) => e.stopPropagation()}
                                 />
                               </div>
-                              {expandedMetric === `${metric.fileId}:${metric.id}` && (
-                                <div className="px-3 pb-3 pt-0">
-                                  <div className="bg-muted/50 p-3 rounded-lg">
+                              {expandedMetric === metric.id && (
+                                <div className="px-3 pb-3 pt-0 bg-muted/20 border-t">
+                                  <div className="bg-background/50 p-3 rounded-lg mt-2">
                                     <p className="text-xs text-muted-foreground mb-1">Formula:</p>
                                     <code className="text-sm font-mono text-cyan-500">{metric.formula}</code>
-                                    <p className="text-xs text-muted-foreground mt-2">
-                                      Source: {metric.fileName}
-                                    </p>
                                   </div>
                                 </div>
                               )}
                             </div>
                           ))}
-                        </div>
                       </div>
-                    </>
+                    </div>
+                  ))}
+
+                  {/* Uploaded metric files */}
+                  {algorithmManager.getMetricsFiles().length > 0 && (
+                    <div className="mt-6 pt-4 border-t">
+                      <h4 className="font-medium mb-2 text-xs text-muted-foreground uppercase">Uploaded Files</h4>
+                      <FileList files={algorithmManager.getMetricsFiles()} showCodePreview={false} />
+                    </div>
                   )}
                 </CardContent>
               </Card>
@@ -548,7 +557,7 @@ end`}
           </ScrollArea>
         </TabsContent>
 
-        {/* Operations Tab - JSON with toggle UI */}
+        {/* Operations Tab - Shows pre-defined operations with enable/disable */}
         <TabsContent value="operations" className="h-full m-0">
           <ScrollArea className="h-full">
             <div className="p-4 space-y-4">
@@ -557,90 +566,77 @@ end`}
                   <CardTitle className="flex items-center justify-between text-sm">
                     <div className="flex items-center gap-2">
                       <Cog className="w-4 h-4" />
-                      Operations Definitions
+                      Available Operations ({predefinedManager.getAllOperations().length})
                     </div>
-                    <Button size="sm" variant="outline" onClick={() => handleUpload('operations')}>
-                      <Upload className="w-4 h-4 mr-2" />
-                      Upload JSON
-                    </Button>
+                    <Badge variant="outline" className="text-xs">
+                      {enabledOperations.size} enabled
+                    </Badge>
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="text-sm">
                   <p className="text-muted-foreground mb-4">
-                    Upload JSON files defining valid operations. Toggle operations on/off to control what the strategy can use.
+                    Toggle operations on/off to control what the strategy can use.
                   </p>
 
-                  <div className="mb-4 p-3 bg-muted/30 rounded-lg">
-                    <h4 className="font-medium mb-2">Operations JSON Example</h4>
-                    <pre className="text-xs overflow-x-auto font-mono text-muted-foreground">
-{`{
-  "operations": [
-    {
-      "id": "and",
-      "name": "AND Gate",
-      "description": "Bitwise AND",
-      "enabled": true
-    },
-    {
-      "id": "xor",
-      "name": "XOR Gate", 
-      "description": "Bitwise XOR",
-      "enabled": true
-    },
-    {
-      "id": "shift_left",
-      "name": "Shift Left",
-      "description": "Logical shift left",
-      "enabled": true
-    }
-  ]
-}`}
-                    </pre>
-                  </div>
-
-                  {algorithmManager.getOperationsFiles().length === 0 ? (
-                    <div className="text-center py-8 text-muted-foreground border border-dashed rounded-lg">
-                      <Cog className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                      <p>No operations files uploaded</p>
-                      <p className="text-xs mt-1">Upload a .json operations file</p>
-                    </div>
-                  ) : (
-                    <>
-                      {/* File list */}
-                      <div className="mb-4">
-                        <h4 className="font-medium mb-2 text-xs text-muted-foreground uppercase">Uploaded Files</h4>
-                        <FileList files={algorithmManager.getOperationsFiles()} showCodePreview={false} />
-                      </div>
-
-                      {/* Operations toggle list */}
-                      <div>
-                        <h4 className="font-medium mb-2 text-xs text-muted-foreground uppercase">All Operations</h4>
-                        <div className="space-y-1">
-                          {algorithmManager.getAllOperations().map((op) => (
+                  {predefinedManager.getOperationCategories().map(category => (
+                    <div key={category} className="mb-4">
+                      <h4 className="text-xs font-medium text-muted-foreground uppercase mb-2">{category}</h4>
+                      <div className="space-y-1">
+                        {predefinedManager.getAllOperations()
+                          .filter(op => op.category === category)
+                          .map((op) => (
                             <div
-                              key={`${op.fileId}:${op.id}`}
-                              className="flex items-center justify-between p-3 border rounded-lg"
+                              key={op.id}
+                              className="border rounded-lg overflow-hidden"
                             >
-                              <div className="flex items-center gap-3">
-                                <Badge variant={op.enabled ? "default" : "secondary"} className="font-mono">
-                                  {op.id.toUpperCase()}
-                                </Badge>
-                                <div>
-                                  <p className="font-medium">{op.name}</p>
-                                  <p className="text-xs text-muted-foreground">{op.description}</p>
+                              <div
+                                className="flex items-center justify-between p-3 cursor-pointer hover:bg-muted/30"
+                                onClick={() => setExpandedOperation(
+                                  expandedOperation === op.id ? null : op.id
+                                )}
+                              >
+                                <div className="flex items-center gap-3">
+                                  {expandedOperation === op.id 
+                                    ? <ChevronDown className="w-4 h-4" />
+                                    : <ChevronRight className="w-4 h-4" />
+                                  }
+                                  <Badge variant={enabledOperations.has(op.id) ? "default" : "secondary"} className="font-mono">
+                                    {op.id}
+                                  </Badge>
+                                  <span className="font-medium">{op.name}</span>
                                 </div>
+                                <Switch
+                                  checked={enabledOperations.has(op.id)}
+                                  onCheckedChange={() => toggleOperationEnabled(op.id)}
+                                  onClick={(e) => e.stopPropagation()}
+                                />
                               </div>
-                              <Switch
-                                checked={op.enabled}
-                                onCheckedChange={(checked) => {
-                                  algorithmManager.toggleOperation(op.fileId, op.id, checked);
-                                }}
-                              />
+                              {expandedOperation === op.id && (
+                                <div className="px-3 pb-3 pt-1 bg-muted/20 border-t">
+                                  <p className="text-sm text-muted-foreground mb-2">{op.description}</p>
+                                  {op.parameters && op.parameters.length > 0 && (
+                                    <div className="flex flex-wrap gap-1">
+                                      {op.parameters.map(p => (
+                                        <Badge key={p.name} variant="outline" className="text-xs">
+                                          {p.name}: {p.type}
+                                        </Badge>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
                             </div>
                           ))}
-                        </div>
                       </div>
-                    </>
+                    </div>
+                  ))}
+
+                  {/* Uploaded operation files */}
+                  {algorithmManager.getOperationsFiles().length > 0 && (
+                    <div className="mt-6 pt-4 border-t">
+                      <h4 className="font-medium mb-2 text-xs text-muted-foreground uppercase">Uploaded Files</h4>
+                      <FileList files={algorithmManager.getOperationsFiles()} showCodePreview={false} />
+                    </div>
                   )}
                 </CardContent>
               </Card>

@@ -25,7 +25,7 @@ import {
   Briefcase,
 } from 'lucide-react';
 
-export type AppMode = 'analysis' | 'algorithm';
+export type AppMode = 'analysis' | 'algorithm' | 'backend';
 
 interface ToolbarProps {
   onLoad: () => void;
@@ -73,6 +73,7 @@ export const Toolbar = ({
   const modeLabels: Record<AppMode, string> = {
     analysis: 'Analysis',
     algorithm: 'Algorithm',
+    backend: 'Backend',
   };
   return (
     <div className="flex items-center gap-2 p-2 bg-card border-b border-border">
@@ -198,6 +199,12 @@ export const Toolbar = ({
             className={currentMode === 'algorithm' ? 'bg-accent' : ''}
           >
             Algorithm Mode
+          </DropdownMenuItem>
+          <DropdownMenuItem 
+            onClick={() => onModeChange('backend')}
+            className={currentMode === 'backend' ? 'bg-accent' : ''}
+          >
+            Backend Mode
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
