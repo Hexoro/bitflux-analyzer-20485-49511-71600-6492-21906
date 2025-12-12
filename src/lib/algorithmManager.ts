@@ -1,34 +1,54 @@
 /**
- * Algorithm Manager - Manages algorithm files (C++) and scoring configurations (JSON)
- * Persists data to localStorage for permanent storage
+ * Algorithm Manager - Manages all algorithm-related files with persistence
+ * 
+ * File Types:
+ * - Strategies: C++ algorithm files
+ * - Scoring: Lua scripts for economy/cost calculations
+ * - Presets: JSON files defining algorithm/scoring/policies/metrics configuration
+ * - Metrics: JSON files defining metric formulas and calculations
+ * - Policies: Lua scripts for rules and constraints
+ * - Operations: JSON files defining valid operations
  */
 
 export interface AlgorithmFile {
   id: string;
   name: string;
   content: string;
+  type: 'strategy' | 'scoring' | 'preset' | 'metrics' | 'policies' | 'operations';
   created: Date;
   modified: Date;
 }
 
-export interface OperationCost {
-  operation: string;
-  cost: number;
-}
-
-export interface CombinedOperationCost {
-  operations: string[];
-  cost: number;
-}
-
-export interface ScoringConfig {
+export interface MetricDefinition {
   id: string;
   name: string;
-  initialBudget: number;
-  operations: OperationCost[];
-  combinedOperations: CombinedOperationCost[];
-  created: Date;
-  modified: Date;
+  description: string;
+  formula: string;
+  enabled: boolean;
+}
+
+export interface OperationDefinition {
+  id: string;
+  name: string;
+  description: string;
+  enabled: boolean;
+}
+
+export interface PresetConfig {
+  name: string;
+  strategyId?: string;
+  scoringId?: string;
+  policyIds?: string[];
+  metricsId?: string;
+  operationsId?: string;
+}
+
+export interface ParsedMetrics {
+  metrics: MetricDefinition[];
+}
+
+export interface ParsedOperations {
+  operations: OperationDefinition[];
 }
 
 export interface ScoringState {
@@ -37,13 +57,22 @@ export interface ScoringState {
   operationsApplied: { operation: string; cost: number; timestamp: Date }[];
 }
 
-const ALGORITHMS_STORAGE_KEY = 'bitwise_algorithms';
-const SCORING_STORAGE_KEY = 'bitwise_scoring_configs';
-const SCORING_STATE_KEY = 'bitwise_scoring_state';
+const STORAGE_KEYS = {
+  strategies: 'bitwise_strategies',
+  scoring: 'bitwise_scoring_lua',
+  presets: 'bitwise_presets',
+  metrics: 'bitwise_metrics',
+  policies: 'bitwise_policies',
+  operations: 'bitwise_operations',
+  scoringState: 'bitwise_scoring_state',
+  metricsState: 'bitwise_metrics_state',
+  operationsState: 'bitwise_operations_state',
+};
 
 export class AlgorithmManager {
-  private algorithms: Map<string, AlgorithmFile> = new Map();
-  private scoringConfigs: Map<string, ScoringConfig> = new Map();
+  private files: Map<string, AlgorithmFile> = new Map();
+  private metricsState: Map<string, boolean> = new Map(); // metricId -> enabled
+  private operationsState: Map<string, boolean> = new Map(); // operationId -> enabled
   private scoringState: ScoringState = {
     configId: null,
     currentBudget: 0,
@@ -55,242 +84,296 @@ export class AlgorithmManager {
     this.loadFromStorage();
   }
 
-  // Load from localStorage
   private loadFromStorage(): void {
     try {
-      const algorithmsData = localStorage.getItem(ALGORITHMS_STORAGE_KEY);
-      if (algorithmsData) {
-        const parsed = JSON.parse(algorithmsData);
-        parsed.forEach((alg: any) => {
-          this.algorithms.set(alg.id, {
-            ...alg,
-            created: new Date(alg.created),
-            modified: new Date(alg.modified),
+      // Load all file types
+      const fileTypes: AlgorithmFile['type'][] = ['strategy', 'scoring', 'preset', 'metrics', 'policies', 'operations'];
+      const keyMap: Record<AlgorithmFile['type'], string> = {
+        strategy: STORAGE_KEYS.strategies,
+        scoring: STORAGE_KEYS.scoring,
+        preset: STORAGE_KEYS.presets,
+        metrics: STORAGE_KEYS.metrics,
+        policies: STORAGE_KEYS.policies,
+        operations: STORAGE_KEYS.operations,
+      };
+
+      for (const type of fileTypes) {
+        const data = localStorage.getItem(keyMap[type]);
+        if (data) {
+          const parsed = JSON.parse(data);
+          parsed.forEach((file: any) => {
+            this.files.set(file.id, {
+              ...file,
+              type,
+              created: new Date(file.created),
+              modified: new Date(file.modified),
+            });
           });
-        });
+        }
       }
 
-      const scoringData = localStorage.getItem(SCORING_STORAGE_KEY);
-      if (scoringData) {
-        const parsed = JSON.parse(scoringData);
-        parsed.forEach((cfg: any) => {
-          this.scoringConfigs.set(cfg.id, {
-            ...cfg,
-            created: new Date(cfg.created),
-            modified: new Date(cfg.modified),
-          });
-        });
-      }
-
-      const stateData = localStorage.getItem(SCORING_STATE_KEY);
+      // Load scoring state
+      const stateData = localStorage.getItem(STORAGE_KEYS.scoringState);
       if (stateData) {
         const parsed = JSON.parse(stateData);
         this.scoringState = {
           ...parsed,
-          operationsApplied: parsed.operationsApplied.map((op: any) => ({
+          operationsApplied: (parsed.operationsApplied || []).map((op: any) => ({
             ...op,
             timestamp: new Date(op.timestamp),
           })),
         };
+      }
+
+      // Load metrics state
+      const metricsStateData = localStorage.getItem(STORAGE_KEYS.metricsState);
+      if (metricsStateData) {
+        const parsed = JSON.parse(metricsStateData);
+        Object.entries(parsed).forEach(([key, value]) => {
+          this.metricsState.set(key, value as boolean);
+        });
+      }
+
+      // Load operations state
+      const opsStateData = localStorage.getItem(STORAGE_KEYS.operationsState);
+      if (opsStateData) {
+        const parsed = JSON.parse(opsStateData);
+        Object.entries(parsed).forEach(([key, value]) => {
+          this.operationsState.set(key, value as boolean);
+        });
       }
     } catch (error) {
       console.error('Failed to load algorithm data from storage:', error);
     }
   }
 
-  // Save to localStorage
   private saveToStorage(): void {
     try {
-      const algorithmsData = Array.from(this.algorithms.values());
-      localStorage.setItem(ALGORITHMS_STORAGE_KEY, JSON.stringify(algorithmsData));
+      const keyMap: Record<AlgorithmFile['type'], string> = {
+        strategy: STORAGE_KEYS.strategies,
+        scoring: STORAGE_KEYS.scoring,
+        preset: STORAGE_KEYS.presets,
+        metrics: STORAGE_KEYS.metrics,
+        policies: STORAGE_KEYS.policies,
+        operations: STORAGE_KEYS.operations,
+      };
 
-      const scoringData = Array.from(this.scoringConfigs.values());
-      localStorage.setItem(SCORING_STORAGE_KEY, JSON.stringify(scoringData));
+      // Group files by type and save
+      const grouped: Record<AlgorithmFile['type'], AlgorithmFile[]> = {
+        strategy: [],
+        scoring: [],
+        preset: [],
+        metrics: [],
+        policies: [],
+        operations: [],
+      };
 
-      localStorage.setItem(SCORING_STATE_KEY, JSON.stringify(this.scoringState));
+      this.files.forEach(file => {
+        grouped[file.type].push(file);
+      });
+
+      for (const [type, files] of Object.entries(grouped)) {
+        localStorage.setItem(keyMap[type as AlgorithmFile['type']], JSON.stringify(files));
+      }
+
+      // Save states
+      localStorage.setItem(STORAGE_KEYS.scoringState, JSON.stringify(this.scoringState));
+      localStorage.setItem(STORAGE_KEYS.metricsState, JSON.stringify(Object.fromEntries(this.metricsState)));
+      localStorage.setItem(STORAGE_KEYS.operationsState, JSON.stringify(Object.fromEntries(this.operationsState)));
     } catch (error) {
       console.error('Failed to save algorithm data to storage:', error);
     }
   }
 
-  // Algorithm CRUD operations
-  addAlgorithm(name: string, content: string): AlgorithmFile {
-    const id = `alg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    const algorithm: AlgorithmFile = {
+  // Generic file operations
+  addFile(name: string, content: string, type: AlgorithmFile['type']): AlgorithmFile {
+    const id = `${type}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const file: AlgorithmFile = {
       id,
       name,
       content,
+      type,
       created: new Date(),
       modified: new Date(),
     };
-    this.algorithms.set(id, algorithm);
+    this.files.set(id, file);
+
+    // Initialize metrics/operations states if applicable
+    if (type === 'metrics') {
+      this.initializeMetricsState(id, content);
+    } else if (type === 'operations') {
+      this.initializeOperationsState(id, content);
+    }
+
     this.saveToStorage();
     this.notifyListeners();
-    return algorithm;
+    return file;
   }
 
-  getAlgorithms(): AlgorithmFile[] {
-    return Array.from(this.algorithms.values()).sort((a, b) => 
-      a.created.getTime() - b.created.getTime()
-    );
-  }
-
-  getAlgorithm(id: string): AlgorithmFile | undefined {
-    return this.algorithms.get(id);
-  }
-
-  updateAlgorithm(id: string, content: string): void {
-    const alg = this.algorithms.get(id);
-    if (alg) {
-      alg.content = content;
-      alg.modified = new Date();
-      this.saveToStorage();
-      this.notifyListeners();
+  private initializeMetricsState(fileId: string, content: string): void {
+    try {
+      const parsed: ParsedMetrics = JSON.parse(content);
+      parsed.metrics?.forEach(metric => {
+        const key = `${fileId}:${metric.id}`;
+        if (!this.metricsState.has(key)) {
+          this.metricsState.set(key, metric.enabled ?? true);
+        }
+      });
+    } catch (e) {
+      console.error('Failed to parse metrics file:', e);
     }
   }
 
-  deleteAlgorithm(id: string): void {
-    this.algorithms.delete(id);
-    this.saveToStorage();
-    this.notifyListeners();
-  }
-
-  // Scoring Config CRUD operations
-  addScoringConfig(name: string, config: Omit<ScoringConfig, 'id' | 'name' | 'created' | 'modified'>): ScoringConfig {
-    const id = `scoring_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    const scoringConfig: ScoringConfig = {
-      id,
-      name,
-      ...config,
-      created: new Date(),
-      modified: new Date(),
-    };
-    this.scoringConfigs.set(id, scoringConfig);
-    this.saveToStorage();
-    this.notifyListeners();
-    return scoringConfig;
-  }
-
-  getScoringConfigs(): ScoringConfig[] {
-    return Array.from(this.scoringConfigs.values()).sort((a, b) => 
-      a.created.getTime() - b.created.getTime()
-    );
-  }
-
-  getScoringConfig(id: string): ScoringConfig | undefined {
-    return this.scoringConfigs.get(id);
-  }
-
-  deleteScoringConfig(id: string): void {
-    this.scoringConfigs.delete(id);
-    if (this.scoringState.configId === id) {
-      this.scoringState = {
-        configId: null,
-        currentBudget: 0,
-        operationsApplied: [],
-      };
-    }
-    this.saveToStorage();
-    this.notifyListeners();
-  }
-
-  // Scoring State operations
-  activateScoringConfig(id: string): void {
-    const config = this.scoringConfigs.get(id);
-    if (config) {
-      this.scoringState = {
-        configId: id,
-        currentBudget: config.initialBudget,
-        operationsApplied: [],
-      };
-      this.saveToStorage();
-      this.notifyListeners();
+  private initializeOperationsState(fileId: string, content: string): void {
+    try {
+      const parsed: ParsedOperations = JSON.parse(content);
+      parsed.operations?.forEach(op => {
+        const key = `${fileId}:${op.id}`;
+        if (!this.operationsState.has(key)) {
+          this.operationsState.set(key, op.enabled ?? true);
+        }
+      });
+    } catch (e) {
+      console.error('Failed to parse operations file:', e);
     }
   }
 
+  getFilesByType(type: AlgorithmFile['type']): AlgorithmFile[] {
+    return Array.from(this.files.values())
+      .filter(f => f.type === type)
+      .sort((a, b) => b.created.getTime() - a.created.getTime());
+  }
+
+  getFile(id: string): AlgorithmFile | undefined {
+    return this.files.get(id);
+  }
+
+  deleteFile(id: string): void {
+    const file = this.files.get(id);
+    if (file) {
+      // Clean up associated states
+      if (file.type === 'metrics') {
+        Array.from(this.metricsState.keys())
+          .filter(k => k.startsWith(`${id}:`))
+          .forEach(k => this.metricsState.delete(k));
+      } else if (file.type === 'operations') {
+        Array.from(this.operationsState.keys())
+          .filter(k => k.startsWith(`${id}:`))
+          .forEach(k => this.operationsState.delete(k));
+      }
+    }
+    this.files.delete(id);
+    this.saveToStorage();
+    this.notifyListeners();
+  }
+
+  // Convenience methods for each type
+  getStrategies(): AlgorithmFile[] {
+    return this.getFilesByType('strategy');
+  }
+
+  getScoringScripts(): AlgorithmFile[] {
+    return this.getFilesByType('scoring');
+  }
+
+  getPresets(): AlgorithmFile[] {
+    return this.getFilesByType('preset');
+  }
+
+  getMetricsFiles(): AlgorithmFile[] {
+    return this.getFilesByType('metrics');
+  }
+
+  getPolicies(): AlgorithmFile[] {
+    return this.getFilesByType('policies');
+  }
+
+  getOperationsFiles(): AlgorithmFile[] {
+    return this.getFilesByType('operations');
+  }
+
+  // Metrics state management
+  getMetricsFromFile(fileId: string): (MetricDefinition & { fileId: string })[] {
+    const file = this.files.get(fileId);
+    if (!file || file.type !== 'metrics') return [];
+
+    try {
+      const parsed: ParsedMetrics = JSON.parse(file.content);
+      return (parsed.metrics || []).map(m => ({
+        ...m,
+        fileId,
+        enabled: this.metricsState.get(`${fileId}:${m.id}`) ?? m.enabled ?? true,
+      }));
+    } catch (e) {
+      return [];
+    }
+  }
+
+  getAllMetrics(): (MetricDefinition & { fileId: string; fileName: string })[] {
+    const result: (MetricDefinition & { fileId: string; fileName: string })[] = [];
+    this.getMetricsFiles().forEach(file => {
+      const metrics = this.getMetricsFromFile(file.id);
+      metrics.forEach(m => result.push({ ...m, fileName: file.name }));
+    });
+    return result;
+  }
+
+  toggleMetric(fileId: string, metricId: string, enabled: boolean): void {
+    this.metricsState.set(`${fileId}:${metricId}`, enabled);
+    this.saveToStorage();
+    this.notifyListeners();
+  }
+
+  // Operations state management
+  getOperationsFromFile(fileId: string): (OperationDefinition & { fileId: string })[] {
+    const file = this.files.get(fileId);
+    if (!file || file.type !== 'operations') return [];
+
+    try {
+      const parsed: ParsedOperations = JSON.parse(file.content);
+      return (parsed.operations || []).map(op => ({
+        ...op,
+        fileId,
+        enabled: this.operationsState.get(`${fileId}:${op.id}`) ?? op.enabled ?? true,
+      }));
+    } catch (e) {
+      return [];
+    }
+  }
+
+  getAllOperations(): (OperationDefinition & { fileId: string; fileName: string })[] {
+    const result: (OperationDefinition & { fileId: string; fileName: string })[] = [];
+    this.getOperationsFiles().forEach(file => {
+      const ops = this.getOperationsFromFile(file.id);
+      ops.forEach(op => result.push({ ...op, fileName: file.name }));
+    });
+    return result;
+  }
+
+  toggleOperation(fileId: string, operationId: string, enabled: boolean): void {
+    this.operationsState.set(`${fileId}:${operationId}`, enabled);
+    this.saveToStorage();
+    this.notifyListeners();
+  }
+
+  // Scoring state (for Lua-based economy)
   getScoringState(): ScoringState {
     return this.scoringState;
   }
 
-  getActiveScoringConfig(): ScoringConfig | null {
-    if (!this.scoringState.configId) return null;
-    return this.scoringConfigs.get(this.scoringState.configId) || null;
-  }
-
-  // Calculate cost for an operation (considering combined operations)
-  calculateOperationCost(operation: string): number {
-    const config = this.getActiveScoringConfig();
-    if (!config) return 0;
-
-    // Check for combined operation discounts
-    const recentOps = this.scoringState.operationsApplied.slice(-5).map(op => op.operation);
-    
-    for (const combo of config.combinedOperations) {
-      const comboOps = [...combo.operations];
-      const testOps = [...recentOps, operation];
-      
-      // Check if the combination matches
-      let allMatch = true;
-      for (const comboOp of comboOps) {
-        const idx = testOps.indexOf(comboOp);
-        if (idx === -1) {
-          allMatch = false;
-          break;
-        }
-        testOps.splice(idx, 1);
-      }
-      
-      if (allMatch) {
-        // Return the combined cost divided by number of operations
-        return combo.cost / combo.operations.length;
-      }
-    }
-
-    // Find base cost
-    const opConfig = config.operations.find(op => op.operation === operation);
-    return opConfig?.cost ?? 0;
-  }
-
-  // Apply an operation and deduct cost
-  applyOperation(operation: string): { success: boolean; cost: number; remainingBudget: number } {
-    const cost = this.calculateOperationCost(operation);
-    
-    if (this.scoringState.currentBudget < cost) {
-      return {
-        success: false,
-        cost,
-        remainingBudget: this.scoringState.currentBudget,
-      };
-    }
-
-    this.scoringState.currentBudget -= cost;
-    this.scoringState.operationsApplied.push({
-      operation,
-      cost,
-      timestamp: new Date(),
-    });
+  setActiveScoringScript(id: string | null): void {
+    this.scoringState.configId = id;
+    this.scoringState.currentBudget = 1000; // Default, can be configured
+    this.scoringState.operationsApplied = [];
     this.saveToStorage();
     this.notifyListeners();
-
-    return {
-      success: true,
-      cost,
-      remainingBudget: this.scoringState.currentBudget,
-    };
   }
 
-  // Reset scoring state
   resetScoringState(): void {
-    const config = this.getActiveScoringConfig();
-    if (config) {
-      this.scoringState = {
-        configId: config.id,
-        currentBudget: config.initialBudget,
-        operationsApplied: [],
-      };
-      this.saveToStorage();
-      this.notifyListeners();
-    }
+    this.scoringState.currentBudget = 1000;
+    this.scoringState.operationsApplied = [];
+    this.saveToStorage();
+    this.notifyListeners();
   }
 
   // Subscribe to changes
@@ -302,7 +385,29 @@ export class AlgorithmManager {
   private notifyListeners(): void {
     this.listeners.forEach(listener => listener());
   }
+
+  // Legacy compatibility
+  getAlgorithms(): AlgorithmFile[] {
+    return this.getStrategies();
+  }
+
+  getAlgorithm(id: string): AlgorithmFile | undefined {
+    return this.getFile(id);
+  }
+
+  addAlgorithm(name: string, content: string): AlgorithmFile {
+    return this.addFile(name, content, 'strategy');
+  }
+
+  deleteAlgorithm(id: string): void {
+    this.deleteFile(id);
+  }
 }
 
 // Singleton instance
 export const algorithmManager = new AlgorithmManager();
+
+// Legacy exports for compatibility
+export type ScoringConfig = AlgorithmFile;
+export type OperationCost = { operation: string; cost: number };
+export type CombinedOperationCost = { operations: string[]; cost: number };
