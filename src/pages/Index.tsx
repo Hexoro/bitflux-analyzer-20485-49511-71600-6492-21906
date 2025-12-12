@@ -20,6 +20,7 @@ import { ConverterDialog } from '@/components/ConverterDialog';
 import { FileSystemSidebar } from '@/components/FileSystemSidebar';
 import { Toolbar, AppMode } from '@/components/Toolbar';
 import { AlgorithmPanel } from '@/components/AlgorithmPanel';
+import { BackendPanel } from '@/components/BackendPanel';
 import { DataGraphsDialog } from '@/components/DataGraphsDialog';
 import { AudioVisualizerDialog } from '@/components/AudioVisualizerDialog';
 import { PatternHeatmapDialog } from '@/components/PatternHeatmapDialog';
@@ -519,8 +520,10 @@ const Index = () => {
                 </TabsContent>
               </div>
             </Tabs>
-          ) : (
+          ) : appMode === 'algorithm' ? (
             <AlgorithmPanel />
+          ) : (
+            <BackendPanel />
           )}
         </ResizablePanel>
       </ResizablePanelGroup>
