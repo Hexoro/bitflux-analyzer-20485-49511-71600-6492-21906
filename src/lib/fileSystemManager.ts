@@ -14,6 +14,10 @@ export interface BinaryFile {
   group?: string; // Optional grouping
 }
 
+const FILES_STORAGE_KEY = 'bitwise_files';
+const GROUPS_STORAGE_KEY = 'bitwise_groups';
+const ACTIVE_FILE_KEY = 'bitwise_active_file';
+
 export class FileSystemManager {
   private files: Map<string, BinaryFile> = new Map();
   private groups: Set<string> = new Set();
@@ -21,8 +25,74 @@ export class FileSystemManager {
   private listeners: Set<() => void> = new Set();
 
   constructor() {
-    // Create a default file
-    this.createFile('untitled.txt', '', 'binary');
+    this.loadFromStorage();
+    // Only create default file if no files were loaded
+    if (this.files.size === 0) {
+      this.createFile('untitled.txt', '', 'binary');
+    }
+  }
+
+  // Load from localStorage
+  private loadFromStorage(): void {
+    try {
+      const filesData = localStorage.getItem(FILES_STORAGE_KEY);
+      if (filesData) {
+        const parsed = JSON.parse(filesData);
+        parsed.forEach((fileData: any) => {
+          const state = new FileState(fileData.bits || '');
+          const file: BinaryFile = {
+            id: fileData.id,
+            name: fileData.name,
+            created: new Date(fileData.created),
+            modified: new Date(fileData.modified),
+            type: fileData.type,
+            state,
+            group: fileData.group,
+          };
+          this.files.set(file.id, file);
+        });
+      }
+
+      const groupsData = localStorage.getItem(GROUPS_STORAGE_KEY);
+      if (groupsData) {
+        const parsed = JSON.parse(groupsData);
+        parsed.forEach((group: string) => this.groups.add(group));
+      }
+
+      const activeFileId = localStorage.getItem(ACTIVE_FILE_KEY);
+      if (activeFileId && this.files.has(activeFileId)) {
+        this.activeFileId = activeFileId;
+      } else if (this.files.size > 0) {
+        this.activeFileId = this.getFiles()[0].id;
+      }
+    } catch (error) {
+      console.error('Failed to load files from storage:', error);
+    }
+  }
+
+  // Save to localStorage
+  private saveToStorage(): void {
+    try {
+      const filesData = Array.from(this.files.values()).map(file => ({
+        id: file.id,
+        name: file.name,
+        created: file.created,
+        modified: file.modified,
+        type: file.type,
+        group: file.group,
+        bits: file.state.model.getBits(),
+      }));
+      localStorage.setItem(FILES_STORAGE_KEY, JSON.stringify(filesData));
+
+      const groupsData = Array.from(this.groups);
+      localStorage.setItem(GROUPS_STORAGE_KEY, JSON.stringify(groupsData));
+
+      if (this.activeFileId) {
+        localStorage.setItem(ACTIVE_FILE_KEY, this.activeFileId);
+      }
+    } catch (error) {
+      console.error('Failed to save files to storage:', error);
+    }
   }
 
   // Create a new file
@@ -41,6 +111,7 @@ export class FileSystemManager {
     
     this.files.set(id, file);
     this.activeFileId = id;
+    this.saveToStorage();
     this.notifyListeners();
     return file;
   }
@@ -62,6 +133,7 @@ export class FileSystemManager {
   setActiveFile(id: string): void {
     if (this.files.has(id)) {
       this.activeFileId = id;
+      this.saveToStorage();
       this.notifyListeners();
     }
   }
@@ -72,6 +144,7 @@ export class FileSystemManager {
     if (file) {
       file.state.model.loadBits(bits);
       file.modified = new Date();
+      this.saveToStorage();
       this.notifyListeners();
     }
   }
@@ -82,6 +155,7 @@ export class FileSystemManager {
     if (file) {
       file.name = newName;
       file.modified = new Date();
+      this.saveToStorage();
       this.notifyListeners();
     }
   }
@@ -96,6 +170,7 @@ export class FileSystemManager {
       this.activeFileId = files.length > 0 ? files[0].id : null;
     }
     
+    this.saveToStorage();
     this.notifyListeners();
   }
 
@@ -127,6 +202,7 @@ export class FileSystemManager {
     if (file) {
       file.group = group;
       file.modified = new Date();
+      this.saveToStorage();
       this.notifyListeners();
     }
   }
@@ -135,6 +211,7 @@ export class FileSystemManager {
   addGroup(groupName: string): void {
     if (groupName.trim()) {
       this.groups.add(groupName.trim());
+      this.saveToStorage();
       this.notifyListeners();
     }
   }
@@ -148,6 +225,7 @@ export class FileSystemManager {
         file.group = undefined;
       }
     });
+    this.saveToStorage();
     this.notifyListeners();
   }
 
