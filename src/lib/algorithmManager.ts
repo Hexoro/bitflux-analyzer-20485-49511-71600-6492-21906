@@ -15,6 +15,7 @@ export interface AlgorithmFile {
   name: string;
   content: string;
   type: 'strategy' | 'scoring' | 'preset' | 'metrics' | 'policies' | 'operations';
+  language: 'cpp' | 'python' | 'lua' | 'json';
   created: Date;
   modified: Date;
 }
@@ -188,11 +189,21 @@ export class AlgorithmManager {
   // Generic file operations
   addFile(name: string, content: string, type: AlgorithmFile['type']): AlgorithmFile {
     const id = `${type}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    
+    // Determine language from extension
+    let language: AlgorithmFile['language'] = 'json';
+    const ext = name.split('.').pop()?.toLowerCase();
+    if (ext === 'cpp' || ext === 'c' || ext === 'h') language = 'cpp';
+    else if (ext === 'py') language = 'python';
+    else if (ext === 'lua') language = 'lua';
+    else if (ext === 'json') language = 'json';
+
     const file: AlgorithmFile = {
       id,
       name,
       content,
       type,
+      language,
       created: new Date(),
       modified: new Date(),
     };
