@@ -22,6 +22,12 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from '@/components/ui/accordion';
+import {
   Database,
   FileOutput,
   Plus,
@@ -33,6 +39,10 @@ import {
   Cog,
   ChevronRight,
   ChevronDown,
+  Info,
+  Code,
+  Variable,
+  BookOpen,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -41,7 +51,7 @@ import {
   PredefinedOperation,
 } from '@/lib/predefinedManager';
 
-type BackendTab = 'predefined' | 'generator';
+type BackendTab = 'predefined' | 'generator' | 'info';
 
 export const BackendPanel = () => {
   const [activeTab, setActiveTab] = useState<BackendTab>('predefined');
@@ -175,6 +185,10 @@ export const BackendPanel = () => {
         <TabsTrigger value="generator">
           <FileOutput className="w-4 h-4 mr-2" />
           File Generator
+        </TabsTrigger>
+        <TabsTrigger value="info">
+          <Info className="w-4 h-4 mr-2" />
+          Info
         </TabsTrigger>
       </TabsList>
 
@@ -396,6 +410,11 @@ export const BackendPanel = () => {
         {/* File Generator Tab */}
         <TabsContent value="generator" className="h-full m-0">
           <FileGeneratorPanel />
+        </TabsContent>
+
+        {/* Info Tab */}
+        <TabsContent value="info" className="h-full m-0">
+          <InfoPanel />
         </TabsContent>
       </div>
 
@@ -774,6 +793,288 @@ const FileGeneratorPanel = () => {
             </CardContent>
           </Card>
         )}
+      </div>
+    </ScrollArea>
+  );
+};
+
+// Info Panel Component - API Reference for Strategy/Scoring Development
+const InfoPanel = () => {
+  const allMetrics = predefinedManager.getAllMetrics();
+  const allOperations = predefinedManager.getAllOperations();
+
+  return (
+    <ScrollArea className="h-full">
+      <div className="p-4 space-y-4">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-sm">
+              <BookOpen className="w-4 h-4" />
+              API Reference
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="text-sm">
+            <p className="text-muted-foreground mb-4">
+              Reference for writing strategies, scoring scripts, and policies. All variables and functions below are available in your scripts.
+            </p>
+
+            <Accordion type="multiple" defaultValue={['globals', 'operations', 'metrics']} className="space-y-2">
+              {/* Global Variables */}
+              <AccordionItem value="globals" className="border rounded-lg">
+                <AccordionTrigger className="px-4 hover:no-underline">
+                  <div className="flex items-center gap-2">
+                    <Variable className="w-4 h-4 text-cyan-500" />
+                    <span>Global Variables</span>
+                  </div>
+                </AccordionTrigger>
+                <AccordionContent className="px-4 pb-4">
+                  <div className="space-y-3 font-mono text-xs">
+                    <div className="p-2 bg-muted/30 rounded">
+                      <code className="text-cyan-500">bits</code>
+                      <span className="text-muted-foreground ml-2">: string</span>
+                      <p className="text-muted-foreground mt-1 font-sans text-xs">Current binary stream as a string of 0s and 1s</p>
+                    </div>
+                    <div className="p-2 bg-muted/30 rounded">
+                      <code className="text-cyan-500">bits_length</code>
+                      <span className="text-muted-foreground ml-2">: number</span>
+                      <p className="text-muted-foreground mt-1 font-sans text-xs">Length of the current binary stream</p>
+                    </div>
+                    <div className="p-2 bg-muted/30 rounded">
+                      <code className="text-cyan-500">budget</code>
+                      <span className="text-muted-foreground ml-2">: number</span>
+                      <p className="text-muted-foreground mt-1 font-sans text-xs">Current remaining budget for operations</p>
+                    </div>
+                    <div className="p-2 bg-muted/30 rounded">
+                      <code className="text-cyan-500">initial_budget</code>
+                      <span className="text-muted-foreground ml-2">: number</span>
+                      <p className="text-muted-foreground mt-1 font-sans text-xs">Starting budget defined in scoring script</p>
+                    </div>
+                    <div className="p-2 bg-muted/30 rounded">
+                      <code className="text-cyan-500">step_count</code>
+                      <span className="text-muted-foreground ml-2">: number</span>
+                      <p className="text-muted-foreground mt-1 font-sans text-xs">Number of operations executed so far</p>
+                    </div>
+                    <div className="p-2 bg-muted/30 rounded">
+                      <code className="text-cyan-500">history</code>
+                      <span className="text-muted-foreground ml-2">: array</span>
+                      <p className="text-muted-foreground mt-1 font-sans text-xs">Array of previous states and operations</p>
+                    </div>
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+
+              {/* Available Functions */}
+              <AccordionItem value="functions" className="border rounded-lg">
+                <AccordionTrigger className="px-4 hover:no-underline">
+                  <div className="flex items-center gap-2">
+                    <Code className="w-4 h-4 text-yellow-500" />
+                    <span>Core Functions</span>
+                  </div>
+                </AccordionTrigger>
+                <AccordionContent className="px-4 pb-4">
+                  <div className="space-y-3 font-mono text-xs">
+                    <div className="p-2 bg-muted/30 rounded">
+                      <code className="text-yellow-500">apply_operation</code>
+                      <span className="text-muted-foreground">(op_name, params) → string</span>
+                      <p className="text-muted-foreground mt-1 font-sans text-xs">Apply an operation to the current bits</p>
+                    </div>
+                    <div className="p-2 bg-muted/30 rounded">
+                      <code className="text-yellow-500">get_cost</code>
+                      <span className="text-muted-foreground">(op_name) → number</span>
+                      <p className="text-muted-foreground mt-1 font-sans text-xs">Get the cost of an operation from scoring config</p>
+                    </div>
+                    <div className="p-2 bg-muted/30 rounded">
+                      <code className="text-yellow-500">get_combo_cost</code>
+                      <span className="text-muted-foreground">(op1, op2) → number</span>
+                      <p className="text-muted-foreground mt-1 font-sans text-xs">Get combined cost for two operations (may include discounts)</p>
+                    </div>
+                    <div className="p-2 bg-muted/30 rounded">
+                      <code className="text-yellow-500">get_metric</code>
+                      <span className="text-muted-foreground">(metric_name) → number</span>
+                      <p className="text-muted-foreground mt-1 font-sans text-xs">Calculate and return a metric value for current bits</p>
+                    </div>
+                    <div className="p-2 bg-muted/30 rounded">
+                      <code className="text-yellow-500">is_operation_allowed</code>
+                      <span className="text-muted-foreground">(op_name) → boolean</span>
+                      <p className="text-muted-foreground mt-1 font-sans text-xs">Check if operation is enabled and within policy</p>
+                    </div>
+                    <div className="p-2 bg-muted/30 rounded">
+                      <code className="text-yellow-500">deduct_budget</code>
+                      <span className="text-muted-foreground">(amount) → boolean</span>
+                      <p className="text-muted-foreground mt-1 font-sans text-xs">Deduct from budget, returns false if insufficient</p>
+                    </div>
+                    <div className="p-2 bg-muted/30 rounded">
+                      <code className="text-yellow-500">log</code>
+                      <span className="text-muted-foreground">(message) → void</span>
+                      <p className="text-muted-foreground mt-1 font-sans text-xs">Log a message to execution history</p>
+                    </div>
+                    <div className="p-2 bg-muted/30 rounded">
+                      <code className="text-yellow-500">halt</code>
+                      <span className="text-muted-foreground">() → void</span>
+                      <p className="text-muted-foreground mt-1 font-sans text-xs">Stop execution immediately</p>
+                    </div>
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+
+              {/* Available Operations */}
+              <AccordionItem value="operations" className="border rounded-lg">
+                <AccordionTrigger className="px-4 hover:no-underline">
+                  <div className="flex items-center gap-2">
+                    <Cog className="w-4 h-4 text-green-500" />
+                    <span>Available Operations ({allOperations.length})</span>
+                  </div>
+                </AccordionTrigger>
+                <AccordionContent className="px-4 pb-4">
+                  <div className="space-y-1 font-mono text-xs max-h-60 overflow-y-auto">
+                    {allOperations.map(op => (
+                      <div key={op.id} className="flex items-center justify-between p-2 bg-muted/30 rounded">
+                        <div>
+                          <code className="text-green-500">{op.id}</code>
+                          <span className="text-muted-foreground ml-2 font-sans">- {op.name}</span>
+                        </div>
+                        <Badge variant="outline" className="text-xs">{op.category}</Badge>
+                      </div>
+                    ))}
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+
+              {/* Available Metrics */}
+              <AccordionItem value="metrics" className="border rounded-lg">
+                <AccordionTrigger className="px-4 hover:no-underline">
+                  <div className="flex items-center gap-2">
+                    <Calculator className="w-4 h-4 text-purple-500" />
+                    <span>Available Metrics ({allMetrics.length})</span>
+                  </div>
+                </AccordionTrigger>
+                <AccordionContent className="px-4 pb-4">
+                  <div className="space-y-1 font-mono text-xs max-h-60 overflow-y-auto">
+                    {allMetrics.map(m => (
+                      <div key={m.id} className="flex items-center justify-between p-2 bg-muted/30 rounded">
+                        <div>
+                          <code className="text-purple-500">{m.id}</code>
+                          <span className="text-muted-foreground ml-2 font-sans">- {m.name}</span>
+                        </div>
+                        {m.unit && <Badge variant="outline" className="text-xs">{m.unit}</Badge>}
+                      </div>
+                    ))}
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+
+              {/* C++/Python Examples */}
+              <AccordionItem value="cpp" className="border rounded-lg">
+                <AccordionTrigger className="px-4 hover:no-underline">
+                  <div className="flex items-center gap-2">
+                    <Code className="w-4 h-4 text-cyan-500" />
+                    <span>C++ Strategy Example</span>
+                  </div>
+                </AccordionTrigger>
+                <AccordionContent className="px-4 pb-4">
+                  <pre className="bg-muted/50 p-3 rounded-lg text-xs overflow-x-auto font-mono">
+{`// strategy.cpp
+#include "bitwise_api.h"
+
+void execute() {
+    while (budget > 0) {
+        double entropy = get_metric("entropy");
+        
+        if (entropy > 0.9) {
+            if (is_operation_allowed("XOR")) {
+                int cost = get_cost("XOR");
+                if (deduct_budget(cost)) {
+                    apply_operation("XOR", {{"mask", "10101010"}});
+                }
+            }
+        } else {
+            apply_operation("RLE_ENCODE", {});
+            halt();
+        }
+    }
+}`}
+                  </pre>
+                </AccordionContent>
+              </AccordionItem>
+
+              {/* Python Example */}
+              <AccordionItem value="python" className="border rounded-lg">
+                <AccordionTrigger className="px-4 hover:no-underline">
+                  <div className="flex items-center gap-2">
+                    <Code className="w-4 h-4 text-yellow-500" />
+                    <span>Python Strategy Example (TensorFlow)</span>
+                  </div>
+                </AccordionTrigger>
+                <AccordionContent className="px-4 pb-4">
+                  <pre className="bg-muted/50 p-3 rounded-lg text-xs overflow-x-auto font-mono">
+{`# strategy.py
+import tensorflow as tf
+from bitwise_api import *
+
+def execute():
+    # Load pre-trained model
+    model = tf.keras.models.load_model('compression_model.h5')
+    
+    # Convert bits to tensor
+    bit_array = [int(b) for b in bits]
+    tensor = tf.reshape(bit_array, (1, -1))
+    
+    # Predict best operation sequence
+    predictions = model.predict(tensor)
+    
+    for op_idx in predictions[0]:
+        op_name = OPERATIONS[int(op_idx)]
+        if is_operation_allowed(op_name):
+            cost = get_cost(op_name)
+            if deduct_budget(cost):
+                apply_operation(op_name, {})
+    
+    log(f"Final entropy: {get_metric('entropy')}")
+`}
+                  </pre>
+                </AccordionContent>
+              </AccordionItem>
+
+              {/* Lua Scoring Example */}
+              <AccordionItem value="lua" className="border rounded-lg">
+                <AccordionTrigger className="px-4 hover:no-underline">
+                  <div className="flex items-center gap-2">
+                    <Code className="w-4 h-4 text-orange-500" />
+                    <span>Lua Scoring Example</span>
+                  </div>
+                </AccordionTrigger>
+                <AccordionContent className="px-4 pb-4">
+                  <pre className="bg-muted/50 p-3 rounded-lg text-xs overflow-x-auto font-mono">
+{`-- scoring.lua
+initial_budget = 1000
+
+costs = {
+    AND = 5, OR = 4, XOR = 6, NOT = 2,
+    SHL = 3, SHR = 3, ROL = 4, ROR = 4,
+    INSERT = 8, DELETE = 10, MOVE = 12
+}
+
+-- Combined operation discounts
+combos = {
+    { ops = {"XOR", "NOT"}, cost = 6 },  -- Discount from 8
+    { ops = {"SHL", "SHR"}, cost = 4 },  -- Discount from 6
+}
+
+function get_combo_cost(op1, op2)
+    for _, combo in ipairs(combos) do
+        if combo.ops[1] == op1 and combo.ops[2] == op2 then
+            return combo.cost
+        end
+    end
+    return costs[op1] + costs[op2]
+end
+`}
+                  </pre>
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
+          </CardContent>
+        </Card>
       </div>
     </ScrollArea>
   );

@@ -5,6 +5,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
+import { Progress } from '@/components/ui/progress';
 import { 
   Lightbulb, 
   Settings2, 
@@ -13,25 +14,39 @@ import {
   ListChecks, 
   Shield, 
   Cog, 
-  History, 
   Upload,
   FileCode,
   Trash2,
   Play,
-  RefreshCw,
+  Pause,
+  Square,
+  SkipForward,
   DollarSign,
   ChevronRight,
   ChevronDown,
   FileJson,
-  FileText
+  FileText,
+  Download,
+  Clock,
+  Cpu,
+  HardDrive,
+  Activity,
+  CheckCircle2,
+  XCircle,
+  AlertCircle
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { algorithmManager, AlgorithmFile } from '@/lib/algorithmManager';
 import { predefinedManager, PredefinedMetric, PredefinedOperation } from '@/lib/predefinedManager';
+import { algorithmExecutor, ExecutionResult, ExecutionStep, ExecutionState } from '@/lib/algorithmExecutor';
 
-type AlgorithmTab = 'strategy' | 'presets' | 'results' | 'scoring' | 'metrics' | 'policies' | 'operations' | 'history';
+type AlgorithmTab = 'strategy' | 'presets' | 'results' | 'scoring' | 'metrics' | 'policies' | 'operations';
 
-export const AlgorithmPanel = () => {
+interface AlgorithmPanelProps {
+  onExecutionHistoryChange?: (entries: ExecutionStep[]) => void;
+}
+
+export const AlgorithmPanel = ({ onExecutionHistoryChange }: AlgorithmPanelProps) => {
   const [activeTab, setActiveTab] = useState<AlgorithmTab>('strategy');
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [expandedMetric, setExpandedMetric] = useState<string | null>(null);
@@ -40,6 +55,11 @@ export const AlgorithmPanel = () => {
   const [enabledOperations, setEnabledOperations] = useState<Set<string>>(new Set());
   const [, forceUpdate] = useState({});
   
+  // Execution state
+  const [executionState, setExecutionState] = useState<ExecutionState>('idle');
+  const [currentResult, setCurrentResult] = useState<ExecutionResult | null>(null);
+  const [selectedResult, setSelectedResult] = useState<ExecutionResult | null>(null);
+  
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadType, setUploadType] = useState<AlgorithmFile['type']>('strategy');
 
@@ -47,6 +67,10 @@ export const AlgorithmPanel = () => {
     const updateState = () => forceUpdate({});
     const unsubscribe1 = algorithmManager.subscribe(updateState);
     const unsubscribe2 = predefinedManager.subscribe(updateState);
+    const unsubscribe3 = algorithmExecutor.subscribe(() => {
+      setCurrentResult(algorithmExecutor.getCurrentResult());
+      forceUpdate({});
+    });
     
     // Load enabled states from localStorage
     const savedMetrics = localStorage.getItem('bitwise_enabled_metrics');
@@ -54,11 +78,26 @@ export const AlgorithmPanel = () => {
     if (savedMetrics) setEnabledMetrics(new Set(JSON.parse(savedMetrics)));
     if (savedOps) setEnabledOperations(new Set(JSON.parse(savedOps)));
     
+    // Set up executor callbacks
+    algorithmExecutor.setCallbacks({
+      onStateChange: (state) => setExecutionState(state),
+      onStep: (step) => {
+        onExecutionHistoryChange?.(algorithmExecutor.getCurrentResult()?.steps || []);
+      },
+      onComplete: (result) => {
+        toast.success(`Execution completed in ${result.duration}ms`);
+      },
+      onError: (error) => {
+        toast.error(`Execution error: ${error}`);
+      },
+    });
+    
     return () => {
       unsubscribe1();
       unsubscribe2();
+      unsubscribe3();
     };
-  }, []);
+  }, [onExecutionHistoryChange]);
 
   const toggleMetricEnabled = (id: string) => {
     setEnabledMetrics(prev => {
@@ -89,9 +128,9 @@ export const AlgorithmPanel = () => {
   const handleUpload = (type: AlgorithmFile['type']) => {
     setUploadType(type);
     if (fileInputRef.current) {
-      // Set accept based on type
+      // Set accept based on type - now includes Python for strategies
       const acceptMap: Record<AlgorithmFile['type'], string> = {
-        strategy: '.cpp,.c,.h',
+        strategy: '.cpp,.c,.h,.py',
         scoring: '.lua',
         preset: '.json',
         metrics: '.json',
@@ -137,15 +176,51 @@ export const AlgorithmPanel = () => {
     toast.success('File deleted');
   };
 
-  const getFileIcon = (type: AlgorithmFile['type']) => {
-    switch (type) {
-      case 'strategy': return <FileCode className="w-4 h-4 text-cyan-500" />;
-      case 'scoring': return <FileText className="w-4 h-4 text-yellow-500" />;
-      case 'preset': return <FileJson className="w-4 h-4 text-green-500" />;
-      case 'metrics': return <FileJson className="w-4 h-4 text-purple-500" />;
-      case 'policies': return <FileText className="w-4 h-4 text-orange-500" />;
-      case 'operations': return <FileJson className="w-4 h-4 text-blue-500" />;
+  const handleRunStrategy = async () => {
+    const strategy = selectedFile ? algorithmManager.getFile(selectedFile) : null;
+    if (!strategy || strategy.type !== 'strategy') {
+      toast.error('Select a strategy file first');
+      return;
     }
+
+    // In real implementation, this would run with actual binary data
+    const mockBits = '1010101010101010101010101010101010101010101010101010101010101010';
+    await algorithmExecutor.startExecution(strategy.id, strategy.name, mockBits, 1000);
+  };
+
+  const handlePauseResume = () => {
+    if (executionState === 'running') {
+      algorithmExecutor.pause();
+    } else if (executionState === 'paused') {
+      algorithmExecutor.resume();
+    }
+  };
+
+  const handleStop = () => {
+    algorithmExecutor.stop();
+  };
+
+  const handleStep = () => {
+    algorithmExecutor.stepOnce();
+  };
+
+  const handleExportCSV = (result: ExecutionResult) => {
+    const csv = algorithmExecutor.exportToCSV(result);
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `execution_${result.strategyName}_${new Date(result.startTime).toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success('CSV exported');
+  };
+
+  const getFileIcon = (file: AlgorithmFile) => {
+    if (file.language === 'python') return <FileCode className="w-4 h-4 text-yellow-500" />;
+    if (file.language === 'cpp') return <FileCode className="w-4 h-4 text-cyan-500" />;
+    if (file.language === 'lua') return <FileText className="w-4 h-4 text-orange-500" />;
+    return <FileJson className="w-4 h-4 text-green-500" />;
   };
 
   const FileList = ({ 
@@ -172,11 +247,11 @@ export const AlgorithmPanel = () => {
           }}
         >
           <div className="flex items-center gap-3">
-            {getFileIcon(file.type)}
+            {getFileIcon(file)}
             <div>
               <p className="font-medium">{file.name}</p>
               <p className="text-xs text-muted-foreground">
-                {file.content.length} chars • {new Date(file.created).toLocaleDateString()}
+                {file.language.toUpperCase()} • {file.content.length} chars • {new Date(file.created).toLocaleDateString()}
               </p>
             </div>
           </div>
@@ -206,15 +281,99 @@ export const AlgorithmPanel = () => {
       <div className="mt-4">
         <div className="flex items-center justify-between mb-2">
           <h4 className="font-medium">Code Preview</h4>
-          <Button size="sm" variant="default" disabled>
-            <Play className="w-4 h-4 mr-2" />
-            Run
-          </Button>
+          <Badge variant="outline">{file.language.toUpperCase()}</Badge>
         </div>
         <pre className="bg-muted/50 p-3 rounded-lg text-xs overflow-x-auto max-h-64 overflow-y-auto font-mono">
           {file.content}
         </pre>
       </div>
+    );
+  };
+
+  // Execution Controls Component
+  const ExecutionControls = () => {
+    const isRunning = executionState === 'running';
+    const isPaused = executionState === 'paused';
+    const isActive = isRunning || isPaused;
+
+    return (
+      <Card className="mb-4">
+        <CardHeader className="pb-2">
+          <CardTitle className="flex items-center justify-between text-sm">
+            <div className="flex items-center gap-2">
+              <Activity className="w-4 h-4" />
+              Execution Controls
+            </div>
+            <Badge variant={
+              executionState === 'running' ? 'default' :
+              executionState === 'paused' ? 'secondary' :
+              executionState === 'completed' ? 'outline' :
+              executionState === 'error' ? 'destructive' : 'secondary'
+            }>
+              {executionState.toUpperCase()}
+            </Badge>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center gap-2 mb-3">
+            <Button 
+              size="sm" 
+              onClick={handleRunStrategy}
+              disabled={isActive || !selectedFile}
+              className="flex-1"
+            >
+              <Play className="w-4 h-4 mr-2" />
+              Run
+            </Button>
+            <Button 
+              size="sm" 
+              variant="outline"
+              onClick={handlePauseResume}
+              disabled={!isActive}
+            >
+              {isPaused ? <Play className="w-4 h-4" /> : <Pause className="w-4 h-4" />}
+            </Button>
+            <Button 
+              size="sm" 
+              variant="outline"
+              onClick={handleStep}
+              disabled={!isPaused}
+            >
+              <SkipForward className="w-4 h-4" />
+            </Button>
+            <Button 
+              size="sm" 
+              variant="destructive"
+              onClick={handleStop}
+              disabled={!isActive}
+            >
+              <Square className="w-4 h-4" />
+            </Button>
+          </div>
+
+          {currentResult && isActive && (
+            <div className="space-y-2">
+              <div className="flex justify-between text-xs">
+                <span>Step {currentResult.steps.length}</span>
+                <span>Budget: {currentResult.finalBudget.toFixed(0)}/{currentResult.initialBudget}</span>
+              </div>
+              <Progress 
+                value={(currentResult.initialBudget - currentResult.finalBudget) / currentResult.initialBudget * 100} 
+                className="h-2"
+              />
+              {currentResult.steps.length > 0 && (
+                <div className="p-2 bg-muted/30 rounded text-xs font-mono">
+                  <span className="text-muted-foreground">Last: </span>
+                  <span className="text-cyan-500">{currentResult.steps[currentResult.steps.length - 1].operation}</span>
+                  <span className="text-muted-foreground ml-2">
+                    Cost: {currentResult.steps[currentResult.steps.length - 1].cost}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     );
   };
 
@@ -235,14 +394,15 @@ export const AlgorithmPanel = () => {
         <TabsTrigger value="policies">Policies</TabsTrigger>
         <TabsTrigger value="operations">Operations</TabsTrigger>
         <TabsTrigger value="results">Results</TabsTrigger>
-        <TabsTrigger value="history">History</TabsTrigger>
       </TabsList>
 
       <div className="flex-1 overflow-hidden">
-        {/* Strategy Tab - C++ Algorithm Files */}
+        {/* Strategy Tab - C++/Python Algorithm Files */}
         <TabsContent value="strategy" className="h-full m-0">
           <ScrollArea className="h-full">
             <div className="p-4 space-y-4">
+              <ExecutionControls />
+              
               <Card>
                 <CardHeader className="pb-2">
                   <CardTitle className="flex items-center justify-between text-sm">
@@ -252,20 +412,20 @@ export const AlgorithmPanel = () => {
                     </div>
                     <Button size="sm" variant="outline" onClick={() => handleUpload('strategy')}>
                       <Upload className="w-4 h-4 mr-2" />
-                      Upload C++
+                      Upload C++/Python
                     </Button>
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="text-sm">
                   <p className="text-muted-foreground mb-4">
-                    Upload C++ compression algorithms to process binary data.
+                    Upload C++ or Python algorithms to process binary data. Python files support TensorFlow/AI-based algorithms.
                   </p>
 
                   {algorithmManager.getStrategies().length === 0 ? (
                     <div className="text-center py-8 text-muted-foreground border border-dashed rounded-lg">
                       <FileCode className="w-8 h-8 mx-auto mb-2 opacity-50" />
                       <p>No algorithms uploaded</p>
-                      <p className="text-xs mt-1">Upload a .cpp, .c, or .h file</p>
+                      <p className="text-xs mt-1">Upload .cpp, .c, .h, or .py files</p>
                     </div>
                   ) : (
                     <FileList files={algorithmManager.getStrategies()} />
@@ -644,54 +804,166 @@ end`}
           </ScrollArea>
         </TabsContent>
 
-        {/* Results Tab */}
+        {/* Results Tab - Benchmarking & Export */}
         <TabsContent value="results" className="h-full m-0">
           <ScrollArea className="h-full">
-            <div className="p-4">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-sm">
-                    <BarChart2 className="w-4 h-4" />
-                    Execution Results
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="text-sm text-muted-foreground">
-                  <div className="text-center py-8 border border-dashed rounded-lg">
-                    <BarChart2 className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                    <p>No results yet</p>
-                    <p className="text-xs mt-1">Run an algorithm to see results</p>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          </ScrollArea>
-        </TabsContent>
-
-        {/* History Tab */}
-        <TabsContent value="history" className="h-full m-0">
-          <ScrollArea className="h-full">
-            <div className="p-4">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center justify-between text-sm">
-                    <div className="flex items-center gap-2">
-                      <History className="w-4 h-4" />
-                      Execution History
+            <div className="p-4 space-y-4">
+              {algorithmExecutor.getResults().length === 0 ? (
+                <Card>
+                  <CardContent className="text-sm text-muted-foreground py-8">
+                    <div className="text-center border border-dashed rounded-lg py-8">
+                      <BarChart2 className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                      <p>No results yet</p>
+                      <p className="text-xs mt-1">Run an algorithm to see benchmarking results</p>
                     </div>
-                    <Button size="sm" variant="outline" disabled>
-                      <RefreshCw className="w-4 h-4 mr-2" />
-                      Clear
-                    </Button>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="text-sm text-muted-foreground">
-                  <div className="text-center py-8 border border-dashed rounded-lg">
-                    <History className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                    <p>No execution history</p>
-                    <p className="text-xs mt-1">Algorithm executions will appear here</p>
-                  </div>
-                </CardContent>
-              </Card>
+                  </CardContent>
+                </Card>
+              ) : (
+                <>
+                  {/* Results List */}
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="flex items-center justify-between text-sm">
+                        <div className="flex items-center gap-2">
+                          <BarChart2 className="w-4 h-4" />
+                          Execution Results ({algorithmExecutor.getResults().length})
+                        </div>
+                        <Button size="sm" variant="outline" onClick={() => algorithmExecutor.clearResults()}>
+                          <Trash2 className="w-4 h-4 mr-2" />
+                          Clear All
+                        </Button>
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-2">
+                        {algorithmExecutor.getResults().map((result) => (
+                          <div
+                            key={result.id}
+                            className={`p-3 rounded-lg border cursor-pointer transition-colors ${
+                              selectedResult?.id === result.id
+                                ? 'bg-primary/10 border-primary'
+                                : 'hover:bg-muted/50'
+                            }`}
+                            onClick={() => setSelectedResult(result)}
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                {result.success ? (
+                                  <CheckCircle2 className="w-4 h-4 text-green-500" />
+                                ) : (
+                                  <XCircle className="w-4 h-4 text-destructive" />
+                                )}
+                                <span className="font-medium">{result.strategyName}</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Badge variant="outline" className="text-xs">
+                                  {result.duration}ms
+                                </Badge>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  className="h-7 w-7"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleExportCSV(result);
+                                  }}
+                                >
+                                  <Download className="w-3 h-3" />
+                                </Button>
+                              </div>
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {new Date(result.startTime).toLocaleString()} • {result.steps.length} steps
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* Selected Result Details */}
+                  {selectedResult && (
+                    <Card>
+                      <CardHeader className="pb-2">
+                        <CardTitle className="flex items-center gap-2 text-sm">
+                          <Activity className="w-4 h-4" />
+                          Benchmark Details
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        {/* System Info */}
+                        <div className="grid grid-cols-2 gap-4 mb-4">
+                          <div className="p-3 bg-muted/30 rounded-lg">
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
+                              <Clock className="w-3 h-3" />
+                              Duration
+                            </div>
+                            <p className="font-mono text-lg">{selectedResult.duration}ms</p>
+                          </div>
+                          <div className="p-3 bg-muted/30 rounded-lg">
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
+                              <Cpu className="w-3 h-3" />
+                              CPU Time
+                            </div>
+                            <p className="font-mono text-lg">{selectedResult.cpuTimeMs}ms</p>
+                          </div>
+                          <div className="p-3 bg-muted/30 rounded-lg">
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
+                              <HardDrive className="w-3 h-3" />
+                              Peak Memory
+                            </div>
+                            <p className="font-mono text-lg">{selectedResult.peakMemoryMB.toFixed(2)}MB</p>
+                          </div>
+                          <div className="p-3 bg-muted/30 rounded-lg">
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
+                              <DollarSign className="w-3 h-3" />
+                              Total Cost
+                            </div>
+                            <p className="font-mono text-lg">{selectedResult.totalCost}</p>
+                          </div>
+                        </div>
+
+                        {/* Size Changes */}
+                        <div className="mb-4 p-3 bg-muted/30 rounded-lg">
+                          <h4 className="text-xs font-medium mb-2">Size Analysis</h4>
+                          <div className="flex items-center justify-between text-sm">
+                            <span>Initial: {selectedResult.initialSize} bits</span>
+                            <span className="text-muted-foreground">→</span>
+                            <span>Final: {selectedResult.finalSize} bits</span>
+                            <Badge variant={selectedResult.compressionRatio > 1 ? "default" : "secondary"}>
+                              {selectedResult.compressionRatio.toFixed(2)}x
+                            </Badge>
+                          </div>
+                        </div>
+
+                        {/* Steps Summary */}
+                        <div className="mb-4">
+                          <h4 className="text-xs font-medium mb-2">Operations ({selectedResult.steps.length})</h4>
+                          <div className="max-h-40 overflow-y-auto space-y-1">
+                            {selectedResult.steps.map((step) => (
+                              <div key={step.stepNumber} className="flex items-center justify-between p-2 bg-muted/20 rounded text-xs">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-muted-foreground">#{step.stepNumber}</span>
+                                  <Badge variant="outline" className="font-mono">{step.operation}</Badge>
+                                </div>
+                                <div className="flex items-center gap-3 text-muted-foreground">
+                                  <span>Cost: {step.cost}</span>
+                                  <span>Size: {step.sizeBefore}→{step.sizeAfter}</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        <Button className="w-full" onClick={() => handleExportCSV(selectedResult)}>
+                          <Download className="w-4 h-4 mr-2" />
+                          Export CSV Report
+                        </Button>
+                      </CardContent>
+                    </Card>
+                  )}
+                </>
+              )}
             </div>
           </ScrollArea>
         </TabsContent>
