@@ -33,12 +33,13 @@ import {
   Activity,
   CheckCircle2,
   XCircle,
-  AlertCircle
+  FileArchive,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { algorithmManager, AlgorithmFile } from '@/lib/algorithmManager';
-import { predefinedManager, PredefinedMetric, PredefinedOperation } from '@/lib/predefinedManager';
+import { predefinedManager } from '@/lib/predefinedManager';
 import { algorithmExecutor, ExecutionResult, ExecutionStep, ExecutionState } from '@/lib/algorithmExecutor';
+import { resultExporter } from '@/lib/resultExporter';
 
 type AlgorithmTab = 'strategy' | 'presets' | 'results' | 'scoring' | 'metrics' | 'policies' | 'operations';
 
@@ -214,6 +215,16 @@ export const AlgorithmPanel = ({ onExecutionHistoryChange }: AlgorithmPanelProps
     a.click();
     URL.revokeObjectURL(url);
     toast.success('CSV exported');
+  };
+
+  const handleExportZip = async (result: ExecutionResult) => {
+    try {
+      const blob = await resultExporter.exportAsZip(result);
+      resultExporter.downloadBlob(blob, `results_${result.strategyName}_${result.id.slice(0, 8)}.zip`);
+      toast.success('Results ZIP exported');
+    } catch (error) {
+      toast.error('Failed to export ZIP');
+    }
   };
 
   const getFileIcon = (file: AlgorithmFile) => {
@@ -955,10 +966,16 @@ end`}
                           </div>
                         </div>
 
-                        <Button className="w-full" onClick={() => handleExportCSV(selectedResult)}>
-                          <Download className="w-4 h-4 mr-2" />
-                          Export CSV Report
-                        </Button>
+                        <div className="flex gap-2">
+                          <Button className="flex-1" onClick={() => handleExportCSV(selectedResult)}>
+                            <Download className="w-4 h-4 mr-2" />
+                            Export CSV
+                          </Button>
+                          <Button variant="outline" onClick={() => handleExportZip(selectedResult)}>
+                            <FileArchive className="w-4 h-4 mr-2" />
+                            Export ZIP
+                          </Button>
+                        </div>
                       </CardContent>
                     </Card>
                   )}

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
+import { Progress } from '@/components/ui/progress';
 import {
   Dialog,
   DialogContent,
@@ -43,6 +44,14 @@ import {
   Code,
   Variable,
   BookOpen,
+  Upload,
+  FileCheck,
+  AlertTriangle,
+  CheckCircle2,
+  XCircle,
+  FileArchive,
+  Play,
+  Loader2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -50,8 +59,11 @@ import {
   PredefinedMetric,
   PredefinedOperation,
 } from '@/lib/predefinedManager';
+import { algorithmManager } from '@/lib/algorithmManager';
+import { fileValidator, ValidationResult } from '@/lib/fileValidator';
+import { resultExporter } from '@/lib/resultExporter';
 
-type BackendTab = 'predefined' | 'generator' | 'info';
+type BackendTab = 'predefined' | 'generator' | 'validator' | 'info';
 
 export const BackendPanel = () => {
   const [activeTab, setActiveTab] = useState<BackendTab>('predefined');
@@ -186,6 +198,10 @@ export const BackendPanel = () => {
           <FileOutput className="w-4 h-4 mr-2" />
           File Generator
         </TabsTrigger>
+        <TabsTrigger value="validator">
+          <FileCheck className="w-4 h-4 mr-2" />
+          Validator
+        </TabsTrigger>
         <TabsTrigger value="info">
           <Info className="w-4 h-4 mr-2" />
           Info
@@ -277,33 +293,6 @@ export const BackendPanel = () => {
                         </div>
                       </div>
                     ))}
-                    {operations.filter(op => !op.category).length > 0 && (
-                      <div className="mb-3">
-                        <h4 className="text-xs font-medium text-muted-foreground uppercase mb-2">Uncategorized</h4>
-                        <div className="space-y-1">
-                          {operations.filter(op => !op.category).map(op => (
-                            <div
-                              key={op.id}
-                              className="flex items-center justify-between p-3 border rounded-lg hover:bg-muted/30"
-                            >
-                              <div className="flex items-center gap-2">
-                                <span className="font-mono text-sm font-medium">{op.id}</span>
-                                <span className="text-muted-foreground">-</span>
-                                <span>{op.name}</span>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => handleEditOperation(op)}>
-                                  <Pencil className="w-3 h-3" />
-                                </Button>
-                                <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" onClick={() => handleDeleteOperation(op.id)}>
-                                  <Trash2 className="w-3 h-3" />
-                                </Button>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -374,32 +363,6 @@ export const BackendPanel = () => {
                         </div>
                       </div>
                     ))}
-                    {metrics.filter(m => !m.category).length > 0 && (
-                      <div className="mb-3">
-                        <h4 className="text-xs font-medium text-muted-foreground uppercase mb-2">Uncategorized</h4>
-                        <div className="space-y-1">
-                          {metrics.filter(m => !m.category).map(metric => (
-                            <div
-                              key={metric.id}
-                              className="flex items-center justify-between p-3 border rounded-lg hover:bg-muted/30"
-                            >
-                              <div>
-                                <span className="font-medium">{metric.name}</span>
-                                <p className="text-xs text-muted-foreground">{metric.description}</p>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => handleEditMetric(metric)}>
-                                  <Pencil className="w-3 h-3" />
-                                </Button>
-                                <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" onClick={() => handleDeleteMetric(metric.id)}>
-                                  <Trash2 className="w-3 h-3" />
-                                </Button>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -410,6 +373,11 @@ export const BackendPanel = () => {
         {/* File Generator Tab */}
         <TabsContent value="generator" className="h-full m-0">
           <FileGeneratorPanel />
+        </TabsContent>
+
+        {/* Validator Tab */}
+        <TabsContent value="validator" className="h-full m-0">
+          <ValidatorPanel />
         </TabsContent>
 
         {/* Info Tab */}
@@ -539,38 +507,252 @@ export const BackendPanel = () => {
   );
 };
 
+// File Validator Panel Component
+const ValidatorPanel = () => {
+  const [validationResult, setValidationResult] = useState<ValidationResult | null>(null);
+  const [isValidating, setIsValidating] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<{ name: string; content: string } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const content = await file.text();
+    setSelectedFile({ name: file.name, content });
+    setValidationResult(null);
+  };
+
+  const handleValidate = async () => {
+    if (!selectedFile) return;
+
+    setIsValidating(true);
+    try {
+      const result = await fileValidator.validateFile(selectedFile.name, selectedFile.content, true);
+      setValidationResult(result);
+      
+      if (result.valid && result.errors.length === 0) {
+        toast.success('File validation passed!');
+      } else if (result.errors.length > 0) {
+        toast.error(`Validation failed with ${result.errors.length} error(s)`);
+      } else {
+        toast.info(`Validation passed with ${result.warnings.length} warning(s)`);
+      }
+    } catch (error) {
+      toast.error('Validation failed: ' + error);
+    } finally {
+      setIsValidating(false);
+    }
+  };
+
+  return (
+    <ScrollArea className="h-full">
+      <div className="p-4 space-y-4">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-sm">
+              <FileCheck className="w-4 h-4" />
+              File Validator (Full Sandbox Test)
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Upload strategy, scoring, policy, or configuration files for full validation with sandbox testing.
+            </p>
+
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFileUpload}
+              accept=".cpp,.c,.h,.py,.lua,.json"
+              className="hidden"
+            />
+
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => fileInputRef.current?.click()} className="flex-1">
+                <Upload className="w-4 h-4 mr-2" />
+                {selectedFile ? selectedFile.name : 'Select File'}
+              </Button>
+              <Button onClick={handleValidate} disabled={!selectedFile || isValidating}>
+                {isValidating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Play className="w-4 h-4 mr-2" />}
+                Validate
+              </Button>
+            </div>
+
+            {selectedFile && (
+              <div className="p-3 bg-muted/30 rounded-lg">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="font-medium text-sm">{selectedFile.name}</span>
+                  <Badge variant="outline">{selectedFile.content.length} chars</Badge>
+                </div>
+                <pre className="text-xs overflow-x-auto max-h-32 overflow-y-auto font-mono text-muted-foreground">
+                  {selectedFile.content.slice(0, 500)}{selectedFile.content.length > 500 ? '...' : ''}
+                </pre>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {validationResult && (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="flex items-center gap-2 text-sm">
+                {validationResult.valid ? (
+                  <CheckCircle2 className="w-4 h-4 text-green-500" />
+                ) : (
+                  <XCircle className="w-4 h-4 text-destructive" />
+                )}
+                Validation Results
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center gap-2">
+                <Badge variant={validationResult.valid ? 'default' : 'destructive'}>
+                  {validationResult.valid ? 'VALID' : 'INVALID'}
+                </Badge>
+                <Badge variant="outline">{validationResult.fileType}</Badge>
+              </div>
+
+              {validationResult.errors.length > 0 && (
+                <div className="space-y-1">
+                  <h4 className="text-xs font-medium text-destructive flex items-center gap-1">
+                    <XCircle className="w-3 h-3" /> Errors ({validationResult.errors.length})
+                  </h4>
+                  {validationResult.errors.map((err, i) => (
+                    <div key={i} className="p-2 bg-destructive/10 rounded text-xs text-destructive">
+                      {err}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {validationResult.warnings.length > 0 && (
+                <div className="space-y-1">
+                  <h4 className="text-xs font-medium text-yellow-500 flex items-center gap-1">
+                    <AlertTriangle className="w-3 h-3" /> Warnings ({validationResult.warnings.length})
+                  </h4>
+                  {validationResult.warnings.map((warn, i) => (
+                    <div key={i} className="p-2 bg-yellow-500/10 rounded text-xs text-yellow-600">
+                      {warn}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="space-y-1">
+                <h4 className="text-xs font-medium">API Compliance</h4>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="p-2 bg-muted/30 rounded">
+                    <span className="text-muted-foreground">Operations Used:</span>
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {validationResult.apiCompliance.usedOperations.map(op => (
+                        <Badge
+                          key={op}
+                          variant={validationResult.apiCompliance.unknownOperations.includes(op) ? 'destructive' : 'outline'}
+                          className="text-xs"
+                        >
+                          {op}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="p-2 bg-muted/30 rounded">
+                    <span className="text-muted-foreground">Metrics Used:</span>
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {validationResult.apiCompliance.usedMetrics.map(m => (
+                        <Badge
+                          key={m}
+                          variant={validationResult.apiCompliance.unknownMetrics.includes(m) ? 'destructive' : 'outline'}
+                          className="text-xs"
+                        >
+                          {m}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {validationResult.sandboxResult && (
+                <div className="space-y-1">
+                  <h4 className="text-xs font-medium flex items-center gap-1">
+                    <Play className="w-3 h-3" /> Sandbox Test
+                  </h4>
+                  <div className={`p-2 rounded text-xs ${validationResult.sandboxResult.success ? 'bg-green-500/10' : 'bg-destructive/10'}`}>
+                    <div className="flex items-center justify-between">
+                      <span>{validationResult.sandboxResult.success ? 'Passed' : 'Failed'}</span>
+                      <Badge variant="outline">{validationResult.sandboxResult.duration.toFixed(2)}ms</Badge>
+                    </div>
+                    {validationResult.sandboxResult.error && (
+                      <p className="mt-1 text-destructive">{validationResult.sandboxResult.error}</p>
+                    )}
+                    {validationResult.sandboxResult.output && (
+                      <pre className="mt-2 p-2 bg-background/50 rounded overflow-x-auto max-h-32">
+                        {JSON.stringify(validationResult.sandboxResult.output, null, 2)}
+                      </pre>
+                    )}
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+      </div>
+    </ScrollArea>
+  );
+};
+
 // File Generator Panel Component
 const FileGeneratorPanel = () => {
   const [fileType, setFileType] = useState<'preset' | 'scoring' | 'policies' | 'operations' | 'metrics'>('preset');
   const [generatedContent, setGeneratedContent] = useState('');
+  const [presetFiles, setPresetFiles] = useState<{
+    strategy?: { name: string; content: string };
+    scoring?: { name: string; content: string };
+    policies?: Array<{ name: string; content: string }>;
+  }>({});
 
-  // Form states for different file types
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploadTarget, setUploadTarget] = useState<'strategy' | 'scoring' | 'policies'>('strategy');
+
   const [presetForm, setPresetForm] = useState({
     name: '',
-    strategy: '',
-    scoring: '',
-    policies: [] as string[],
-    metrics: '',
-    operations: '',
   });
 
   const [scoringForm, setScoringForm] = useState({
     initialBudget: 1000,
     operations: {} as Record<string, number>,
-    combos: [] as { ops: string[]; cost: number }[],
   });
 
   const allMetrics = predefinedManager.getAllMetrics();
   const allOperations = predefinedManager.getAllOperations();
 
+  const handlePresetFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const content = await file.text();
+    
+    if (uploadTarget === 'strategy') {
+      setPresetFiles(prev => ({ ...prev, strategy: { name: file.name, content } }));
+    } else if (uploadTarget === 'scoring') {
+      setPresetFiles(prev => ({ ...prev, scoring: { name: file.name, content } }));
+    } else if (uploadTarget === 'policies') {
+      setPresetFiles(prev => ({
+        ...prev,
+        policies: [...(prev.policies || []), { name: file.name, content }]
+      }));
+    }
+    toast.success(`Added ${file.name} to preset`);
+  };
+
   const generatePreset = () => {
     const content = JSON.stringify({
       name: presetForm.name || 'My Preset',
-      strategy: presetForm.strategy || null,
-      scoring: presetForm.scoring || null,
-      policies: presetForm.policies,
-      metrics: presetForm.metrics || null,
-      operations: presetForm.operations || null,
+      strategy: presetFiles.strategy?.name || null,
+      scoring: presetFiles.scoring?.name || null,
+      policies: presetFiles.policies?.map(p => p.name) || [],
+      created: new Date().toISOString(),
     }, null, 2);
     setGeneratedContent(content);
   };
@@ -586,15 +768,10 @@ const FileGeneratorPanel = () => {
       lua += `  ${op.id} = ${cost},\n`;
     });
     lua += `}\n\n`;
-
-    lua += `-- Combined operation discounts\nfunction get_cost(op1, op2)\n`;
-    scoringForm.combos.forEach(combo => {
-      if (combo.ops.length === 2) {
-        lua += `  if op1 == "${combo.ops[0]}" and op2 == "${combo.ops[1]}" then\n`;
-        lua += `    return ${combo.cost}\n`;
-        lua += `  end\n`;
-      }
-    });
+    lua += `-- Get cost for single operation\nfunction get_cost(op_name)\n`;
+    lua += `  return costs[op_name] or 5\n`;
+    lua += `end\n\n`;
+    lua += `-- Get combined cost (with potential discounts)\nfunction get_combo_cost(op1, op2)\n`;
     lua += `  return costs[op1] + costs[op2]\n`;
     lua += `end\n`;
 
@@ -607,6 +784,7 @@ const FileGeneratorPanel = () => {
       name: m.name,
       description: m.description,
       formula: m.formula,
+      unit: m.unit,
       enabled: true,
     }));
     setGeneratedContent(JSON.stringify({ metrics: selectedMetrics }, null, 2));
@@ -617,6 +795,7 @@ const FileGeneratorPanel = () => {
       id: op.id,
       name: op.name,
       description: op.description,
+      parameters: op.parameters,
       enabled: true,
     }));
     setGeneratedContent(JSON.stringify({ operations: selectedOps }, null, 2));
@@ -625,22 +804,20 @@ const FileGeneratorPanel = () => {
   const generatePolicies = () => {
     let lua = `-- Policy Configuration\n`;
     lua += `-- Generated: ${new Date().toISOString()}\n\n`;
-    lua += `-- Maximum operations per run\nmax_operations = 100\n\n`;
-    lua += `-- Allowed operations (subset of available)\nallowed_operations = {\n`;
-    allOperations.slice(0, 5).forEach(op => {
+    lua += `max_operations = 1000\n\n`;
+    lua += `allowed_operations = {\n`;
+    allOperations.slice(0, 10).forEach(op => {
       lua += `  "${op.id}",\n`;
     });
     lua += `}\n\n`;
-    lua += `-- Validation function\nfunction validate(operation, state)\n`;
-    lua += `  -- Check if operation is allowed\n`;
-    lua += `  local allowed = false\n`;
-    lua += `  for _, op in ipairs(allowed_operations) do\n`;
-    lua += `    if op == operation then\n`;
-    lua += `      allowed = true\n`;
-    lua += `      break\n`;
+    lua += `forbidden = {}\n\n`;
+    lua += `function validate(op_name, state)\n`;
+    lua += `  for _, op in ipairs(forbidden) do\n`;
+    lua += `    if op == op_name then\n`;
+    lua += `      return false, "Operation is forbidden"\n`;
     lua += `    end\n`;
     lua += `  end\n`;
-    lua += `  return allowed\n`;
+    lua += `  return true\n`;
     lua += `end\n`;
 
     setGeneratedContent(lua);
@@ -680,9 +857,36 @@ const FileGeneratorPanel = () => {
     toast.success('File downloaded');
   };
 
+  const handleDownloadPresetZip = async () => {
+    if (!presetForm.name) {
+      toast.error('Enter preset name');
+      return;
+    }
+
+    try {
+      const blob = await resultExporter.exportPresetAsZip(presetForm.name, {
+        strategy: presetFiles.strategy,
+        scoring: presetFiles.scoring,
+        policies: presetFiles.policies,
+      });
+      resultExporter.downloadBlob(blob, `${presetForm.name}.zip`);
+      toast.success('Preset ZIP downloaded');
+    } catch (error) {
+      toast.error('Failed to create ZIP: ' + error);
+    }
+  };
+
   return (
     <ScrollArea className="h-full">
       <div className="p-4 space-y-4">
+        <input
+          type="file"
+          ref={fileInputRef}
+          onChange={handlePresetFileUpload}
+          accept={uploadTarget === 'strategy' ? '.cpp,.c,.py' : '.lua'}
+          className="hidden"
+        />
+
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 text-sm">
@@ -698,7 +902,7 @@ const FileGeneratorPanel = () => {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="bg-popover border border-border z-50">
-                  <SelectItem value="preset">Preset (JSON)</SelectItem>
+                  <SelectItem value="preset">Preset Bundle (ZIP)</SelectItem>
                   <SelectItem value="scoring">Scoring Script (Lua)</SelectItem>
                   <SelectItem value="policies">Policy Script (Lua)</SelectItem>
                   <SelectItem value="metrics">Metrics Config (JSON)</SelectItem>
@@ -707,7 +911,6 @@ const FileGeneratorPanel = () => {
               </Select>
             </div>
 
-            {/* Type-specific forms */}
             {fileType === 'preset' && (
               <div className="space-y-3">
                 <div className="space-y-2">
@@ -718,22 +921,65 @@ const FileGeneratorPanel = () => {
                     placeholder="My Compression Preset"
                   />
                 </div>
+
                 <div className="space-y-2">
-                  <Label>Strategy File</Label>
-                  <Input
-                    value={presetForm.strategy}
-                    onChange={e => setPresetForm({ ...presetForm, strategy: e.target.value })}
-                    placeholder="lzw_compress.cpp"
-                  />
+                  <Label>Add Files to Bundle</Label>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setUploadTarget('strategy');
+                        fileInputRef.current?.click();
+                      }}
+                    >
+                      + Strategy
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setUploadTarget('scoring');
+                        fileInputRef.current?.click();
+                      }}
+                    >
+                      + Scoring
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setUploadTarget('policies');
+                        fileInputRef.current?.click();
+                      }}
+                    >
+                      + Policy
+                    </Button>
+                  </div>
+
+                  <div className="space-y-1 mt-2">
+                    {presetFiles.strategy && (
+                      <Badge variant="outline" className="mr-1">
+                        📄 {presetFiles.strategy.name}
+                      </Badge>
+                    )}
+                    {presetFiles.scoring && (
+                      <Badge variant="outline" className="mr-1">
+                        💰 {presetFiles.scoring.name}
+                      </Badge>
+                    )}
+                    {presetFiles.policies?.map(p => (
+                      <Badge key={p.name} variant="outline" className="mr-1">
+                        🛡️ {p.name}
+                      </Badge>
+                    ))}
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <Label>Scoring File</Label>
-                  <Input
-                    value={presetForm.scoring}
-                    onChange={e => setPresetForm({ ...presetForm, scoring: e.target.value })}
-                    placeholder="standard_economy.lua"
-                  />
-                </div>
+
+                <Button onClick={handleDownloadPresetZip} className="w-full" disabled={!presetForm.name}>
+                  <FileArchive className="w-4 h-4 mr-2" />
+                  Download Preset ZIP
+                </Button>
               </div>
             )}
 
@@ -748,9 +994,9 @@ const FileGeneratorPanel = () => {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Operation Costs (defaults to 5)</Label>
+                  <Label>Operation Costs</Label>
                   <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto">
-                    {allOperations.slice(0, 8).map(op => (
+                    {allOperations.slice(0, 10).map(op => (
                       <div key={op.id} className="flex items-center gap-2">
                         <span className="text-xs font-mono w-12">{op.id}</span>
                         <Input
@@ -769,19 +1015,21 @@ const FileGeneratorPanel = () => {
               </div>
             )}
 
-            <div className="flex gap-2">
-              <Button onClick={handleGenerate} className="flex-1">
-                Generate
-              </Button>
-              <Button variant="outline" onClick={handleDownload} disabled={!generatedContent}>
-                <Download className="w-4 h-4 mr-2" />
-                Download
-              </Button>
-            </div>
+            {fileType !== 'preset' && (
+              <div className="flex gap-2">
+                <Button onClick={handleGenerate} className="flex-1">
+                  Generate
+                </Button>
+                <Button variant="outline" onClick={handleDownload} disabled={!generatedContent}>
+                  <Download className="w-4 h-4 mr-2" />
+                  Download
+                </Button>
+              </div>
+            )}
           </CardContent>
         </Card>
 
-        {generatedContent && (
+        {generatedContent && fileType !== 'preset' && (
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm">Generated Content</CardTitle>
@@ -798,7 +1046,7 @@ const FileGeneratorPanel = () => {
   );
 };
 
-// Info Panel Component - API Reference for Strategy/Scoring Development
+// Info Panel Component - Strategy Writing Guide
 const InfoPanel = () => {
   const allMetrics = predefinedManager.getAllMetrics();
   const allOperations = predefinedManager.getAllOperations();
@@ -810,15 +1058,41 @@ const InfoPanel = () => {
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 text-sm">
               <BookOpen className="w-4 h-4" />
-              API Reference
+              Strategy Development Guide
             </CardTitle>
           </CardHeader>
           <CardContent className="text-sm">
             <p className="text-muted-foreground mb-4">
-              Reference for writing strategies, scoring scripts, and policies. All variables and functions below are available in your scripts.
+              Complete guide for writing strategies, scoring scripts, and policies. Strategies access metrics files, operations files, policies, and receive initial costs from scoring files during execution.
             </p>
 
-            <Accordion type="multiple" defaultValue={['globals', 'operations', 'metrics']} className="space-y-2">
+            <Accordion type="multiple" defaultValue={['workflow', 'globals']} className="space-y-2">
+              {/* Execution Workflow */}
+              <AccordionItem value="workflow" className="border rounded-lg">
+                <AccordionTrigger className="px-4 hover:no-underline">
+                  <div className="flex items-center gap-2">
+                    <Info className="w-4 h-4 text-blue-500" />
+                    <span>Execution Workflow</span>
+                  </div>
+                </AccordionTrigger>
+                <AccordionContent className="px-4 pb-4">
+                  <div className="space-y-3 text-xs">
+                    <p className="text-muted-foreground">When a strategy runs, the following happens:</p>
+                    <ol className="list-decimal list-inside space-y-2">
+                      <li><strong>Load Context:</strong> Binary data, metrics file, and operations file are loaded</li>
+                      <li><strong>Load Scoring:</strong> Initial budget and operation costs are set from scoring script</li>
+                      <li><strong>Load Policies:</strong> Allowed operations and constraints are enforced</li>
+                      <li><strong>Execute Strategy:</strong> Your code runs with access to all configured resources</li>
+                      <li><strong>Track Metrics:</strong> Each operation's effect on metrics is recorded</li>
+                      <li><strong>Export Results:</strong> Full benchmark and CSV exports are generated</li>
+                    </ol>
+                    <div className="p-2 bg-cyan-500/10 rounded mt-2">
+                      <p className="text-cyan-500">💡 Strategies can query which operations/metrics are enabled before using them</p>
+                    </div>
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+
               {/* Global Variables */}
               <AccordionItem value="globals" className="border rounded-lg">
                 <AccordionTrigger className="px-4 hover:no-underline">
@@ -832,38 +1106,38 @@ const InfoPanel = () => {
                     <div className="p-2 bg-muted/30 rounded">
                       <code className="text-cyan-500">bits</code>
                       <span className="text-muted-foreground ml-2">: string</span>
-                      <p className="text-muted-foreground mt-1 font-sans text-xs">Current binary stream as a string of 0s and 1s</p>
+                      <p className="text-muted-foreground mt-1 font-sans">Current binary stream</p>
                     </div>
                     <div className="p-2 bg-muted/30 rounded">
                       <code className="text-cyan-500">bits_length</code>
                       <span className="text-muted-foreground ml-2">: number</span>
-                      <p className="text-muted-foreground mt-1 font-sans text-xs">Length of the current binary stream</p>
+                      <p className="text-muted-foreground mt-1 font-sans">Length of binary stream</p>
                     </div>
                     <div className="p-2 bg-muted/30 rounded">
                       <code className="text-cyan-500">budget</code>
                       <span className="text-muted-foreground ml-2">: number</span>
-                      <p className="text-muted-foreground mt-1 font-sans text-xs">Current remaining budget for operations</p>
+                      <p className="text-muted-foreground mt-1 font-sans">Current remaining budget (from scoring)</p>
                     </div>
                     <div className="p-2 bg-muted/30 rounded">
                       <code className="text-cyan-500">initial_budget</code>
                       <span className="text-muted-foreground ml-2">: number</span>
-                      <p className="text-muted-foreground mt-1 font-sans text-xs">Starting budget defined in scoring script</p>
+                      <p className="text-muted-foreground mt-1 font-sans">Starting budget from scoring script</p>
                     </div>
                     <div className="p-2 bg-muted/30 rounded">
-                      <code className="text-cyan-500">step_count</code>
-                      <span className="text-muted-foreground ml-2">: number</span>
-                      <p className="text-muted-foreground mt-1 font-sans text-xs">Number of operations executed so far</p>
+                      <code className="text-cyan-500">enabled_metrics</code>
+                      <span className="text-muted-foreground ml-2">: string[]</span>
+                      <p className="text-muted-foreground mt-1 font-sans">List of metrics you can query</p>
                     </div>
                     <div className="p-2 bg-muted/30 rounded">
-                      <code className="text-cyan-500">history</code>
-                      <span className="text-muted-foreground ml-2">: array</span>
-                      <p className="text-muted-foreground mt-1 font-sans text-xs">Array of previous states and operations</p>
+                      <code className="text-cyan-500">enabled_operations</code>
+                      <span className="text-muted-foreground ml-2">: string[]</span>
+                      <p className="text-muted-foreground mt-1 font-sans">List of operations you can use</p>
                     </div>
                   </div>
                 </AccordionContent>
               </AccordionItem>
 
-              {/* Available Functions */}
+              {/* Core Functions */}
               <AccordionItem value="functions" className="border rounded-lg">
                 <AccordionTrigger className="px-4 hover:no-underline">
                   <div className="flex items-center gap-2">
@@ -876,42 +1150,37 @@ const InfoPanel = () => {
                     <div className="p-2 bg-muted/30 rounded">
                       <code className="text-yellow-500">apply_operation</code>
                       <span className="text-muted-foreground">(op_name, params) → string</span>
-                      <p className="text-muted-foreground mt-1 font-sans text-xs">Apply an operation to the current bits</p>
+                      <p className="text-muted-foreground mt-1 font-sans">Apply operation to bits, auto-deducts cost</p>
                     </div>
                     <div className="p-2 bg-muted/30 rounded">
                       <code className="text-yellow-500">get_cost</code>
                       <span className="text-muted-foreground">(op_name) → number</span>
-                      <p className="text-muted-foreground mt-1 font-sans text-xs">Get the cost of an operation from scoring config</p>
-                    </div>
-                    <div className="p-2 bg-muted/30 rounded">
-                      <code className="text-yellow-500">get_combo_cost</code>
-                      <span className="text-muted-foreground">(op1, op2) → number</span>
-                      <p className="text-muted-foreground mt-1 font-sans text-xs">Get combined cost for two operations (may include discounts)</p>
+                      <p className="text-muted-foreground mt-1 font-sans">Get cost from scoring config</p>
                     </div>
                     <div className="p-2 bg-muted/30 rounded">
                       <code className="text-yellow-500">get_metric</code>
                       <span className="text-muted-foreground">(metric_name) → number</span>
-                      <p className="text-muted-foreground mt-1 font-sans text-xs">Calculate and return a metric value for current bits</p>
+                      <p className="text-muted-foreground mt-1 font-sans">Calculate metric for current bits</p>
                     </div>
                     <div className="p-2 bg-muted/30 rounded">
                       <code className="text-yellow-500">is_operation_allowed</code>
                       <span className="text-muted-foreground">(op_name) → boolean</span>
-                      <p className="text-muted-foreground mt-1 font-sans text-xs">Check if operation is enabled and within policy</p>
+                      <p className="text-muted-foreground mt-1 font-sans">Check policy and enabled status</p>
                     </div>
                     <div className="p-2 bg-muted/30 rounded">
                       <code className="text-yellow-500">deduct_budget</code>
                       <span className="text-muted-foreground">(amount) → boolean</span>
-                      <p className="text-muted-foreground mt-1 font-sans text-xs">Deduct from budget, returns false if insufficient</p>
+                      <p className="text-muted-foreground mt-1 font-sans">Manual budget deduction</p>
                     </div>
                     <div className="p-2 bg-muted/30 rounded">
                       <code className="text-yellow-500">log</code>
                       <span className="text-muted-foreground">(message) → void</span>
-                      <p className="text-muted-foreground mt-1 font-sans text-xs">Log a message to execution history</p>
+                      <p className="text-muted-foreground mt-1 font-sans">Log to execution history</p>
                     </div>
                     <div className="p-2 bg-muted/30 rounded">
                       <code className="text-yellow-500">halt</code>
                       <span className="text-muted-foreground">() → void</span>
-                      <p className="text-muted-foreground mt-1 font-sans text-xs">Stop execution immediately</p>
+                      <p className="text-muted-foreground mt-1 font-sans">Stop execution</p>
                     </div>
                   </div>
                 </AccordionContent>
@@ -963,7 +1232,7 @@ const InfoPanel = () => {
                 </AccordionContent>
               </AccordionItem>
 
-              {/* C++/Python Examples */}
+              {/* C++ Example */}
               <AccordionItem value="cpp" className="border rounded-lg">
                 <AccordionTrigger className="px-4 hover:no-underline">
                   <div className="flex items-center gap-2">
@@ -977,18 +1246,19 @@ const InfoPanel = () => {
 #include "bitwise_api.h"
 
 void execute() {
+    // Check what's available
+    log("Enabled ops: " + enabled_operations.size());
+    log("Initial budget: " + to_string(initial_budget));
+    
     while (budget > 0) {
         double entropy = get_metric("entropy");
         
-        if (entropy > 0.9) {
-            if (is_operation_allowed("XOR")) {
-                int cost = get_cost("XOR");
-                if (deduct_budget(cost)) {
-                    apply_operation("XOR", {{"mask", "10101010"}});
-                }
+        if (entropy > 0.9 && is_operation_allowed("XOR")) {
+            int cost = get_cost("XOR");
+            if (budget >= cost) {
+                apply_operation("XOR", {{"mask", "10101010"}});
             }
         } else {
-            apply_operation("RLE_ENCODE", {});
             halt();
         }
     }
@@ -1002,32 +1272,29 @@ void execute() {
                 <AccordionTrigger className="px-4 hover:no-underline">
                   <div className="flex items-center gap-2">
                     <Code className="w-4 h-4 text-yellow-500" />
-                    <span>Python Strategy Example (TensorFlow)</span>
+                    <span>Python Strategy Example (AI)</span>
                   </div>
                 </AccordionTrigger>
                 <AccordionContent className="px-4 pb-4">
                   <pre className="bg-muted/50 p-3 rounded-lg text-xs overflow-x-auto font-mono">
 {`# strategy.py
-import tensorflow as tf
 from bitwise_api import *
 
 def execute():
-    # Load pre-trained model
-    model = tf.keras.models.load_model('compression_model.h5')
+    log(f"Budget: {budget}, Ops: {len(enabled_operations)}")
     
-    # Convert bits to tensor
-    bit_array = [int(b) for b in bits]
-    tensor = tf.reshape(bit_array, (1, -1))
+    # Calculate current state
+    entropy = get_metric("entropy")
+    balance = get_metric("balance")
     
-    # Predict best operation sequence
-    predictions = model.predict(tensor)
-    
-    for op_idx in predictions[0]:
-        op_name = OPERATIONS[int(op_idx)]
-        if is_operation_allowed(op_name):
-            cost = get_cost(op_name)
-            if deduct_budget(cost):
-                apply_operation(op_name, {})
+    # Simple heuristic (or use ML model)
+    while budget > 0:
+        if entropy > 0.8 and is_operation_allowed("XOR"):
+            apply_operation("XOR", {"mask": "11110000"})
+        elif balance < 0.4 and is_operation_allowed("OR"):
+            apply_operation("OR", {"mask": "00001111"})
+        else:
+            break
     
     log(f"Final entropy: {get_metric('entropy')}")
 `}
@@ -1040,7 +1307,7 @@ def execute():
                 <AccordionTrigger className="px-4 hover:no-underline">
                   <div className="flex items-center gap-2">
                     <Code className="w-4 h-4 text-orange-500" />
-                    <span>Lua Scoring Example</span>
+                    <span>Lua Scoring Script Example</span>
                   </div>
                 </AccordionTrigger>
                 <AccordionContent className="px-4 pb-4">
@@ -1048,17 +1315,22 @@ def execute():
 {`-- scoring.lua
 initial_budget = 1000
 
+-- Operation costs (strategy reads these)
 costs = {
     AND = 5, OR = 4, XOR = 6, NOT = 2,
     SHL = 3, SHR = 3, ROL = 4, ROR = 4,
     INSERT = 8, DELETE = 10, MOVE = 12
 }
 
--- Combined operation discounts
+-- Combo discounts (non-linear costs)
 combos = {
-    { ops = {"XOR", "NOT"}, cost = 6 },  -- Discount from 8
-    { ops = {"SHL", "SHR"}, cost = 4 },  -- Discount from 6
+    { ops = {"XOR", "NOT"}, cost = 6 },  -- Discount
+    { ops = {"SHL", "SHR"}, cost = 4 },  -- Discount
 }
+
+function get_cost(op_name)
+    return costs[op_name] or 5
+end
 
 function get_combo_cost(op1, op2)
     for _, combo in ipairs(combos) do
@@ -1067,8 +1339,49 @@ function get_combo_cost(op1, op2)
         end
     end
     return costs[op1] + costs[op2]
-end
-`}
+end`}
+                  </pre>
+                </AccordionContent>
+              </AccordionItem>
+
+              {/* Policy Example */}
+              <AccordionItem value="policy" className="border rounded-lg">
+                <AccordionTrigger className="px-4 hover:no-underline">
+                  <div className="flex items-center gap-2">
+                    <Code className="w-4 h-4 text-red-500" />
+                    <span>Lua Policy Script Example</span>
+                  </div>
+                </AccordionTrigger>
+                <AccordionContent className="px-4 pb-4">
+                  <pre className="bg-muted/50 p-3 rounded-lg text-xs overflow-x-auto font-mono">
+{`-- policy.lua
+max_operations = 100
+operation_count = 0
+
+-- Only allow these operations
+allowed_operations = {
+    "XOR", "AND", "OR", "NOT",
+    "SHL", "SHR"
+}
+
+-- These are forbidden regardless
+forbidden = { "DELETE", "MOVE" }
+
+function validate(op_name, state)
+    operation_count = operation_count + 1
+    
+    if operation_count > max_operations then
+        return false, "Max operations exceeded"
+    end
+    
+    for _, f in ipairs(forbidden) do
+        if op_name == f then
+            return false, "Operation forbidden"
+        end
+    end
+    
+    return true
+end`}
                   </pre>
                 </AccordionContent>
               </AccordionItem>
