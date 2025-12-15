@@ -37,7 +37,18 @@ import {
   AlertTriangle,
   MapPin,
   Loader2,
+  Plus,
+  Save,
 } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { toast } from 'sonner';
 import { algorithmManager, AlgorithmFile } from '@/lib/algorithmManager';
 import { predefinedManager } from '@/lib/predefinedManager';
@@ -308,6 +319,187 @@ export const AlgorithmPanel = ({ onExecutionHistoryChange }: AlgorithmPanelProps
       ))}
     </div>
   );
+
+  // Preset Builder Component
+  const PresetBuilder = () => {
+    const [presetName, setPresetName] = useState('');
+    const [selectedStrategy, setSelectedStrategy] = useState('');
+    const [selectedScoring, setSelectedScoring] = useState('');
+    const [selectedPolicies, setSelectedPolicies] = useState<string[]>([]);
+
+    const strategies = algorithmManager.getStrategies();
+    const scoringFiles = algorithmManager.getScoringScripts();
+    const policies = algorithmManager.getPolicies();
+
+    const handleAddPolicy = (policyId: string) => {
+      if (!selectedPolicies.includes(policyId)) {
+        setSelectedPolicies([...selectedPolicies, policyId]);
+      }
+    };
+
+    const handleRemovePolicy = (policyId: string) => {
+      setSelectedPolicies(selectedPolicies.filter(id => id !== policyId));
+    };
+
+    const handleSavePreset = () => {
+      if (!presetName.trim()) {
+        toast.error('Enter a preset name');
+        return;
+      }
+      if (!selectedStrategy) {
+        toast.error('Select a strategy');
+        return;
+      }
+      if (!selectedScoring) {
+        toast.error('Select a scoring file');
+        return;
+      }
+      if (selectedPolicies.length === 0) {
+        toast.error('Select at least one policy');
+        return;
+      }
+
+      const strategy = algorithmManager.getFile(selectedStrategy);
+      const scoring = algorithmManager.getFile(selectedScoring);
+      const policyNames = selectedPolicies.map(id => algorithmManager.getFile(id)?.name || id);
+
+      const presetContent = JSON.stringify({
+        name: presetName,
+        strategyId: selectedStrategy,
+        strategyName: strategy?.name,
+        scoringId: selectedScoring,
+        scoringName: scoring?.name,
+        policyIds: selectedPolicies,
+        policyNames: policyNames,
+        enabledMetrics: Array.from(enabledMetrics),
+        enabledOperations: Array.from(enabledOperations),
+        created: new Date().toISOString(),
+      }, null, 2);
+
+      algorithmManager.addFile(`${presetName.replace(/\s+/g, '_')}.json`, presetContent, 'preset');
+      toast.success(`Preset "${presetName}" created`);
+      
+      // Reset form
+      setPresetName('');
+      setSelectedStrategy('');
+      setSelectedScoring('');
+      setSelectedPolicies([]);
+    };
+
+    return (
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="flex items-center gap-2 text-sm">
+            <Plus className="w-4 h-4" />
+            Create New Preset
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-xs text-muted-foreground">
+            Bundle a strategy, scoring, and policies together for quick reuse and Jobs.
+          </p>
+
+          <div className="space-y-2">
+            <Label className="text-xs">Preset Name</Label>
+            <Input
+              value={presetName}
+              onChange={e => setPresetName(e.target.value)}
+              placeholder="My Analysis Preset"
+              className="h-8"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label className="text-xs">Strategy</Label>
+            {strategies.length === 0 ? (
+              <p className="text-xs text-muted-foreground">No strategies uploaded</p>
+            ) : (
+              <Select value={selectedStrategy} onValueChange={setSelectedStrategy}>
+                <SelectTrigger className="h-8">
+                  <SelectValue placeholder="Select strategy" />
+                </SelectTrigger>
+                <SelectContent className="bg-popover border border-border z-50">
+                  {strategies.map(s => (
+                    <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <Label className="text-xs">Scoring</Label>
+            {scoringFiles.length === 0 ? (
+              <p className="text-xs text-muted-foreground">No scoring files uploaded</p>
+            ) : (
+              <Select value={selectedScoring} onValueChange={setSelectedScoring}>
+                <SelectTrigger className="h-8">
+                  <SelectValue placeholder="Select scoring" />
+                </SelectTrigger>
+                <SelectContent className="bg-popover border border-border z-50">
+                  {scoringFiles.map(s => (
+                    <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <Label className="text-xs">Policies ({selectedPolicies.length} selected)</Label>
+            {policies.length === 0 ? (
+              <p className="text-xs text-muted-foreground">No policies uploaded</p>
+            ) : (
+              <>
+                <Select onValueChange={handleAddPolicy}>
+                  <SelectTrigger className="h-8">
+                    <SelectValue placeholder="Add policy" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-popover border border-border z-50">
+                    {policies.filter(p => !selectedPolicies.includes(p.id)).map(p => (
+                      <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {selectedPolicies.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-2">
+                    {selectedPolicies.map(id => {
+                      const policy = algorithmManager.getFile(id);
+                      return (
+                        <Badge key={id} variant="secondary" className="text-xs">
+                          {policy?.name || id}
+                          <button
+                            className="ml-1 hover:text-destructive"
+                            onClick={() => handleRemovePolicy(id)}
+                          >
+                            ×
+                          </button>
+                        </Badge>
+                      );
+                    })}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
+          <div className="text-xs text-muted-foreground p-2 bg-muted/30 rounded">
+            <p><strong>Enabled metrics:</strong> {enabledMetrics.size}</p>
+            <p><strong>Enabled operations:</strong> {enabledOperations.size}</p>
+          </div>
+
+          <Button 
+            onClick={handleSavePreset} 
+            className="w-full"
+            disabled={!presetName || !selectedStrategy || !selectedScoring || selectedPolicies.length === 0}
+          >
+            <Save className="w-4 h-4 mr-2" />
+            Save Preset
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  };
 
   const CodePreview = ({ fileId }: { fileId: string }) => {
     const file = algorithmManager.getFile(fileId);
@@ -602,47 +794,29 @@ end`}
           </ScrollArea>
         </TabsContent>
 
-        {/* Presets Tab - JSON Configuration */}
+        {/* Presets Tab - Create and Manage Presets */}
         <TabsContent value="presets" className="h-full m-0">
           <ScrollArea className="h-full">
             <div className="p-4 space-y-4">
+              {/* Preset Builder */}
+              <PresetBuilder />
+
+              {/* Existing Presets */}
               <Card>
                 <CardHeader className="pb-2">
                   <CardTitle className="flex items-center justify-between text-sm">
                     <div className="flex items-center gap-2">
                       <Settings2 className="w-4 h-4" />
-                      Presets
+                      Saved Presets ({algorithmManager.getPresets().length})
                     </div>
-                    <Button size="sm" variant="outline" onClick={() => handleUpload('preset')}>
-                      <Upload className="w-4 h-4 mr-2" />
-                      Upload JSON
-                    </Button>
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="text-sm">
-                  <p className="text-muted-foreground mb-4">
-                    Upload JSON presets that define which algorithm, scoring, policies, metrics, and operations to use together.
-                  </p>
-
-                  <div className="mb-4 p-3 bg-muted/30 rounded-lg">
-                    <h4 className="font-medium mb-2">Preset JSON Example</h4>
-                    <pre className="text-xs overflow-x-auto font-mono text-muted-foreground">
-{`{
-  "name": "Compression Preset 1",
-  "strategy": "lzw_compress.cpp",
-  "scoring": "standard_economy.lua",
-  "policies": ["no_loops.lua", "max_ops.lua"],
-  "metrics": "compression_metrics.json",
-  "operations": "basic_ops.json"
-}`}
-                    </pre>
-                  </div>
-
                   {algorithmManager.getPresets().length === 0 ? (
-                    <div className="text-center py-8 text-muted-foreground border border-dashed rounded-lg">
+                    <div className="text-center py-6 text-muted-foreground border border-dashed rounded-lg">
                       <Settings2 className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                      <p>No presets uploaded</p>
-                      <p className="text-xs mt-1">Upload a .json preset file</p>
+                      <p>No presets created yet</p>
+                      <p className="text-xs mt-1">Use the builder above to create one</p>
                     </div>
                   ) : (
                     <FileList files={algorithmManager.getPresets()} />
