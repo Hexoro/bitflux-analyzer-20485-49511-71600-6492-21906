@@ -358,9 +358,22 @@ class JobManager {
   }
 
   private applyOperation(bits: string, op: string): string {
+    // Apply all 7 logic gates plus shifts/rotations
     switch (op) {
       case 'NOT':
         return bits.split('').map(b => b === '0' ? '1' : '0').join('');
+      case 'AND':
+        return bits.split('').map((b, i) => (b === '1' && (i % 2 === 0)) ? '1' : '0').join('');
+      case 'OR':
+        return bits.split('').map((b, i) => (b === '1' || (i % 2 === 0)) ? '1' : '0').join('');
+      case 'XOR':
+        return bits.split('').map((b, i) => b === ((i % 2 === 0) ? '1' : '0') ? '0' : '1').join('');
+      case 'NAND':
+        return bits.split('').map((b, i) => (b === '1' && (i % 2 === 0)) ? '0' : '1').join('');
+      case 'NOR':
+        return bits.split('').map((b, i) => (b === '1' || (i % 2 === 0)) ? '0' : '1').join('');
+      case 'XNOR':
+        return bits.split('').map((b, i) => b === ((i % 2 === 0) ? '1' : '0') ? '1' : '0').join('');
       case 'SHL':
         return bits.slice(1) + '0';
       case 'SHR':
@@ -369,6 +382,11 @@ class JobManager {
         return bits.slice(1) + bits.charAt(0);
       case 'ROR':
         return bits.charAt(bits.length - 1) + bits.slice(0, -1);
+      case 'GRAY':
+        // Binary to Gray code
+        return bits.charAt(0) + bits.split('').slice(1).map((b, i) => 
+          (parseInt(bits[i]) ^ parseInt(b)).toString()
+        ).join('');
       default:
         return bits;
     }
