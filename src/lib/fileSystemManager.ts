@@ -247,4 +247,12 @@ export class FileSystemManager {
   private notifyListeners(): void {
     this.listeners.forEach(listener => listener());
   }
+
+  // Get file by ID
+  getFile(id: string): BinaryFile | undefined {
+    return this.files.get(id);
+  }
 }
+
+// Singleton instance for global access
+export const fileSystemManager = new FileSystemManager();

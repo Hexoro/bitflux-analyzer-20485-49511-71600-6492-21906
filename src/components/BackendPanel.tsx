@@ -62,8 +62,10 @@ import {
 import { algorithmManager } from '@/lib/algorithmManager';
 import { fileValidator, ValidationResult } from '@/lib/fileValidator';
 import { resultExporter } from '@/lib/resultExporter';
+import { MetricsCodeEditor } from './MetricsCodeEditor';
+import { OperationsCodeEditor } from './OperationsCodeEditor';
 
-type BackendTab = 'predefined' | 'generator' | 'validator' | 'info';
+type BackendTab = 'predefined' | 'generator' | 'validator' | 'info' | 'metrics-code' | 'operations-code';
 
 export const BackendPanel = () => {
   const [activeTab, setActiveTab] = useState<BackendTab>('predefined');
@@ -189,14 +191,22 @@ export const BackendPanel = () => {
 
   return (
     <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as BackendTab)} className="h-full flex flex-col">
-      <TabsList className="w-full justify-start rounded-none border-b">
+      <TabsList className="w-full justify-start rounded-none border-b overflow-x-auto">
         <TabsTrigger value="predefined">
           <Database className="w-4 h-4 mr-2" />
           Pre-defined
         </TabsTrigger>
+        <TabsTrigger value="metrics-code">
+          <Calculator className="w-4 h-4 mr-2" />
+          Metrics Code
+        </TabsTrigger>
+        <TabsTrigger value="operations-code">
+          <Cog className="w-4 h-4 mr-2" />
+          Ops Code
+        </TabsTrigger>
         <TabsTrigger value="generator">
           <FileOutput className="w-4 h-4 mr-2" />
-          File Generator
+          Generator
         </TabsTrigger>
         <TabsTrigger value="validator">
           <FileCheck className="w-4 h-4 mr-2" />
@@ -368,6 +378,16 @@ export const BackendPanel = () => {
               </Card>
             </div>
           </ScrollArea>
+        </TabsContent>
+
+        {/* Metrics Code Editor Tab */}
+        <TabsContent value="metrics-code" className="h-full m-0 p-4">
+          <MetricsCodeEditor />
+        </TabsContent>
+
+        {/* Operations Code Editor Tab */}
+        <TabsContent value="operations-code" className="h-full m-0 p-4">
+          <OperationsCodeEditor />
         </TabsContent>
 
         {/* File Generator Tab */}
