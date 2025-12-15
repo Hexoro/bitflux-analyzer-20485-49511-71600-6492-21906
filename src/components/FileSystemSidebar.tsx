@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { BinaryFile, FileSystemManager } from '@/lib/fileSystemManager';
+import { useState, useEffect } from 'react';
+import { BinaryFile, fileSystemManager } from '@/lib/fileSystemManager';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { ScrollArea } from './ui/scroll-area';
@@ -18,20 +18,29 @@ import { toast } from 'sonner';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 
 interface FileSystemSidebarProps {
-  fileSystem: FileSystemManager;
-  onFileChange: () => void;
+  onFileChange?: () => void;
 }
 
-export const FileSystemSidebar = ({ fileSystem, onFileChange }: FileSystemSidebarProps) => {
+export const FileSystemSidebar = ({ onFileChange }: FileSystemSidebarProps) => {
   const [editingFileId, setEditingFileId] = useState<string | null>(null);
   const [newFileName, setNewFileName] = useState('');
   const [selectedGroup, setSelectedGroup] = useState<string>('all');
   const [creatingGroup, setCreatingGroup] = useState(false);
   const [newGroupName, setNewGroupName] = useState('');
+  const [, forceUpdate] = useState({});
 
-  const files = fileSystem.getFiles();
-  const activeFile = fileSystem.getActiveFile();
-  const groups = fileSystem.getGroups();
+  // Subscribe to file system changes
+  useEffect(() => {
+    const unsubscribe = fileSystemManager.subscribe(() => {
+      forceUpdate({});
+      onFileChange?.();
+    });
+    return unsubscribe;
+  }, [onFileChange]);
+
+  const files = fileSystemManager.getFiles();
+  const activeFile = fileSystemManager.getActiveFile();
+  const groups = fileSystemManager.getGroups();
   
   const filteredFiles = selectedGroup === 'all' 
     ? files 
@@ -39,14 +48,12 @@ export const FileSystemSidebar = ({ fileSystem, onFileChange }: FileSystemSideba
 
   const handleCreateFile = () => {
     const name = `untitled_${files.length + 1}.txt`;
-    fileSystem.createFile(name, '', 'binary');
-    onFileChange();
+    fileSystemManager.createFile(name, '', 'binary');
     toast.success('New file created');
   };
 
   const handleSelectFile = (id: string) => {
-    fileSystem.setActiveFile(id);
-    onFileChange();
+    fileSystemManager.setActiveFile(id);
   };
 
   const handleDeleteFile = (id: string, e: React.MouseEvent) => {
@@ -57,8 +64,7 @@ export const FileSystemSidebar = ({ fileSystem, onFileChange }: FileSystemSideba
       return;
     }
 
-    fileSystem.deleteFile(id);
-    onFileChange();
+    fileSystemManager.deleteFile(id);
     toast.success('File deleted');
   };
 
@@ -70,8 +76,7 @@ export const FileSystemSidebar = ({ fileSystem, onFileChange }: FileSystemSideba
 
   const handleRename = (id: string) => {
     if (newFileName.trim()) {
-      fileSystem.renameFile(id, newFileName.trim());
-      onFileChange();
+      fileSystemManager.renameFile(id, newFileName.trim());
       toast.success('File renamed');
     }
     setEditingFileId(null);
@@ -87,8 +92,7 @@ export const FileSystemSidebar = ({ fileSystem, onFileChange }: FileSystemSideba
 
   const handleCreateGroup = () => {
     if (newGroupName.trim()) {
-      fileSystem.addGroup(newGroupName.trim());
-      onFileChange();
+      fileSystemManager.addGroup(newGroupName.trim());
       toast.success(`Group "${newGroupName}" created`);
       setNewGroupName('');
       setCreatingGroup(false);
@@ -96,8 +100,7 @@ export const FileSystemSidebar = ({ fileSystem, onFileChange }: FileSystemSideba
   };
 
   const handleSetFileGroup = (fileId: string, group: string) => {
-    fileSystem.setFileGroup(fileId, group === 'none' ? '' : group);
-    onFileChange();
+    fileSystemManager.setFileGroup(fileId, group === 'none' ? '' : group);
     toast.success('File group updated');
   };
 

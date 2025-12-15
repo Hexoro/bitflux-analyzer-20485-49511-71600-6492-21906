@@ -64,8 +64,9 @@ import { fileValidator, ValidationResult } from '@/lib/fileValidator';
 import { resultExporter } from '@/lib/resultExporter';
 import { MetricsCodeEditor } from './MetricsCodeEditor';
 import { OperationsCodeEditor } from './OperationsCodeEditor';
+import { CodeFileEditor } from './CodeFileEditor';
 
-type BackendTab = 'predefined' | 'generator' | 'validator' | 'info' | 'metrics-code' | 'operations-code';
+type BackendTab = 'predefined' | 'generator' | 'validator' | 'info' | 'metrics-code' | 'operations-code' | 'metrics-json' | 'operations-json';
 
 export const BackendPanel = () => {
   const [activeTab, setActiveTab] = useState<BackendTab>('predefined');
@@ -191,29 +192,37 @@ export const BackendPanel = () => {
 
   return (
     <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as BackendTab)} className="h-full flex flex-col">
-      <TabsList className="w-full justify-start rounded-none border-b overflow-x-auto">
+      <TabsList className="w-full justify-start rounded-none border-b overflow-x-auto flex-shrink-0">
         <TabsTrigger value="predefined">
-          <Database className="w-4 h-4 mr-2" />
+          <Database className="w-4 h-4 mr-1" />
           Pre-defined
         </TabsTrigger>
         <TabsTrigger value="metrics-code">
-          <Calculator className="w-4 h-4 mr-2" />
-          Metrics Code
+          <Calculator className="w-4 h-4 mr-1" />
+          Metrics
+        </TabsTrigger>
+        <TabsTrigger value="metrics-json">
+          <Code className="w-4 h-4 mr-1" />
+          Metrics JSON
         </TabsTrigger>
         <TabsTrigger value="operations-code">
-          <Cog className="w-4 h-4 mr-2" />
-          Ops Code
+          <Cog className="w-4 h-4 mr-1" />
+          Ops
+        </TabsTrigger>
+        <TabsTrigger value="operations-json">
+          <Code className="w-4 h-4 mr-1" />
+          Ops JSON
         </TabsTrigger>
         <TabsTrigger value="generator">
-          <FileOutput className="w-4 h-4 mr-2" />
+          <FileOutput className="w-4 h-4 mr-1" />
           Generator
         </TabsTrigger>
         <TabsTrigger value="validator">
-          <FileCheck className="w-4 h-4 mr-2" />
+          <FileCheck className="w-4 h-4 mr-1" />
           Validator
         </TabsTrigger>
         <TabsTrigger value="info">
-          <Info className="w-4 h-4 mr-2" />
+          <Info className="w-4 h-4 mr-1" />
           Info
         </TabsTrigger>
       </TabsList>
@@ -385,9 +394,19 @@ export const BackendPanel = () => {
           <MetricsCodeEditor />
         </TabsContent>
 
+        {/* Metrics JSON Editor Tab */}
+        <TabsContent value="metrics-json" className="h-full m-0 p-4">
+          <CodeFileEditor mode="metrics" />
+        </TabsContent>
+
         {/* Operations Code Editor Tab */}
         <TabsContent value="operations-code" className="h-full m-0 p-4">
           <OperationsCodeEditor />
+        </TabsContent>
+
+        {/* Operations JSON Editor Tab */}
+        <TabsContent value="operations-json" className="h-full m-0 p-4">
+          <CodeFileEditor mode="operations" />
         </TabsContent>
 
         {/* File Generator Tab */}
