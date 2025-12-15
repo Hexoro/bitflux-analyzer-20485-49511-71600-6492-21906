@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { FileSystemManager, BinaryFile } from '@/lib/fileSystemManager';
+import { fileSystemManager, BinaryFile } from '@/lib/fileSystemManager';
 import { BinaryMetrics } from '@/lib/binaryMetrics';
 import { BinaryModel } from '@/lib/binaryModel';
 import { HistoryEntry } from '@/lib/historyManager';
@@ -32,7 +32,8 @@ import { toast } from 'sonner';
 import { BitRange } from '@/lib/fileState';
 
 const Index = () => {
-  const [fileSystem] = useState(() => new FileSystemManager());
+  // Use the singleton fileSystemManager instead of creating new instance
+  const fileSystem = fileSystemManager;
   const [, forceUpdate] = useState({});
   const [activeFile, setActiveFile] = useState<BinaryFile | null>(null);
   const [bitsPerRow] = useState(128);
@@ -406,7 +407,6 @@ const Index = () => {
       <ResizablePanelGroup direction="horizontal" className="flex-1">
         <ResizablePanel defaultSize={15} minSize={10} maxSize={25}>
           <FileSystemSidebar
-            fileSystem={fileSystem}
             onFileChange={() => forceUpdate({})}
           />
         </ResizablePanel>
