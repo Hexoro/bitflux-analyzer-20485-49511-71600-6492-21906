@@ -34,12 +34,17 @@ import {
   CheckCircle2,
   XCircle,
   FileArchive,
+  AlertTriangle,
+  MapPin,
+  Loader2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { algorithmManager, AlgorithmFile } from '@/lib/algorithmManager';
 import { predefinedManager } from '@/lib/predefinedManager';
 import { algorithmExecutor, ExecutionResult, ExecutionStep, ExecutionState } from '@/lib/algorithmExecutor';
 import { resultExporter } from '@/lib/resultExporter';
+import { BitRangesWindow } from '@/components/BitRangesWindow';
+import { fileSystemManager } from '@/lib/fileSystemManager';
 
 type AlgorithmTab = 'strategy' | 'presets' | 'results' | 'scoring' | 'metrics' | 'policies' | 'operations';
 
@@ -184,9 +189,28 @@ export const AlgorithmPanel = ({ onExecutionHistoryChange }: AlgorithmPanelProps
       return;
     }
 
-    // In real implementation, this would run with actual binary data
-    const mockBits = '1010101010101010101010101010101010101010101010101010101010101010';
-    await algorithmExecutor.startExecution(strategy.id, strategy.name, mockBits, 1000);
+    // Get active file's binary data
+    const activeFile = fileSystemManager.getActiveFile();
+    if (!activeFile) {
+      toast.error('No data file selected. Load or generate binary data first.');
+      return;
+    }
+
+    const bits = activeFile.state.model.getBits();
+    if (!bits || bits.length === 0) {
+      toast.error('No binary data loaded. Generate or load data in the file first.');
+      return;
+    }
+
+    // Get scoring file if selected
+    const scoringFiles = algorithmManager.getScoringScripts();
+    const scoringId = scoringFiles.length > 0 ? scoringFiles[0].id : undefined;
+
+    try {
+      await algorithmExecutor.startExecution(strategy.id, strategy.name, bits, 1000, scoringId);
+    } catch (error) {
+      toast.error((error as Error).message);
+    }
   };
 
   const handlePauseResume = () => {
@@ -305,7 +329,12 @@ export const AlgorithmPanel = ({ onExecutionHistoryChange }: AlgorithmPanelProps
   const ExecutionControls = () => {
     const isRunning = executionState === 'running';
     const isPaused = executionState === 'paused';
-    const isActive = isRunning || isPaused;
+    const isLoading = executionState === 'loading';
+    const isActive = isRunning || isPaused || isLoading;
+
+    // Check if there's data to run on
+    const activeFile = fileSystemManager.getActiveFile();
+    const hasData = activeFile?.state.model.getBits()?.length > 0;
 
     return (
       <Card className="mb-4">
@@ -317,30 +346,48 @@ export const AlgorithmPanel = ({ onExecutionHistoryChange }: AlgorithmPanelProps
             </div>
             <Badge variant={
               executionState === 'running' ? 'default' :
+              executionState === 'loading' ? 'default' :
               executionState === 'paused' ? 'secondary' :
               executionState === 'completed' ? 'outline' :
               executionState === 'error' ? 'destructive' : 'secondary'
             }>
-              {executionState.toUpperCase()}
+              {isLoading ? (
+                <span className="flex items-center gap-1">
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                  LOADING
+                </span>
+              ) : executionState.toUpperCase()}
             </Badge>
           </CardTitle>
         </CardHeader>
         <CardContent>
+          {/* Data Warning */}
+          {!hasData && (
+            <div className="mb-3 p-2 bg-yellow-500/10 border border-yellow-500/30 rounded flex items-center gap-2 text-xs text-yellow-600">
+              <AlertTriangle className="w-4 h-4" />
+              <span>No binary data loaded. Generate or load data first.</span>
+            </div>
+          )}
+
           <div className="flex items-center gap-2 mb-3">
             <Button 
               size="sm" 
               onClick={handleRunStrategy}
-              disabled={isActive || !selectedFile}
+              disabled={isActive || !selectedFile || !hasData}
               className="flex-1"
             >
-              <Play className="w-4 h-4 mr-2" />
-              Run
+              {isLoading ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Play className="w-4 h-4 mr-2" />
+              )}
+              {isLoading ? 'Loading...' : 'Run'}
             </Button>
             <Button 
               size="sm" 
               variant="outline"
               onClick={handlePauseResume}
-              disabled={!isActive}
+              disabled={!isActive || isLoading}
             >
               {isPaused ? <Play className="w-4 h-4" /> : <Pause className="w-4 h-4" />}
             </Button>
@@ -865,6 +912,12 @@ end`}
                                   <XCircle className="w-4 h-4 text-destructive" />
                                 )}
                                 <span className="font-medium">{result.strategyName}</span>
+                                <Badge variant="outline" className="text-xs">
+                                  {result.strategyLanguage?.toUpperCase() || 'UNKNOWN'}
+                                </Badge>
+                                {result.executionMode === 'simulated' && (
+                                  <Badge variant="secondary" className="text-xs">Simulated</Badge>
+                                )}
                               </div>
                               <div className="flex items-center gap-2">
                                 <Badge variant="outline" className="text-xs">
@@ -884,7 +937,7 @@ end`}
                               </div>
                             </div>
                             <p className="text-xs text-muted-foreground mt-1">
-                              {new Date(result.startTime).toLocaleString()} • {result.steps.length} steps
+                              {new Date(result.startTime).toLocaleString()} • {result.steps.length} steps • {result.bitRangesAccessed?.length || 0} ranges
                             </p>
                           </div>
                         ))}
@@ -894,90 +947,123 @@ end`}
 
                   {/* Selected Result Details */}
                   {selectedResult && (
-                    <Card>
-                      <CardHeader className="pb-2">
-                        <CardTitle className="flex items-center gap-2 text-sm">
-                          <Activity className="w-4 h-4" />
-                          Benchmark Details
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        {/* System Info */}
-                        <div className="grid grid-cols-2 gap-4 mb-4">
-                          <div className="p-3 bg-muted/30 rounded-lg">
-                            <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
-                              <Clock className="w-3 h-3" />
-                              Duration
-                            </div>
-                            <p className="font-mono text-lg">{selectedResult.duration}ms</p>
-                          </div>
-                          <div className="p-3 bg-muted/30 rounded-lg">
-                            <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
-                              <Cpu className="w-3 h-3" />
-                              CPU Time
-                            </div>
-                            <p className="font-mono text-lg">{selectedResult.cpuTimeMs}ms</p>
-                          </div>
-                          <div className="p-3 bg-muted/30 rounded-lg">
-                            <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
-                              <HardDrive className="w-3 h-3" />
-                              Peak Memory
-                            </div>
-                            <p className="font-mono text-lg">{selectedResult.peakMemoryMB.toFixed(2)}MB</p>
-                          </div>
-                          <div className="p-3 bg-muted/30 rounded-lg">
-                            <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
-                              <DollarSign className="w-3 h-3" />
-                              Total Cost
-                            </div>
-                            <p className="font-mono text-lg">{selectedResult.totalCost}</p>
-                          </div>
-                        </div>
+                    <>
+                      {/* Bit Ranges Window */}
+                      <BitRangesWindow 
+                        steps={selectedResult.steps}
+                        totalBits={selectedResult.initialSize}
+                      />
 
-                        {/* Size Changes */}
-                        <div className="mb-4 p-3 bg-muted/30 rounded-lg">
-                          <h4 className="text-xs font-medium mb-2">Size Analysis</h4>
-                          <div className="flex items-center justify-between text-sm">
-                            <span>Initial: {selectedResult.initialSize} bits</span>
-                            <span className="text-muted-foreground">→</span>
-                            <span>Final: {selectedResult.finalSize} bits</span>
-                            <Badge variant={selectedResult.compressionRatio > 1 ? "default" : "secondary"}>
-                              {selectedResult.compressionRatio.toFixed(2)}x
-                            </Badge>
-                          </div>
-                        </div>
+                      <Card>
+                        <CardHeader className="pb-2">
+                          <CardTitle className="flex items-center gap-2 text-sm">
+                            <Activity className="w-4 h-4" />
+                            Benchmark Details
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          {/* Execution Mode Banner */}
+                          {selectedResult.executionMode === 'simulated' && (
+                            <div className="mb-4 p-2 bg-yellow-500/10 border border-yellow-500/30 rounded flex items-center gap-2 text-xs text-yellow-600">
+                              <AlertTriangle className="w-4 h-4" />
+                              <span>Simulated execution - install local C++ server or use Lua/Python for real execution</span>
+                            </div>
+                          )}
 
-                        {/* Steps Summary */}
-                        <div className="mb-4">
-                          <h4 className="text-xs font-medium mb-2">Operations ({selectedResult.steps.length})</h4>
-                          <div className="max-h-40 overflow-y-auto space-y-1">
-                            {selectedResult.steps.map((step) => (
-                              <div key={step.stepNumber} className="flex items-center justify-between p-2 bg-muted/20 rounded text-xs">
-                                <div className="flex items-center gap-2">
-                                  <span className="text-muted-foreground">#{step.stepNumber}</span>
-                                  <Badge variant="outline" className="font-mono">{step.operation}</Badge>
-                                </div>
-                                <div className="flex items-center gap-3 text-muted-foreground">
-                                  <span>Cost: {step.cost}</span>
-                                  <span>Size: {step.sizeBefore}→{step.sizeAfter}</span>
-                                </div>
+                          {/* System Info */}
+                          <div className="grid grid-cols-2 gap-4 mb-4">
+                            <div className="p-3 bg-muted/30 rounded-lg">
+                              <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
+                                <Clock className="w-3 h-3" />
+                                Duration
                               </div>
-                            ))}
+                              <p className="font-mono text-lg">{selectedResult.duration}ms</p>
+                            </div>
+                            <div className="p-3 bg-muted/30 rounded-lg">
+                              <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
+                                <Cpu className="w-3 h-3" />
+                                CPU Time
+                              </div>
+                              <p className="font-mono text-lg">{selectedResult.cpuTimeMs}ms</p>
+                            </div>
+                            <div className="p-3 bg-muted/30 rounded-lg">
+                              <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
+                                <HardDrive className="w-3 h-3" />
+                                Peak Memory
+                              </div>
+                              <p className="font-mono text-lg">{selectedResult.peakMemoryMB.toFixed(2)}MB</p>
+                            </div>
+                            <div className="p-3 bg-muted/30 rounded-lg">
+                              <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
+                                <DollarSign className="w-3 h-3" />
+                                Total Cost
+                              </div>
+                              <p className="font-mono text-lg">{selectedResult.totalCost}</p>
+                            </div>
                           </div>
-                        </div>
 
-                        <div className="flex gap-2">
-                          <Button className="flex-1" onClick={() => handleExportCSV(selectedResult)}>
-                            <Download className="w-4 h-4 mr-2" />
-                            Export CSV
-                          </Button>
-                          <Button variant="outline" onClick={() => handleExportZip(selectedResult)}>
-                            <FileArchive className="w-4 h-4 mr-2" />
-                            Export ZIP
-                          </Button>
-                        </div>
-                      </CardContent>
-                    </Card>
+                          {/* Size Changes */}
+                          <div className="mb-4 p-3 bg-muted/30 rounded-lg">
+                            <h4 className="text-xs font-medium mb-2">Size Analysis</h4>
+                            <div className="flex items-center justify-between text-sm">
+                              <span>Initial: {selectedResult.initialSize} bits</span>
+                              <span className="text-muted-foreground">→</span>
+                              <span>Final: {selectedResult.finalSize} bits</span>
+                              <Badge variant={selectedResult.compressionRatio > 1 ? "default" : "secondary"}>
+                                {selectedResult.compressionRatio.toFixed(2)}x
+                              </Badge>
+                            </div>
+                          </div>
+
+                          {/* Execution Logs */}
+                          {selectedResult.logs && selectedResult.logs.length > 0 && (
+                            <div className="mb-4">
+                              <h4 className="text-xs font-medium mb-2">Execution Logs</h4>
+                              <div className="max-h-24 overflow-y-auto bg-muted/20 rounded p-2 text-xs font-mono space-y-1">
+                                {selectedResult.logs.map((log, i) => (
+                                  <div key={i} className="text-muted-foreground">{log}</div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Steps Summary */}
+                          <div className="mb-4">
+                            <h4 className="text-xs font-medium mb-2">Operations ({selectedResult.steps.length})</h4>
+                            <div className="max-h-40 overflow-y-auto space-y-1">
+                              {selectedResult.steps.map((step) => (
+                                <div key={step.stepNumber} className="flex items-center justify-between p-2 bg-muted/20 rounded text-xs">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-muted-foreground">#{step.stepNumber}</span>
+                                    <Badge variant="outline" className="font-mono">{step.operation}</Badge>
+                                    {step.rangeStart !== undefined && (
+                                      <span className="text-cyan-500 font-mono text-xs">
+                                        [{step.rangeStart}:{step.rangeEnd}]
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="flex items-center gap-3 text-muted-foreground">
+                                    <span>Cost: {step.cost}</span>
+                                    <span>Size: {step.sizeBefore}→{step.sizeAfter}</span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
+                          <div className="flex gap-2">
+                            <Button className="flex-1" onClick={() => handleExportCSV(selectedResult)}>
+                              <Download className="w-4 h-4 mr-2" />
+                              Export CSV
+                            </Button>
+                            <Button variant="outline" onClick={() => handleExportZip(selectedResult)}>
+                              <FileArchive className="w-4 h-4 mr-2" />
+                              Export ZIP
+                            </Button>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    </>
                   )}
                 </>
               )}
