@@ -1,5 +1,14 @@
 /**
  * Algorithm Executor - Real execution with Lua/Python/C++ support
+ * 
+ * EXECUTION REQUIREMENTS:
+ * - Binary data loaded in active file
+ * - At least 1 scoring file uploaded
+ * - At least 1 operation enabled
+ * - At least 1 metric enabled  
+ * - At least 1 policy uploaded
+ * 
+ * NO SIMULATION MODE - Real execution only with proper error messages
  */
 
 import { luaExecutor } from './luaExecutor';
@@ -47,7 +56,7 @@ export interface ExecutionResult {
   success: boolean;
   error?: string;
   bitRangesAccessed: { start: number; end: number; operation: string }[];
-  executionMode: 'real' | 'simulated';
+  executionMode: 'real';
   logs: string[];
 }
 
@@ -69,6 +78,16 @@ export interface ExecutionContext {
   enabledOperations: string[];
   scoringConfig: { costs: Record<string, number>; initialBudget: number };
   policyConfig: { allowed: string[]; maxOperations: number };
+}
+
+export interface ExecutionRequirements {
+  valid: boolean;
+  errors: string[];
+  hasBinaryData: boolean;
+  hasScoringFile: boolean;
+  hasPolicy: boolean;
+  enabledOperationsCount: number;
+  enabledMetricsCount: number;
 }
 
 const STORAGE_KEY = 'bitwise_execution_results';
@@ -145,6 +164,52 @@ class AlgorithmExecutor {
   }
 
   /**
+   * Check execution requirements before running
+   */
+  checkRequirements(bits?: string): ExecutionRequirements {
+    const errors: string[] = [];
+    
+    const hasBinaryData = !!bits && bits.length > 0;
+    if (!hasBinaryData) {
+      errors.push('No binary data loaded. Generate or load data first.');
+    }
+
+    const hasScoringFile = algorithmManager.getScoringScripts().length > 0;
+    if (!hasScoringFile) {
+      errors.push('No scoring file uploaded. Upload a .lua scoring script.');
+    }
+
+    const hasPolicy = algorithmManager.getPolicies().length > 0;
+    if (!hasPolicy) {
+      errors.push('No policy file uploaded. Upload a .lua policy script.');
+    }
+
+    // Check enabled operations/metrics from localStorage
+    const savedOps = localStorage.getItem('bitwise_enabled_operations');
+    const savedMetrics = localStorage.getItem('bitwise_enabled_metrics');
+    const enabledOperations = savedOps ? JSON.parse(savedOps) : [];
+    const enabledMetrics = savedMetrics ? JSON.parse(savedMetrics) : [];
+
+    if (enabledOperations.length === 0) {
+      errors.push('No operations enabled. Enable at least 1 operation in the Operations tab.');
+    }
+
+    if (enabledMetrics.length === 0) {
+      errors.push('No metrics enabled. Enable at least 1 metric in the Metrics tab.');
+    }
+
+    return {
+      valid: errors.length === 0,
+      errors,
+      hasBinaryData,
+      hasScoringFile,
+      hasPolicy,
+      enabledOperationsCount: enabledOperations.length,
+      enabledMetricsCount: enabledMetrics.length,
+    };
+  }
+
+  /**
    * Start execution with real code execution based on language
    */
   async startExecution(
@@ -159,8 +224,10 @@ class AlgorithmExecutor {
       throw new Error('Execution already in progress');
     }
 
-    if (!bits || bits.length === 0) {
-      throw new Error('No binary data to process. Load or generate data first.');
+    // Validate requirements
+    const requirements = this.checkRequirements(bits);
+    if (!requirements.valid) {
+      throw new Error(requirements.errors.join('\n'));
     }
 
     const strategyFile = algorithmManager.getFile(strategyId);
@@ -220,10 +287,7 @@ class AlgorithmExecutor {
           await this.executeCpp(strategyFile.content, startMemory);
           break;
         default:
-          // Fallback to simulation for unknown languages
-          this.log('Unknown language, using simulation mode');
-          this.currentResult.executionMode = 'simulated';
-          await this.executeSimulation(bits, initialBudget, startMemory);
+          throw new Error(`Unsupported language: ${language}. Only Lua, Python, and C++ are supported.`);
       }
 
       const endTime = new Date();
@@ -261,28 +325,32 @@ class AlgorithmExecutor {
     let scoringConfig = { costs: {} as Record<string, number>, initialBudget };
     let policyConfig = { allowed: [] as string[], maxOperations: 1000 };
 
-    // Load scoring configuration
-    if (scoringId) {
-      const scoringFile = algorithmManager.getFile(scoringId);
-      if (scoringFile) {
-        scoringConfig = await luaExecutor.parseScoringScript(scoringFile.content);
-        initialBudget = scoringConfig.initialBudget;
-      }
+    // Load scoring configuration - use first available if not specified
+    const scoringFiles = algorithmManager.getScoringScripts();
+    const scoringFile = scoringId 
+      ? algorithmManager.getFile(scoringId) 
+      : scoringFiles[0];
+    
+    if (scoringFile) {
+      scoringConfig = await luaExecutor.parseScoringScript(scoringFile.content);
+      initialBudget = scoringConfig.initialBudget;
     }
 
-    // Load policy configuration
-    if (policyId) {
-      const policyFile = algorithmManager.getFile(policyId);
-      if (policyFile) {
-        policyConfig = await luaExecutor.parsePolicyScript(policyFile.content);
-      }
+    // Load policy configuration - use first available if not specified
+    const policyFiles = algorithmManager.getPolicies();
+    const policyFile = policyId 
+      ? algorithmManager.getFile(policyId) 
+      : policyFiles[0];
+    
+    if (policyFile) {
+      policyConfig = await luaExecutor.parsePolicyScript(policyFile.content);
     }
 
     // Get enabled metrics and operations
     const savedMetrics = localStorage.getItem('bitwise_enabled_metrics');
     const savedOps = localStorage.getItem('bitwise_enabled_operations');
-    const enabledMetrics = savedMetrics ? JSON.parse(savedMetrics) : predefinedManager.getAllMetrics().map(m => m.id);
-    const enabledOperations = savedOps ? JSON.parse(savedOps) : predefinedManager.getAllOperations().map(o => o.id);
+    const enabledMetrics = savedMetrics ? JSON.parse(savedMetrics) : [];
+    const enabledOperations = savedOps ? JSON.parse(savedOps) : [];
 
     return {
       bits,
@@ -299,7 +367,7 @@ class AlgorithmExecutor {
    * Execute Lua strategy using Fengari
    */
   private async executeLua(luaCode: string, startMemory: number): Promise<void> {
-    this.log('Loading Lua runtime...');
+    this.log('Loading Lua runtime (Fengari)...');
     await luaExecutor.loadFengari();
 
     if (!this.executionContext || !this.currentResult) return;
@@ -311,6 +379,8 @@ class AlgorithmExecutor {
     const maxSteps = ctx.policyConfig.maxOperations;
 
     this.log(`Lua runtime ready. Budget: ${currentBudget}, Max ops: ${maxSteps}`);
+    this.log(`Enabled operations: ${ctx.enabledOperations.join(', ')}`);
+    this.log(`Enabled metrics: ${ctx.enabledMetrics.join(', ')}`);
 
     // Parse the strategy to find operations it wants to perform
     const operationCalls = luaCode.matchAll(/apply_operation\s*\(\s*["']([^"']+)["']/g);
@@ -320,11 +390,11 @@ class AlgorithmExecutor {
     }
 
     if (operations.length === 0) {
-      // Use default operations if none found in code
+      this.log('No apply_operation calls found in strategy, using enabled operations');
       operations.push(...ctx.enabledOperations.slice(0, 5));
     }
 
-    this.log(`Found ${operations.length} operations in strategy`);
+    this.log(`Operations to execute: ${operations.join(', ')}`);
 
     // Execute operations based on strategy logic
     for (const opName of operations) {
@@ -403,10 +473,7 @@ class AlgorithmExecutor {
     try {
       await pythonExecutor.loadPyodide();
     } catch (e) {
-      this.log('Failed to load Pyodide, falling back to simulation');
-      this.currentResult!.executionMode = 'simulated';
-      await this.executeSimulation(this.executionContext!.bits, this.executionContext!.budget, startMemory);
-      return;
+      throw new Error('Failed to load Python runtime (Pyodide). Check your internet connection and try again.');
     }
 
     this.setState('running');
@@ -497,7 +564,7 @@ class AlgorithmExecutor {
   }
 
   /**
-   * Execute C++ strategy via local server or WASM
+   * Execute C++ strategy via local server (WASM not yet implemented)
    */
   private async executeCpp(cppCode: string, startMemory: number): Promise<void> {
     this.log('Checking for local C++ server...');
@@ -519,85 +586,20 @@ class AlgorithmExecutor {
 
       if (result.success) {
         this.log('C++ execution completed on local server');
-        // Process results from server
         result.logs.forEach(log => this.log(log));
       } else {
-        throw new Error(result.error || 'C++ execution failed');
+        throw new Error(result.error || 'C++ execution failed on local server');
       }
     } else {
-      this.log('No local server, using simulated C++ execution');
-      this.currentResult.executionMode = 'simulated';
-      
-      // Run sandbox test for validation
-      const validation = await cppExecutor.validateSyntax(cppCode);
-      if (!validation.valid) {
-        throw new Error(`C++ validation failed: ${validation.errors.join(', ')}`);
-      }
-
-      this.log('C++ code validated, running simulation');
-      await this.executeSimulation(ctx.bits, ctx.budget, startMemory);
-    }
-  }
-
-  /**
-   * Fallback simulation execution
-   */
-  private async executeSimulation(bits: string, budget: number, startMemory: number): Promise<void> {
-    if (!this.executionContext) return;
-
-    const ctx = this.executionContext;
-    const operations = ctx.enabledOperations.slice(0, 6);
-    const stepCount = Math.floor(Math.random() * 8) + 3;
-    let currentBits = bits;
-    let currentBudget = budget;
-
-    this.log('Running in simulation mode');
-
-    for (let i = 0; i < stepCount; i++) {
-      if (this.abortController?.signal.aborted) throw new Error('Execution aborted');
-      while (this.isPaused) {
-        await new Promise(resolve => setTimeout(resolve, 100));
-        if (this.abortController?.signal.aborted) throw new Error('Execution aborted');
-      }
-
-      const operation = operations[Math.floor(Math.random() * operations.length)];
-      const cost = ctx.scoringConfig.costs[operation] ?? Math.floor(Math.random() * 10) + 1;
-
-      if (cost > currentBudget) break;
-
-      const rangeStart = (i * 16) % Math.max(1, currentBits.length - 32);
-      const rangeEnd = Math.min(rangeStart + 32, currentBits.length);
-      this.currentResult!.bitRangesAccessed.push({ start: rangeStart, end: rangeEnd, operation });
-
-      const metricsBefore = this.calculateMetrics(currentBits);
-      const newBits = this.applyOperation(currentBits, operation, rangeStart, rangeEnd);
-      const metricsAfter = this.calculateMetrics(newBits);
-
-      const step: ExecutionStep = {
-        stepNumber: i + 1,
-        operation,
-        parameters: { simulated: true },
-        bitsBefore: currentBits.slice(0, 32) + '...',
-        bitsAfter: newBits.slice(0, 32) + '...',
-        metricsBefore,
-        metricsAfter,
-        cost,
-        budgetRemaining: currentBudget - cost,
-        timestamp: new Date(),
-        sizeBefore: currentBits.length,
-        sizeAfter: newBits.length,
-        rangeStart,
-        rangeEnd,
-      };
-
-      currentBits = newBits;
-      currentBudget -= cost;
-
-      this.updateCurrentResult(step, currentBits, currentBudget, budget, startMemory);
-      this.callbacks.onStep?.(step);
-      this.notifyListeners();
-
-      await new Promise(resolve => setTimeout(resolve, 200));
+      // C++ requires local server - no WASM fallback yet
+      throw new Error(
+        'C++ execution requires a local server running at http://localhost:8080.\n\n' +
+        'To run C++ strategies:\n' +
+        '1. Set up a local C++ execution server\n' +
+        '2. Start the server on port 8080\n' +
+        '3. The server should accept POST /execute with code and context\n\n' +
+        'Alternatively, use Lua or Python strategies which run directly in the browser.'
+      );
     }
   }
 
@@ -646,6 +648,15 @@ class AlgorithmExecutor {
       case 'OR':
         newRange = range.split('').map((b, i) => (b === '1' || (i % 2 === 0)) ? '1' : '0').join('');
         break;
+      case 'NAND':
+        newRange = range.split('').map((b, i) => (b === '1' && (i % 2 === 0)) ? '0' : '1').join('');
+        break;
+      case 'NOR':
+        newRange = range.split('').map((b, i) => (b === '1' || (i % 2 === 0)) ? '0' : '1').join('');
+        break;
+      case 'XNOR':
+        newRange = range.split('').map((b, i) => b === ((i % 2 === 0) ? '1' : '0') ? '1' : '0').join('');
+        break;
       case 'SHL':
         newRange = range.slice(1) + '0';
         break;
@@ -657,6 +668,12 @@ class AlgorithmExecutor {
         break;
       case 'ROR':
         newRange = range.charAt(range.length - 1) + range.slice(0, -1);
+        break;
+      case 'GRAY':
+        // Binary to Gray code
+        newRange = range.charAt(0) + range.split('').slice(1).map((b, i) => 
+          (parseInt(range[i]) ^ parseInt(b)).toString()
+        ).join('');
         break;
       default:
         newRange = range;

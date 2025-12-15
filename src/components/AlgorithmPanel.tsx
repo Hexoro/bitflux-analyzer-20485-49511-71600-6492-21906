@@ -45,6 +45,7 @@ import { algorithmExecutor, ExecutionResult, ExecutionStep, ExecutionState } fro
 import { resultExporter } from '@/lib/resultExporter';
 import { BitRangesWindow } from '@/components/BitRangesWindow';
 import { fileSystemManager } from '@/lib/fileSystemManager';
+import { loadTestFiles } from '@/lib/testStrategies';
 
 type AlgorithmTab = 'strategy' | 'presets' | 'results' | 'scoring' | 'metrics' | 'policies' | 'operations';
 
@@ -325,16 +326,21 @@ export const AlgorithmPanel = ({ onExecutionHistoryChange }: AlgorithmPanelProps
     );
   };
 
-  // Execution Controls Component
+  // Execution Controls Component with Requirements Check
   const ExecutionControls = () => {
     const isRunning = executionState === 'running';
     const isPaused = executionState === 'paused';
     const isLoading = executionState === 'loading';
     const isActive = isRunning || isPaused || isLoading;
 
-    // Check if there's data to run on
+    // Check requirements
     const activeFile = fileSystemManager.getActiveFile();
-    const hasData = activeFile?.state.model.getBits()?.length > 0;
+    const bits = activeFile?.state.model.getBits() || '';
+    const requirements = algorithmExecutor.checkRequirements(bits);
+
+    const hasScoringFile = algorithmManager.getScoringScripts().length > 0;
+    const hasPolicy = algorithmManager.getPolicies().length > 0;
+    const hasStrategy = selectedFile && algorithmManager.getFile(selectedFile)?.type === 'strategy';
 
     return (
       <Card className="mb-4">
@@ -361,19 +367,39 @@ export const AlgorithmPanel = ({ onExecutionHistoryChange }: AlgorithmPanelProps
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {/* Data Warning */}
-          {!hasData && (
-            <div className="mb-3 p-2 bg-yellow-500/10 border border-yellow-500/30 rounded flex items-center gap-2 text-xs text-yellow-600">
-              <AlertTriangle className="w-4 h-4" />
-              <span>No binary data loaded. Generate or load data first.</span>
+          {/* Requirements Checklist */}
+          <div className="mb-3 space-y-1 text-xs">
+            <div className={`flex items-center gap-2 ${requirements.hasBinaryData ? 'text-green-600' : 'text-muted-foreground'}`}>
+              {requirements.hasBinaryData ? <CheckCircle2 className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
+              Binary data loaded
             </div>
-          )}
+            <div className={`flex items-center gap-2 ${hasStrategy ? 'text-green-600' : 'text-muted-foreground'}`}>
+              {hasStrategy ? <CheckCircle2 className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
+              Strategy selected
+            </div>
+            <div className={`flex items-center gap-2 ${hasScoringFile ? 'text-green-600' : 'text-muted-foreground'}`}>
+              {hasScoringFile ? <CheckCircle2 className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
+              Scoring file uploaded
+            </div>
+            <div className={`flex items-center gap-2 ${hasPolicy ? 'text-green-600' : 'text-muted-foreground'}`}>
+              {hasPolicy ? <CheckCircle2 className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
+              Policy file uploaded
+            </div>
+            <div className={`flex items-center gap-2 ${requirements.enabledOperationsCount > 0 ? 'text-green-600' : 'text-muted-foreground'}`}>
+              {requirements.enabledOperationsCount > 0 ? <CheckCircle2 className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
+              Operations enabled ({requirements.enabledOperationsCount})
+            </div>
+            <div className={`flex items-center gap-2 ${requirements.enabledMetricsCount > 0 ? 'text-green-600' : 'text-muted-foreground'}`}>
+              {requirements.enabledMetricsCount > 0 ? <CheckCircle2 className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
+              Metrics enabled ({requirements.enabledMetricsCount})
+            </div>
+          </div>
 
           <div className="flex items-center gap-2 mb-3">
             <Button 
               size="sm" 
               onClick={handleRunStrategy}
-              disabled={isActive || !selectedFile || !hasData}
+              disabled={isActive || !requirements.valid || !hasStrategy}
               className="flex-1"
             >
               {isLoading ? (
@@ -435,6 +461,13 @@ export const AlgorithmPanel = ({ onExecutionHistoryChange }: AlgorithmPanelProps
     );
   };
 
+  // Load Test Files handler
+  const handleLoadTestFiles = () => {
+    loadTestFiles();
+    toast.success('Test files loaded: strategy, scoring, and policy');
+    forceUpdate({});
+  };
+
   return (
     <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as AlgorithmTab)} className="h-full flex flex-col">
       <input
@@ -468,10 +501,15 @@ export const AlgorithmPanel = ({ onExecutionHistoryChange }: AlgorithmPanelProps
                       <Lightbulb className="w-4 h-4" />
                       Strategy Algorithms
                     </div>
-                    <Button size="sm" variant="outline" onClick={() => handleUpload('strategy')}>
-                      <Upload className="w-4 h-4 mr-2" />
-                      Upload C++/Python
-                    </Button>
+                    <div className="flex gap-2">
+                      <Button size="sm" variant="secondary" onClick={handleLoadTestFiles}>
+                        Load Test Files
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => handleUpload('strategy')}>
+                        <Upload className="w-4 h-4 mr-2" />
+                        Upload Lua/Python
+                      </Button>
+                    </div>
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="text-sm">
@@ -915,9 +953,7 @@ end`}
                                 <Badge variant="outline" className="text-xs">
                                   {result.strategyLanguage?.toUpperCase() || 'UNKNOWN'}
                                 </Badge>
-                                {result.executionMode === 'simulated' && (
-                                  <Badge variant="secondary" className="text-xs">Simulated</Badge>
-                                )}
+                                <Badge variant="default" className="text-xs">Real</Badge>
                               </div>
                               <div className="flex items-center gap-2">
                                 <Badge variant="outline" className="text-xs">
@@ -963,12 +999,10 @@ end`}
                         </CardHeader>
                         <CardContent>
                           {/* Execution Mode Banner */}
-                          {selectedResult.executionMode === 'simulated' && (
-                            <div className="mb-4 p-2 bg-yellow-500/10 border border-yellow-500/30 rounded flex items-center gap-2 text-xs text-yellow-600">
-                              <AlertTriangle className="w-4 h-4" />
-                              <span>Simulated execution - install local C++ server or use Lua/Python for real execution</span>
-                            </div>
-                          )}
+                          <div className="mb-4 p-2 bg-green-500/10 border border-green-500/30 rounded flex items-center gap-2 text-xs text-green-600">
+                            <CheckCircle2 className="w-4 h-4" />
+                            <span>Real execution mode - {selectedResult.strategyLanguage?.toUpperCase()} runtime</span>
+                          </div>
 
                           {/* System Info */}
                           <div className="grid grid-cols-2 gap-4 mb-4">
