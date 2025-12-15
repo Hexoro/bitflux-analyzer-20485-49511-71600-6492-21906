@@ -270,27 +270,28 @@ export class PredefinedManager {
 
   private loadFromStorage(): void {
     try {
-      // Load metrics
+      // Load metrics - merge with defaults to ensure all base metrics exist
       const metricsData = localStorage.getItem(STORAGE_KEYS.metrics);
+      // Always add defaults first
+      DEFAULT_METRICS.forEach(m => this.metrics.set(m.id, m));
       if (metricsData) {
         const parsed: PredefinedMetric[] = JSON.parse(metricsData);
+        // Override with stored (allows custom edits to persist)
         parsed.forEach(m => this.metrics.set(m.id, m));
-      } else {
-        // Initialize with defaults
-        DEFAULT_METRICS.forEach(m => this.metrics.set(m.id, m));
-        this.saveToStorage();
       }
 
-      // Load operations
+      // Load operations - merge with defaults to ensure all base operations exist
       const opsData = localStorage.getItem(STORAGE_KEYS.operations);
+      // Always add defaults first (includes all 7 logic gates)
+      DEFAULT_OPERATIONS.forEach(op => this.operations.set(op.id, op));
       if (opsData) {
         const parsed: PredefinedOperation[] = JSON.parse(opsData);
+        // Override with stored (allows custom edits to persist)
         parsed.forEach(op => this.operations.set(op.id, op));
-      } else {
-        // Initialize with defaults
-        DEFAULT_OPERATIONS.forEach(op => this.operations.set(op.id, op));
-        this.saveToStorage();
       }
+      
+      // Save to ensure storage has all defaults
+      this.saveToStorage();
     } catch (error) {
       console.error('Failed to load predefined data:', error);
       // Fallback to defaults
