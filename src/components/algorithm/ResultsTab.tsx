@@ -73,7 +73,7 @@ export const ResultsTab = ({ onSelectResult }: ResultsTabProps) => {
       dataFileName: result.strategyName,
       initialBits: result.initialBits,
       finalBits: result.finalBits,
-      steps: result.steps.map((s, i) => ({ ...s, stepIndex: i, timestamp: new Date() })),
+      steps: result.steps.map((s, i) => ({ ...s, params: s.params || {}, stepIndex: i, timestamp: new Date() })),
       totalDuration: result.duration,
       startTime: new Date(),
       endTime: new Date(),

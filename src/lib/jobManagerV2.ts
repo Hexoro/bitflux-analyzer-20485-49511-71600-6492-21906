@@ -326,6 +326,27 @@ class JobManagerV2 {
   }
 
   /**
+   * Get pending job count
+   */
+  getPendingCount(): number {
+    return Array.from(this.jobs.values()).filter(j => j.status === 'pending').length;
+  }
+
+  /**
+   * Get completed job count
+   */
+  getCompletedCount(): number {
+    return this.completedJobs.filter(j => j.status === 'completed').length;
+  }
+
+  /**
+   * Get failed job count
+   */
+  getFailedCount(): number {
+    return this.completedJobs.filter(j => j.status === 'failed').length;
+  }
+
+  /**
    * Subscribe to changes
    */
   subscribe(listener: () => void): () => void {
