@@ -1,9 +1,9 @@
 /**
- * Player Tab - Plays transformations with full controls
- * Creates temporary player file, syncs with binary viewer
+ * Player Tab V2 - Real binary data viewer with transformation playback
+ * Creates temporary player file, syncs with metrics, highlights changes
  */
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
@@ -30,14 +30,14 @@ import {
   Layers,
   Binary,
   FileCode,
+  RotateCcw,
 } from 'lucide-react';
-import { TransformationStep, ExecutionResultV2 } from '@/lib/resultsManager';
+import { strategyExecutor, ExecutionResult, TransformationStep } from '@/lib/strategyExecutor';
 import { predefinedManager } from '@/lib/predefinedManager';
-import { pythonModuleSystem } from '@/lib/pythonModuleSystem';
 
 interface PlayerTabProps {
-  result: ExecutionResultV2 | null;
-  onStepChange?: (step: TransformationStep | null, binaryHighlights?: { start: number; end: number; color: string }[]) => void;
+  result: ExecutionResult | null;
+  onStepChange?: (step: TransformationStep | null) => void;
 }
 
 export const PlayerTab = ({ result, onStepChange }: PlayerTabProps) => {
@@ -45,11 +45,30 @@ export const PlayerTab = ({ result, onStepChange }: PlayerTabProps) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
   const [showDiff, setShowDiff] = useState(true);
+  const [playerFile, setPlayerFile] = useState(strategyExecutor.getPlayerFile());
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const operations = predefinedManager.getAllOperations();
   const metrics = predefinedManager.getAllMetrics();
 
+  // Subscribe to executor updates
+  useEffect(() => {
+    const unsubscribe = strategyExecutor.subscribe(() => {
+      setPlayerFile(strategyExecutor.getPlayerFile());
+    });
+    return unsubscribe;
+  }, []);
+
+  // Create player file when result changes
+  useEffect(() => {
+    if (result && result.initialBits) {
+      strategyExecutor.createPlayerFile(result.initialBits);
+      setCurrentStep(0);
+      setIsPlaying(false);
+    }
+  }, [result?.id]);
+
+  // Playback logic
   useEffect(() => {
     if (isPlaying && result && result.steps.length > 0) {
       intervalRef.current = setInterval(() => {
@@ -70,59 +89,55 @@ export const PlayerTab = ({ result, onStepChange }: PlayerTabProps) => {
     };
   }, [isPlaying, playbackSpeed, result]);
 
-  // Sync with binary viewer when step changes
+  // Update player file when step changes
   useEffect(() => {
     if (result && result.steps[currentStep]) {
       const step = result.steps[currentStep];
-      
-      // Generate highlights for changed bits
-      const highlights: { start: number; end: number; color: string }[] = [];
-      
-      if (showDiff) {
-        const before = step.beforeBits;
-        const after = step.afterBits;
-        
-        // Find changed regions
-        let changeStart = -1;
-        for (let i = 0; i < Math.max(before.length, after.length); i++) {
-          const different = i >= before.length || i >= after.length || before[i] !== after[i];
-          
-          if (different && changeStart === -1) {
-            changeStart = i;
-          } else if (!different && changeStart !== -1) {
-            highlights.push({ start: changeStart, end: i - 1, color: 'hsl(var(--primary))' });
-            changeStart = -1;
-          }
-        }
-        
-        if (changeStart !== -1) {
-          highlights.push({ start: changeStart, end: Math.max(before.length, after.length) - 1, color: 'hsl(var(--primary))' });
-        }
-      }
-      
-      // Update player state for binary viewer sync
-      pythonModuleSystem.setPlayerState({
-        isPlaying,
-        currentStep,
-        highlightedTransformations: [step.operation],
-        binaryHighlights: highlights
-      });
-      
-      onStepChange?.(step, highlights);
+      const highlights = calculateDiffHighlights(step.beforeBits, step.afterBits);
+      strategyExecutor.updatePlayerFile(currentStep, step.afterBits, highlights);
+      onStepChange?.(step);
     }
-  }, [currentStep, result, showDiff, isPlaying, onStepChange]);
+  }, [currentStep, result, onStepChange]);
+
+  const calculateDiffHighlights = (before: string, after: string) => {
+    const highlights: { start: number; end: number; color: string }[] = [];
+    let changeStart = -1;
+
+    for (let i = 0; i < Math.max(before.length, after.length); i++) {
+      const different = i >= before.length || i >= after.length || before[i] !== after[i];
+      
+      if (different && changeStart === -1) {
+        changeStart = i;
+      } else if (!different && changeStart !== -1) {
+        highlights.push({ start: changeStart, end: i - 1, color: 'hsl(var(--primary))' });
+        changeStart = -1;
+      }
+    }
+    
+    if (changeStart !== -1) {
+      highlights.push({ 
+        start: changeStart, 
+        end: Math.max(before.length, after.length) - 1, 
+        color: 'hsl(var(--primary))' 
+      });
+    }
+
+    return highlights;
+  };
 
   const handlePlay = () => setIsPlaying(true);
   const handlePause = () => setIsPlaying(false);
   const handleStop = () => {
     setIsPlaying(false);
     setCurrentStep(0);
-    pythonModuleSystem.setPlayerState({
-      isPlaying: false,
-      currentStep: 0,
-      highlightedTransformations: [],
-      binaryHighlights: []
-    });
+    if (result) {
+      strategyExecutor.createPlayerFile(result.initialBits);
+    }
+  };
+  const handleReset = () => {
+    strategyExecutor.resetPlayerFile();
+    setCurrentStep(0);
+    setIsPlaying(false);
   };
   const handlePrevious = () => setCurrentStep(prev => Math.max(0, prev - 1));
   const handleNext = () => setCurrentStep(prev => 
@@ -143,45 +158,75 @@ export const PlayerTab = ({ result, onStepChange }: PlayerTabProps) => {
   }
 
   const step = result.steps[currentStep];
-  const progress = result.steps.length > 0 ? (currentStep / (result.steps.length - 1)) * 100 : 0;
+  const currentBits = playerFile?.currentBits || result.initialBits;
 
-  // Generate diff view
-  const generateDiff = () => {
-    if (!step) return null;
+  // Generate binary display with highlights
+  const renderBinaryView = () => {
+    if (!currentBits) return null;
     
-    const before = step.beforeBits;
-    const after = step.afterBits;
-    const diffChars: { char: string; changed: boolean }[] = [];
+    const highlights = playerFile?.highlights || [];
+    const displayBits = currentBits.slice(0, 512);
     
-    for (let i = 0; i < Math.max(before.length, after.length); i++) {
-      const beforeChar = before[i] || '';
-      const afterChar = after[i] || '';
-      diffChars.push({
-        char: afterChar || '∅',
-        changed: beforeChar !== afterChar
-      });
-    }
-    
-    return diffChars;
+    return (
+      <div className="font-mono text-xs leading-relaxed">
+        {displayBits.split('').map((bit, i) => {
+          const isHighlighted = highlights.some(h => i >= h.start && i <= h.end);
+          return (
+            <span 
+              key={i} 
+              className={`${isHighlighted ? 'bg-primary text-primary-foreground' : ''} ${i % 8 === 7 ? 'mr-1' : ''}`}
+            >
+              {bit}
+            </span>
+          );
+        })}
+        {currentBits.length > 512 && (
+          <span className="text-muted-foreground ml-2">...({currentBits.length - 512} more bits)</span>
+        )}
+      </div>
+    );
   };
 
   return (
     <div className="h-full flex flex-col gap-4 p-4">
-      {/* Player File Info */}
-      <Card className="bg-muted/30">
+      {/* Temporary Player File Banner */}
+      <Card className="bg-purple-500/10 border-purple-500/30">
         <CardContent className="py-3">
           <div className="flex items-center gap-4">
             <FileCode className="w-5 h-5 text-purple-500" />
-            <div>
+            <div className="flex-1">
               <span className="text-sm font-medium">Temporary Player File</span>
               <p className="text-xs text-muted-foreground">
-                This view is temporary and won't affect your results database
+                This view is temporary and resets on program restart. Does not affect results.
               </p>
             </div>
-            <Badge variant="outline" className="ml-auto">
+            <Badge variant="outline" className="border-purple-500/50">
               {result.strategyName}
             </Badge>
+            <Badge variant="secondary">
+              {currentBits.length} bits
+            </Badge>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Binary Data Viewer */}
+      <Card className="flex-shrink-0">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <Binary className="w-4 h-4" />
+            Live Binary View
+            {playerFile?.highlights && playerFile.highlights.length > 0 && (
+              <Badge variant="default" className="ml-2">
+                {playerFile.highlights.length} changed region(s)
+              </Badge>
+            )}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ScrollArea className="h-32 rounded border bg-muted/30 p-2">
+            {renderBinaryView()}
+          </ScrollArea>
         </CardContent>
       </Card>
 
@@ -191,28 +236,16 @@ export const PlayerTab = ({ result, onStepChange }: PlayerTabProps) => {
           <div className="flex items-center gap-4">
             {/* Control Buttons */}
             <div className="flex items-center gap-2">
-              <Button
-                size="icon"
-                variant="outline"
-                onClick={handleStop}
-                disabled={currentStep === 0 && !isPlaying}
-              >
+              <Button size="icon" variant="outline" onClick={handleReset} title="Reset to initial">
+                <RotateCcw className="w-4 h-4" />
+              </Button>
+              <Button size="icon" variant="outline" onClick={handleStop} disabled={currentStep === 0 && !isPlaying}>
                 <Square className="w-4 h-4" />
               </Button>
-              <Button
-                size="icon"
-                variant="outline"
-                onClick={handlePrevious}
-                disabled={currentStep === 0}
-              >
+              <Button size="icon" variant="outline" onClick={handlePrevious} disabled={currentStep === 0}>
                 <SkipBack className="w-4 h-4" />
               </Button>
-              <Button
-                size="icon"
-                variant="outline"
-                onClick={() => setCurrentStep(prev => Math.max(0, prev - 1))}
-                disabled={currentStep === 0}
-              >
+              <Button size="icon" variant="outline" onClick={() => setCurrentStep(prev => Math.max(0, prev - 1))} disabled={currentStep === 0}>
                 <ChevronLeft className="w-4 h-4" />
               </Button>
               {isPlaying ? (
@@ -220,30 +253,14 @@ export const PlayerTab = ({ result, onStepChange }: PlayerTabProps) => {
                   <Pause className="w-4 h-4" />
                 </Button>
               ) : (
-                <Button 
-                  size="icon" 
-                  onClick={handlePlay}
-                  disabled={!result.steps.length || currentStep >= result.steps.length - 1}
-                >
+                <Button size="icon" onClick={handlePlay} disabled={!result.steps.length || currentStep >= result.steps.length - 1}>
                   <Play className="w-4 h-4" />
                 </Button>
               )}
-              <Button
-                size="icon"
-                variant="outline"
-                onClick={() => setCurrentStep(prev => 
-                  Math.min(result.steps.length - 1, prev + 1)
-                )}
-                disabled={currentStep >= result.steps.length - 1}
-              >
+              <Button size="icon" variant="outline" onClick={() => setCurrentStep(prev => Math.min(result.steps.length - 1, prev + 1))} disabled={currentStep >= result.steps.length - 1}>
                 <ChevronRight className="w-4 h-4" />
               </Button>
-              <Button
-                size="icon"
-                variant="outline"
-                onClick={handleNext}
-                disabled={currentStep >= result.steps.length - 1}
-              >
+              <Button size="icon" variant="outline" onClick={handleNext} disabled={currentStep >= result.steps.length - 1}>
                 <SkipForward className="w-4 h-4" />
               </Button>
             </div>
@@ -251,10 +268,7 @@ export const PlayerTab = ({ result, onStepChange }: PlayerTabProps) => {
             {/* Speed Control */}
             <div className="flex items-center gap-2">
               <span className="text-sm text-muted-foreground">Speed:</span>
-              <Select
-                value={playbackSpeed.toString()}
-                onValueChange={(v) => setPlaybackSpeed(parseFloat(v))}
-              >
+              <Select value={playbackSpeed.toString()} onValueChange={(v) => setPlaybackSpeed(parseFloat(v))}>
                 <SelectTrigger className="w-20 h-8">
                   <SelectValue />
                 </SelectTrigger>
@@ -270,19 +284,15 @@ export const PlayerTab = ({ result, onStepChange }: PlayerTabProps) => {
             </div>
 
             {/* Diff Toggle */}
-            <Button
-              size="sm"
-              variant={showDiff ? "default" : "outline"}
-              onClick={() => setShowDiff(!showDiff)}
-            >
+            <Button size="sm" variant={showDiff ? "default" : "outline"} onClick={() => setShowDiff(!showDiff)}>
               <Binary className="w-4 h-4 mr-1" />
-              Show Diff
+              Highlight Changes
             </Button>
 
             {/* Step Counter */}
             <div className="flex-1 text-center">
               <span className="text-lg font-mono">
-                {currentStep + 1} / {result.steps.length}
+                Step {currentStep + 1} / {result.steps.length}
               </span>
             </div>
 
@@ -309,7 +319,7 @@ export const PlayerTab = ({ result, onStepChange }: PlayerTabProps) => {
 
       {/* Current Step Details */}
       <div className="flex-1 grid grid-cols-2 gap-4 min-h-0">
-        {/* Left: Operation Details + Binary Diff */}
+        {/* Left: Operation Details */}
         <Card className="flex flex-col min-h-0">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm flex items-center gap-2">
@@ -321,7 +331,7 @@ export const PlayerTab = ({ result, onStepChange }: PlayerTabProps) => {
             {step ? (
               <div className="space-y-4">
                 <div>
-                  <h4 className="font-mono text-lg">{step.operation}</h4>
+                  <h4 className="font-mono text-lg text-primary">{step.operation}</h4>
                   {step.params && Object.keys(step.params).length > 0 && (
                     <div className="mt-2 space-y-1">
                       {Object.entries(step.params).map(([key, value]) => (
@@ -340,44 +350,16 @@ export const PlayerTab = ({ result, onStepChange }: PlayerTabProps) => {
                     <span className="font-mono">{step.beforeBits.length}</span>
                     <span className="text-muted-foreground">→</span>
                     <span className="font-mono">{step.afterBits.length}</span>
-                    <Badge variant={step.afterBits.length < step.beforeBits.length ? 'default' : 'secondary'}>
+                    <Badge variant={step.afterBits.length !== step.beforeBits.length ? 'default' : 'secondary'}>
                       {step.afterBits.length - step.beforeBits.length >= 0 ? '+' : ''}
                       {step.afterBits.length - step.beforeBits.length}
                     </Badge>
                   </div>
                 </div>
 
-                {/* Binary Diff View */}
-                {showDiff && (
-                  <div className="border-t pt-4">
-                    <h5 className="text-sm font-medium mb-2 flex items-center gap-2">
-                      <Binary className="w-4 h-4" />
-                      Binary Diff (first 128 bits)
-                    </h5>
-                    <div className="font-mono text-xs bg-muted p-2 rounded overflow-hidden">
-                      <div className="flex flex-wrap">
-                        {generateDiff()?.slice(0, 128).map((d, i) => (
-                          <span 
-                            key={i} 
-                            className={d.changed ? 'bg-primary text-primary-foreground px-0.5' : ''}
-                          >
-                            {d.char}
-                          </span>
-                        ))}
-                        {step.afterBits.length > 128 && <span className="text-muted-foreground">...</span>}
-                      </div>
-                    </div>
-                  </div>
-                )}
-
                 <div className="border-t pt-4">
-                  <h5 className="text-sm font-medium mb-2">Bit Preview</h5>
-                  <div className="font-mono text-xs bg-muted p-2 rounded overflow-hidden">
-                    <div className="mb-1 text-muted-foreground">Before:</div>
-                    <div className="truncate">{step.beforeBits.slice(0, 64)}...</div>
-                    <div className="mt-2 mb-1 text-muted-foreground">After:</div>
-                    <div className="truncate">{step.afterBits.slice(0, 64)}...</div>
-                  </div>
+                  <h5 className="text-sm font-medium mb-2">Execution Time</h5>
+                  <p className="font-mono text-sm">{step.duration.toFixed(4)} ms</p>
                 </div>
               </div>
             ) : (
@@ -400,26 +382,20 @@ export const PlayerTab = ({ result, onStepChange }: PlayerTabProps) => {
                 <div className="space-y-2">
                   {Object.entries(step.metrics).map(([key, value]) => {
                     const metricDef = metrics.find(m => m.id === key);
-                    // Calculate change from previous step
                     const prevStep = currentStep > 0 ? result.steps[currentStep - 1] : null;
                     const prevValue = prevStep?.metrics[key] ?? value;
                     const change = value - prevValue;
                     
                     return (
-                      <div
-                        key={key}
-                        className="flex items-center justify-between p-2 rounded bg-muted/30"
-                      >
+                      <div key={key} className="flex items-center justify-between p-2 rounded bg-muted/30">
                         <div>
                           <span className="font-medium">{metricDef?.name || key}</span>
                           {metricDef?.unit && (
-                            <span className="text-xs text-muted-foreground ml-1">
-                              ({metricDef.unit})
-                            </span>
+                            <span className="text-xs text-muted-foreground ml-1">({metricDef.unit})</span>
                           )}
                         </div>
                         <div className="flex items-center gap-2">
-                          <span className="font-mono">{value.toFixed(4)}</span>
+                          <span className="font-mono">{typeof value === 'number' ? value.toFixed(4) : value}</span>
                           {change !== 0 && (
                             <Badge variant={change < 0 ? 'default' : 'secondary'} className="text-xs">
                               {change > 0 ? '+' : ''}{change.toFixed(4)}
@@ -438,8 +414,8 @@ export const PlayerTab = ({ result, onStepChange }: PlayerTabProps) => {
         </Card>
       </div>
 
-      {/* Operations Database */}
-      <Card>
+      {/* Operations Reference */}
+      <Card className="flex-shrink-0">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm flex items-center gap-2">
             <Layers className="w-4 h-4" />
