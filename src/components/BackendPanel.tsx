@@ -7,7 +7,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import { Progress } from '@/components/ui/progress';
 import {
   Dialog,
   DialogContent,
@@ -16,25 +15,15 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
   Accordion,
   AccordionContent,
   AccordionItem,
   AccordionTrigger,
 } from '@/components/ui/accordion';
 import {
-  Database,
-  FileOutput,
   Plus,
   Pencil,
   Trash2,
-  Download,
   RotateCcw,
   Calculator,
   Cog,
@@ -42,16 +31,11 @@ import {
   ChevronDown,
   Info,
   Code,
-  Variable,
   BookOpen,
-  Upload,
-  FileCheck,
-  AlertTriangle,
-  CheckCircle2,
-  XCircle,
-  FileArchive,
-  Play,
-  Loader2,
+  Zap,
+  Binary,
+  FileCode,
+  Activity,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -59,17 +43,14 @@ import {
   PredefinedMetric,
   PredefinedOperation,
 } from '@/lib/predefinedManager';
-import { algorithmManager } from '@/lib/algorithmManager';
-import { fileValidator, ValidationResult } from '@/lib/fileValidator';
-import { resultExporter } from '@/lib/resultExporter';
 import { MetricsCodeEditor } from './MetricsCodeEditor';
 import { OperationsCodeEditor } from './OperationsCodeEditor';
 import { CodeFileEditor } from './CodeFileEditor';
 
-type BackendTab = 'predefined' | 'validator' | 'info' | 'metrics-code' | 'operations-code' | 'metrics-json' | 'operations-json';
+type BackendTab = 'metrics' | 'operations' | 'metrics-code' | 'operations-code' | 'metrics-json' | 'operations-json' | 'info';
 
 export const BackendPanel = () => {
-  const [activeTab, setActiveTab] = useState<BackendTab>('predefined');
+  const [activeTab, setActiveTab] = useState<BackendTab>('metrics');
   const [, forceUpdate] = useState({});
 
   // Dialog states
@@ -193,29 +174,29 @@ export const BackendPanel = () => {
   return (
     <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as BackendTab)} className="h-full flex flex-col">
       <TabsList className="w-full justify-start rounded-none border-b overflow-x-auto flex-shrink-0">
-        <TabsTrigger value="predefined">
-          <Database className="w-4 h-4 mr-1" />
-          Pre-defined
-        </TabsTrigger>
-        <TabsTrigger value="metrics-code">
+        <TabsTrigger value="metrics">
           <Calculator className="w-4 h-4 mr-1" />
           Metrics
         </TabsTrigger>
-        <TabsTrigger value="metrics-json">
+        <TabsTrigger value="operations">
+          <Cog className="w-4 h-4 mr-1" />
+          Operations
+        </TabsTrigger>
+        <TabsTrigger value="metrics-code">
           <Code className="w-4 h-4 mr-1" />
-          Metrics JSON
+          Metrics Code
         </TabsTrigger>
         <TabsTrigger value="operations-code">
-          <Cog className="w-4 h-4 mr-1" />
-          Ops
+          <Code className="w-4 h-4 mr-1" />
+          Ops Code
+        </TabsTrigger>
+        <TabsTrigger value="metrics-json">
+          <FileCode className="w-4 h-4 mr-1" />
+          Metrics JSON
         </TabsTrigger>
         <TabsTrigger value="operations-json">
-          <Code className="w-4 h-4 mr-1" />
+          <FileCode className="w-4 h-4 mr-1" />
           Ops JSON
-        </TabsTrigger>
-        <TabsTrigger value="validator">
-          <FileCheck className="w-4 h-4 mr-1" />
-          Validator
         </TabsTrigger>
         <TabsTrigger value="info">
           <Info className="w-4 h-4 mr-1" />
@@ -224,11 +205,95 @@ export const BackendPanel = () => {
       </TabsList>
 
       <div className="flex-1 overflow-hidden">
-        {/* Pre-defined Tab */}
-        <TabsContent value="predefined" className="h-full m-0">
+        {/* Metrics Tab - Editable */}
+        <TabsContent value="metrics" className="h-full m-0">
           <ScrollArea className="h-full">
-            <div className="p-4 space-y-6">
-              {/* Operations Section */}
+            <div className="p-4 space-y-4">
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="flex items-center justify-between text-sm">
+                    <div className="flex items-center gap-2">
+                      <Calculator className="w-4 h-4" />
+                      Metrics ({metrics.length})
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button size="sm" variant="outline" onClick={() => predefinedManager.resetToDefaults()}>
+                        <RotateCcw className="w-4 h-4 mr-2" />
+                        Reset
+                      </Button>
+                      <Button size="sm" variant="default" onClick={handleAddMetric}>
+                        <Plus className="w-4 h-4 mr-2" />
+                        Add
+                      </Button>
+                    </div>
+                  </CardTitle>
+                  <p className="text-xs text-muted-foreground">
+                    All metrics are available to strategies in Algorithm mode. Edit them here.
+                  </p>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    {metricCategories.map(category => (
+                      <div key={category} className="mb-3">
+                        <h4 className="text-xs font-medium text-muted-foreground uppercase mb-2">{category}</h4>
+                        <div className="space-y-1">
+                          {metrics.filter(m => m.category === category).map(metric => (
+                            <div
+                              key={metric.id}
+                              className="border rounded-lg overflow-hidden"
+                            >
+                              <div
+                                className="flex items-center justify-between p-3 cursor-pointer hover:bg-muted/30"
+                                onClick={() => setExpandedMetric(expandedMetric === metric.id ? null : metric.id)}
+                              >
+                                <div className="flex items-center gap-3">
+                                  {expandedMetric === metric.id ? (
+                                    <ChevronDown className="w-4 h-4" />
+                                  ) : (
+                                    <ChevronRight className="w-4 h-4" />
+                                  )}
+                                  <div>
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-medium">{metric.name}</span>
+                                      {metric.unit && (
+                                        <Badge variant="secondary" className="text-xs">{metric.unit}</Badge>
+                                      )}
+                                    </div>
+                                    <p className="text-xs text-muted-foreground">{metric.description}</p>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                                  <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => handleEditMetric(metric)}>
+                                    <Pencil className="w-3 h-3" />
+                                  </Button>
+                                  <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" onClick={() => handleDeleteMetric(metric.id)}>
+                                    <Trash2 className="w-3 h-3" />
+                                  </Button>
+                                </div>
+                              </div>
+                              {expandedMetric === metric.id && (
+                                <div className="px-3 pb-3 pt-1 bg-muted/20 border-t">
+                                  <div className="font-mono text-sm bg-background/50 p-2 rounded">
+                                    {metric.formula}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </ScrollArea>
+        </TabsContent>
+
+        {/* Operations Tab - Editable */}
+        <TabsContent value="operations" className="h-full m-0">
+          <ScrollArea className="h-full">
+            <div className="p-4 space-y-4">
               <Card>
                 <CardHeader className="pb-2">
                   <CardTitle className="flex items-center justify-between text-sm">
@@ -247,6 +312,9 @@ export const BackendPanel = () => {
                       </Button>
                     </div>
                   </CardTitle>
+                  <p className="text-xs text-muted-foreground">
+                    All operations are available to strategies in Algorithm mode. Edit them here.
+                  </p>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-2">
@@ -311,76 +379,6 @@ export const BackendPanel = () => {
                   </div>
                 </CardContent>
               </Card>
-
-              {/* Metrics Section */}
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="flex items-center justify-between text-sm">
-                    <div className="flex items-center gap-2">
-                      <Calculator className="w-4 h-4" />
-                      Metrics ({metrics.length})
-                    </div>
-                    <Button size="sm" variant="default" onClick={handleAddMetric}>
-                      <Plus className="w-4 h-4 mr-2" />
-                      Add
-                    </Button>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-2">
-                    {metricCategories.map(category => (
-                      <div key={category} className="mb-3">
-                        <h4 className="text-xs font-medium text-muted-foreground uppercase mb-2">{category}</h4>
-                        <div className="space-y-1">
-                          {metrics.filter(m => m.category === category).map(metric => (
-                            <div
-                              key={metric.id}
-                              className="border rounded-lg overflow-hidden"
-                            >
-                              <div
-                                className="flex items-center justify-between p-3 cursor-pointer hover:bg-muted/30"
-                                onClick={() => setExpandedMetric(expandedMetric === metric.id ? null : metric.id)}
-                              >
-                                <div className="flex items-center gap-3">
-                                  {expandedMetric === metric.id ? (
-                                    <ChevronDown className="w-4 h-4" />
-                                  ) : (
-                                    <ChevronRight className="w-4 h-4" />
-                                  )}
-                                  <div>
-                                    <div className="flex items-center gap-2">
-                                      <span className="font-medium">{metric.name}</span>
-                                      {metric.unit && (
-                                        <Badge variant="secondary" className="text-xs">{metric.unit}</Badge>
-                                      )}
-                                    </div>
-                                    <p className="text-xs text-muted-foreground">{metric.description}</p>
-                                  </div>
-                                </div>
-                                <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
-                                  <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => handleEditMetric(metric)}>
-                                    <Pencil className="w-3 h-3" />
-                                  </Button>
-                                  <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" onClick={() => handleDeleteMetric(metric.id)}>
-                                    <Trash2 className="w-3 h-3" />
-                                  </Button>
-                                </div>
-                              </div>
-                              {expandedMetric === metric.id && (
-                                <div className="px-3 pb-3 pt-1 bg-muted/20 border-t">
-                                  <div className="font-mono text-sm bg-background/50 p-2 rounded">
-                                    {metric.formula}
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
             </div>
           </ScrollArea>
         </TabsContent>
@@ -390,14 +388,14 @@ export const BackendPanel = () => {
           <MetricsCodeEditor />
         </TabsContent>
 
-        {/* Metrics JSON Editor Tab */}
-        <TabsContent value="metrics-json" className="h-full m-0 p-4">
-          <CodeFileEditor mode="metrics" />
-        </TabsContent>
-
         {/* Operations Code Editor Tab */}
         <TabsContent value="operations-code" className="h-full m-0 p-4">
           <OperationsCodeEditor />
+        </TabsContent>
+
+        {/* Metrics JSON Editor Tab */}
+        <TabsContent value="metrics-json" className="h-full m-0 p-4">
+          <CodeFileEditor mode="metrics" />
         </TabsContent>
 
         {/* Operations JSON Editor Tab */}
@@ -405,15 +403,134 @@ export const BackendPanel = () => {
           <CodeFileEditor mode="operations" />
         </TabsContent>
 
-
-        {/* Validator Tab */}
-        <TabsContent value="validator" className="h-full m-0">
-          <ValidatorPanel />
-        </TabsContent>
-
-        {/* Info Tab */}
+        {/* Info Tab - Rewritten */}
         <TabsContent value="info" className="h-full m-0">
-          <InfoPanel />
+          <ScrollArea className="h-full">
+            <div className="p-4 space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <BookOpen className="w-5 h-5" />
+                    Bitwise Analysis System
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  {/* System Overview */}
+                  <div>
+                    <h3 className="font-semibold mb-2 flex items-center gap-2">
+                      <Binary className="w-4 h-4" />
+                      System Overview
+                    </h3>
+                    <p className="text-sm text-muted-foreground">
+                      This system provides a Python-based environment for analyzing and transforming binary data.
+                      Strategies are composed of modular Python scripts organized into groups: Scheduler, Algorithm, Scoring, and Policies.
+                    </p>
+                  </div>
+
+                  {/* Architecture */}
+                  <div>
+                    <h3 className="font-semibold mb-2 flex items-center gap-2">
+                      <Zap className="w-4 h-4" />
+                      Architecture
+                    </h3>
+                    <div className="grid gap-3">
+                      <div className="p-3 border rounded-lg">
+                        <h4 className="font-medium text-sm flex items-center gap-2 mb-1">
+                          <Badge variant="outline" className="bg-purple-500/10">Scheduler</Badge>
+                          Required (1 file)
+                        </h4>
+                        <p className="text-xs text-muted-foreground">
+                          Controls execution flow. Defines how data is batched, iteration counts, and scheduling logic.
+                        </p>
+                      </div>
+                      <div className="p-3 border rounded-lg">
+                        <h4 className="font-medium text-sm flex items-center gap-2 mb-1">
+                          <Badge variant="outline" className="bg-primary/10">Algorithm</Badge>
+                          Multiple allowed
+                        </h4>
+                        <p className="text-xs text-muted-foreground">
+                          Core transformation logic. Applies operations to binary data based on analysis results.
+                        </p>
+                      </div>
+                      <div className="p-3 border rounded-lg">
+                        <h4 className="font-medium text-sm flex items-center gap-2 mb-1">
+                          <Badge variant="outline" className="bg-yellow-500/10">Scoring</Badge>
+                          Multiple allowed
+                        </h4>
+                        <p className="text-xs text-muted-foreground">
+                          Evaluation functions. Calculate quality scores using available metrics.
+                        </p>
+                      </div>
+                      <div className="p-3 border rounded-lg">
+                        <h4 className="font-medium text-sm flex items-center gap-2 mb-1">
+                          <Badge variant="outline" className="bg-green-500/10">Policies</Badge>
+                          Optional
+                        </h4>
+                        <p className="text-xs text-muted-foreground">
+                          Constraints and rules. Define boundaries and validation for algorithm behavior.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Python API */}
+                  <div>
+                    <h3 className="font-semibold mb-2 flex items-center gap-2">
+                      <Code className="w-4 h-4" />
+                      Python API (bitwise_api)
+                    </h3>
+                    <div className="bg-muted/30 p-3 rounded-lg font-mono text-xs space-y-2">
+                      <p><span className="text-primary">get_bits()</span> - Get current binary data</p>
+                      <p><span className="text-primary">set_bits(data)</span> - Update binary data</p>
+                      <p><span className="text-primary">apply_operation(name, params)</span> - Apply an operation</p>
+                      <p><span className="text-primary">get_metric(name)</span> - Get metric value</p>
+                      <p><span className="text-primary">log(msg)</span> - Log a message</p>
+                      <p><span className="text-primary">OPERATIONS</span> - List of available operations</p>
+                      <p><span className="text-primary">METRICS</span> - Dict of current metric values</p>
+                    </div>
+                  </div>
+
+                  {/* Metrics & Operations */}
+                  <div>
+                    <h3 className="font-semibold mb-2 flex items-center gap-2">
+                      <Activity className="w-4 h-4" />
+                      Metrics & Operations
+                    </h3>
+                    <p className="text-sm text-muted-foreground mb-2">
+                      Metrics and Operations are defined in this Backend panel and automatically available to all Python strategies.
+                    </p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="p-3 border rounded-lg">
+                        <h4 className="font-medium text-sm mb-1">Metrics ({metrics.length})</h4>
+                        <p className="text-xs text-muted-foreground">
+                          Quantitative measurements of binary data properties (entropy, balance, runs, etc.)
+                        </p>
+                      </div>
+                      <div className="p-3 border rounded-lg">
+                        <h4 className="font-medium text-sm mb-1">Operations ({operations.length})</h4>
+                        <p className="text-xs text-muted-foreground">
+                          Transformations that can be applied to binary data (XOR, shifts, RLE, etc.)
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Workflow */}
+                  <div>
+                    <h3 className="font-semibold mb-2">Workflow</h3>
+                    <ol className="text-sm text-muted-foreground space-y-2 list-decimal list-inside">
+                      <li>Upload Python files to the Files tab in Algorithm mode</li>
+                      <li>Create a Strategy by selecting files from each group</li>
+                      <li>Load or generate binary data</li>
+                      <li>Run the strategy and view results in the Player tab</li>
+                      <li>Analyze transformations step-by-step with the timeline</li>
+                      <li>Export results from the Results tab</li>
+                    </ol>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </ScrollArea>
         </TabsContent>
       </div>
 
@@ -535,548 +652,5 @@ export const BackendPanel = () => {
         </DialogContent>
       </Dialog>
     </Tabs>
-  );
-};
-
-// File Validator Panel Component
-const ValidatorPanel = () => {
-  const [validationResult, setValidationResult] = useState<ValidationResult | null>(null);
-  const [isValidating, setIsValidating] = useState(false);
-  const [selectedFile, setSelectedFile] = useState<{ name: string; content: string } | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const content = await file.text();
-    setSelectedFile({ name: file.name, content });
-    setValidationResult(null);
-  };
-
-  const handleValidate = async () => {
-    if (!selectedFile) return;
-
-    setIsValidating(true);
-    try {
-      const result = await fileValidator.validateFile(selectedFile.name, selectedFile.content, true);
-      setValidationResult(result);
-      
-      if (result.valid && result.errors.length === 0) {
-        toast.success('File validation passed!');
-      } else if (result.errors.length > 0) {
-        toast.error(`Validation failed with ${result.errors.length} error(s)`);
-      } else {
-        toast.info(`Validation passed with ${result.warnings.length} warning(s)`);
-      }
-    } catch (error) {
-      toast.error('Validation failed: ' + error);
-    } finally {
-      setIsValidating(false);
-    }
-  };
-
-  return (
-    <ScrollArea className="h-full">
-      <div className="p-4 space-y-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-sm">
-              <FileCheck className="w-4 h-4" />
-              File Validator (Full Sandbox Test)
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              Upload strategy, scoring, policy, or configuration files for full validation with sandbox testing.
-            </p>
-
-            <input
-              type="file"
-              ref={fileInputRef}
-              onChange={handleFileUpload}
-              accept=".cpp,.c,.h,.py,.lua,.json"
-              className="hidden"
-            />
-
-            <div className="flex gap-2">
-              <Button variant="outline" onClick={() => fileInputRef.current?.click()} className="flex-1">
-                <Upload className="w-4 h-4 mr-2" />
-                {selectedFile ? selectedFile.name : 'Select File'}
-              </Button>
-              <Button onClick={handleValidate} disabled={!selectedFile || isValidating}>
-                {isValidating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Play className="w-4 h-4 mr-2" />}
-                Validate
-              </Button>
-            </div>
-
-            {selectedFile && (
-              <div className="p-3 bg-muted/30 rounded-lg">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="font-medium text-sm">{selectedFile.name}</span>
-                  <Badge variant="outline">{selectedFile.content.length} chars</Badge>
-                </div>
-                <pre className="text-xs overflow-x-auto max-h-32 overflow-y-auto font-mono text-muted-foreground">
-                  {selectedFile.content.slice(0, 500)}{selectedFile.content.length > 500 ? '...' : ''}
-                </pre>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {validationResult && (
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="flex items-center gap-2 text-sm">
-                {validationResult.valid ? (
-                  <CheckCircle2 className="w-4 h-4 text-green-500" />
-                ) : (
-                  <XCircle className="w-4 h-4 text-destructive" />
-                )}
-                Validation Results
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center gap-2">
-                <Badge variant={validationResult.valid ? 'default' : 'destructive'}>
-                  {validationResult.valid ? 'VALID' : 'INVALID'}
-                </Badge>
-                <Badge variant="outline">{validationResult.fileType}</Badge>
-              </div>
-
-              {validationResult.errors.length > 0 && (
-                <div className="space-y-1">
-                  <h4 className="text-xs font-medium text-destructive flex items-center gap-1">
-                    <XCircle className="w-3 h-3" /> Errors ({validationResult.errors.length})
-                  </h4>
-                  {validationResult.errors.map((err, i) => (
-                    <div key={i} className="p-2 bg-destructive/10 rounded text-xs text-destructive">
-                      {err}
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {validationResult.warnings.length > 0 && (
-                <div className="space-y-1">
-                  <h4 className="text-xs font-medium text-yellow-500 flex items-center gap-1">
-                    <AlertTriangle className="w-3 h-3" /> Warnings ({validationResult.warnings.length})
-                  </h4>
-                  {validationResult.warnings.map((warn, i) => (
-                    <div key={i} className="p-2 bg-yellow-500/10 rounded text-xs text-yellow-600">
-                      {warn}
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              <div className="space-y-1">
-                <h4 className="text-xs font-medium">API Compliance</h4>
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  <div className="p-2 bg-muted/30 rounded">
-                    <span className="text-muted-foreground">Operations Used:</span>
-                    <div className="flex flex-wrap gap-1 mt-1">
-                      {validationResult.apiCompliance.usedOperations.map(op => (
-                        <Badge
-                          key={op}
-                          variant={validationResult.apiCompliance.unknownOperations.includes(op) ? 'destructive' : 'outline'}
-                          className="text-xs"
-                        >
-                          {op}
-                        </Badge>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="p-2 bg-muted/30 rounded">
-                    <span className="text-muted-foreground">Metrics Used:</span>
-                    <div className="flex flex-wrap gap-1 mt-1">
-                      {validationResult.apiCompliance.usedMetrics.map(m => (
-                        <Badge
-                          key={m}
-                          variant={validationResult.apiCompliance.unknownMetrics.includes(m) ? 'destructive' : 'outline'}
-                          className="text-xs"
-                        >
-                          {m}
-                        </Badge>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {validationResult.sandboxResult && (
-                <div className="space-y-1">
-                  <h4 className="text-xs font-medium flex items-center gap-1">
-                    <Play className="w-3 h-3" /> Sandbox Test
-                  </h4>
-                  <div className={`p-2 rounded text-xs ${validationResult.sandboxResult.success ? 'bg-green-500/10' : 'bg-destructive/10'}`}>
-                    <div className="flex items-center justify-between">
-                      <span>{validationResult.sandboxResult.success ? 'Passed' : 'Failed'}</span>
-                      <Badge variant="outline">{validationResult.sandboxResult.duration.toFixed(2)}ms</Badge>
-                    </div>
-                    {validationResult.sandboxResult.error && (
-                      <p className="mt-1 text-destructive">{validationResult.sandboxResult.error}</p>
-                    )}
-                    {validationResult.sandboxResult.output && (
-                      <pre className="mt-2 p-2 bg-background/50 rounded overflow-x-auto max-h-32">
-                        {JSON.stringify(validationResult.sandboxResult.output, null, 2)}
-                      </pre>
-                    )}
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        )}
-      </div>
-    </ScrollArea>
-  );
-};
-// File Generator Panel removed - Preset building moved to AlgorithmPanel
-
-// Info Panel Component - Strategy Writing Guide
-const InfoPanel = () => {
-  const allMetrics = predefinedManager.getAllMetrics();
-  const allOperations = predefinedManager.getAllOperations();
-
-  return (
-    <ScrollArea className="h-full">
-      <div className="p-4 space-y-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-sm">
-              <BookOpen className="w-4 h-4" />
-              Strategy Development Guide
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="text-sm">
-            <p className="text-muted-foreground mb-4">
-              Complete guide for writing strategies, scoring scripts, and policies. Strategies access metrics files, operations files, policies, and receive initial costs from scoring files during execution.
-            </p>
-
-            <Accordion type="multiple" defaultValue={['workflow', 'globals']} className="space-y-2">
-              {/* Execution Workflow */}
-              <AccordionItem value="workflow" className="border rounded-lg">
-                <AccordionTrigger className="px-4 hover:no-underline">
-                  <div className="flex items-center gap-2">
-                    <Info className="w-4 h-4 text-blue-500" />
-                    <span>Execution Workflow</span>
-                  </div>
-                </AccordionTrigger>
-                <AccordionContent className="px-4 pb-4">
-                  <div className="space-y-3 text-xs">
-                    <p className="text-muted-foreground">When a strategy runs, the following happens:</p>
-                    <ol className="list-decimal list-inside space-y-2">
-                      <li><strong>Load Context:</strong> Binary data, metrics file, and operations file are loaded</li>
-                      <li><strong>Load Scoring:</strong> Initial budget and operation costs are set from scoring script</li>
-                      <li><strong>Load Policies:</strong> Allowed operations and constraints are enforced</li>
-                      <li><strong>Execute Strategy:</strong> Your code runs with access to all configured resources</li>
-                      <li><strong>Track Metrics:</strong> Each operation's effect on metrics is recorded</li>
-                      <li><strong>Export Results:</strong> Full benchmark and CSV exports are generated</li>
-                    </ol>
-                    <div className="p-2 bg-cyan-500/10 rounded mt-2">
-                      <p className="text-cyan-500">💡 Strategies can query which operations/metrics are enabled before using them</p>
-                    </div>
-                  </div>
-                </AccordionContent>
-              </AccordionItem>
-
-              {/* Global Variables */}
-              <AccordionItem value="globals" className="border rounded-lg">
-                <AccordionTrigger className="px-4 hover:no-underline">
-                  <div className="flex items-center gap-2">
-                    <Variable className="w-4 h-4 text-cyan-500" />
-                    <span>Global Variables</span>
-                  </div>
-                </AccordionTrigger>
-                <AccordionContent className="px-4 pb-4">
-                  <div className="space-y-3 font-mono text-xs">
-                    <div className="p-2 bg-muted/30 rounded">
-                      <code className="text-cyan-500">bits</code>
-                      <span className="text-muted-foreground ml-2">: string</span>
-                      <p className="text-muted-foreground mt-1 font-sans">Current binary stream</p>
-                    </div>
-                    <div className="p-2 bg-muted/30 rounded">
-                      <code className="text-cyan-500">bits_length</code>
-                      <span className="text-muted-foreground ml-2">: number</span>
-                      <p className="text-muted-foreground mt-1 font-sans">Length of binary stream</p>
-                    </div>
-                    <div className="p-2 bg-muted/30 rounded">
-                      <code className="text-cyan-500">budget</code>
-                      <span className="text-muted-foreground ml-2">: number</span>
-                      <p className="text-muted-foreground mt-1 font-sans">Current remaining budget (from scoring)</p>
-                    </div>
-                    <div className="p-2 bg-muted/30 rounded">
-                      <code className="text-cyan-500">initial_budget</code>
-                      <span className="text-muted-foreground ml-2">: number</span>
-                      <p className="text-muted-foreground mt-1 font-sans">Starting budget from scoring script</p>
-                    </div>
-                    <div className="p-2 bg-muted/30 rounded">
-                      <code className="text-cyan-500">enabled_metrics</code>
-                      <span className="text-muted-foreground ml-2">: string[]</span>
-                      <p className="text-muted-foreground mt-1 font-sans">List of metrics you can query</p>
-                    </div>
-                    <div className="p-2 bg-muted/30 rounded">
-                      <code className="text-cyan-500">enabled_operations</code>
-                      <span className="text-muted-foreground ml-2">: string[]</span>
-                      <p className="text-muted-foreground mt-1 font-sans">List of operations you can use</p>
-                    </div>
-                  </div>
-                </AccordionContent>
-              </AccordionItem>
-
-              {/* Core Functions */}
-              <AccordionItem value="functions" className="border rounded-lg">
-                <AccordionTrigger className="px-4 hover:no-underline">
-                  <div className="flex items-center gap-2">
-                    <Code className="w-4 h-4 text-yellow-500" />
-                    <span>Core Functions</span>
-                  </div>
-                </AccordionTrigger>
-                <AccordionContent className="px-4 pb-4">
-                  <div className="space-y-3 font-mono text-xs">
-                    <div className="p-2 bg-muted/30 rounded">
-                      <code className="text-yellow-500">apply_operation</code>
-                      <span className="text-muted-foreground">(op_name, params) → string</span>
-                      <p className="text-muted-foreground mt-1 font-sans">Apply operation to bits, auto-deducts cost</p>
-                    </div>
-                    <div className="p-2 bg-muted/30 rounded">
-                      <code className="text-yellow-500">get_cost</code>
-                      <span className="text-muted-foreground">(op_name) → number</span>
-                      <p className="text-muted-foreground mt-1 font-sans">Get cost from scoring config</p>
-                    </div>
-                    <div className="p-2 bg-muted/30 rounded">
-                      <code className="text-yellow-500">get_metric</code>
-                      <span className="text-muted-foreground">(metric_name) → number</span>
-                      <p className="text-muted-foreground mt-1 font-sans">Calculate metric for current bits</p>
-                    </div>
-                    <div className="p-2 bg-muted/30 rounded">
-                      <code className="text-yellow-500">is_operation_allowed</code>
-                      <span className="text-muted-foreground">(op_name) → boolean</span>
-                      <p className="text-muted-foreground mt-1 font-sans">Check policy and enabled status</p>
-                    </div>
-                    <div className="p-2 bg-muted/30 rounded">
-                      <code className="text-yellow-500">deduct_budget</code>
-                      <span className="text-muted-foreground">(amount) → boolean</span>
-                      <p className="text-muted-foreground mt-1 font-sans">Manual budget deduction</p>
-                    </div>
-                    <div className="p-2 bg-muted/30 rounded">
-                      <code className="text-yellow-500">log</code>
-                      <span className="text-muted-foreground">(message) → void</span>
-                      <p className="text-muted-foreground mt-1 font-sans">Log to execution history</p>
-                    </div>
-                    <div className="p-2 bg-muted/30 rounded">
-                      <code className="text-yellow-500">halt</code>
-                      <span className="text-muted-foreground">() → void</span>
-                      <p className="text-muted-foreground mt-1 font-sans">Stop execution</p>
-                    </div>
-                  </div>
-                </AccordionContent>
-              </AccordionItem>
-
-              {/* Available Operations */}
-              <AccordionItem value="operations" className="border rounded-lg">
-                <AccordionTrigger className="px-4 hover:no-underline">
-                  <div className="flex items-center gap-2">
-                    <Cog className="w-4 h-4 text-green-500" />
-                    <span>Available Operations ({allOperations.length})</span>
-                  </div>
-                </AccordionTrigger>
-                <AccordionContent className="px-4 pb-4">
-                  <div className="space-y-1 font-mono text-xs max-h-60 overflow-y-auto">
-                    {allOperations.map(op => (
-                      <div key={op.id} className="flex items-center justify-between p-2 bg-muted/30 rounded">
-                        <div>
-                          <code className="text-green-500">{op.id}</code>
-                          <span className="text-muted-foreground ml-2 font-sans">- {op.name}</span>
-                        </div>
-                        <Badge variant="outline" className="text-xs">{op.category}</Badge>
-                      </div>
-                    ))}
-                  </div>
-                </AccordionContent>
-              </AccordionItem>
-
-              {/* Available Metrics */}
-              <AccordionItem value="metrics" className="border rounded-lg">
-                <AccordionTrigger className="px-4 hover:no-underline">
-                  <div className="flex items-center gap-2">
-                    <Calculator className="w-4 h-4 text-purple-500" />
-                    <span>Available Metrics ({allMetrics.length})</span>
-                  </div>
-                </AccordionTrigger>
-                <AccordionContent className="px-4 pb-4">
-                  <div className="space-y-1 font-mono text-xs max-h-60 overflow-y-auto">
-                    {allMetrics.map(m => (
-                      <div key={m.id} className="flex items-center justify-between p-2 bg-muted/30 rounded">
-                        <div>
-                          <code className="text-purple-500">{m.id}</code>
-                          <span className="text-muted-foreground ml-2 font-sans">- {m.name}</span>
-                        </div>
-                        {m.unit && <Badge variant="outline" className="text-xs">{m.unit}</Badge>}
-                      </div>
-                    ))}
-                  </div>
-                </AccordionContent>
-              </AccordionItem>
-
-              {/* C++ Example */}
-              <AccordionItem value="cpp" className="border rounded-lg">
-                <AccordionTrigger className="px-4 hover:no-underline">
-                  <div className="flex items-center gap-2">
-                    <Code className="w-4 h-4 text-cyan-500" />
-                    <span>C++ Strategy Example</span>
-                  </div>
-                </AccordionTrigger>
-                <AccordionContent className="px-4 pb-4">
-                  <pre className="bg-muted/50 p-3 rounded-lg text-xs overflow-x-auto font-mono">
-{`// strategy.cpp
-#include "bitwise_api.h"
-
-void execute() {
-    // Check what's available
-    log("Enabled ops: " + enabled_operations.size());
-    log("Initial budget: " + to_string(initial_budget));
-    
-    while (budget > 0) {
-        double entropy = get_metric("entropy");
-        
-        if (entropy > 0.9 && is_operation_allowed("XOR")) {
-            int cost = get_cost("XOR");
-            if (budget >= cost) {
-                apply_operation("XOR", {{"mask", "10101010"}});
-            }
-        } else {
-            halt();
-        }
-    }
-}`}
-                  </pre>
-                </AccordionContent>
-              </AccordionItem>
-
-              {/* Python Example */}
-              <AccordionItem value="python" className="border rounded-lg">
-                <AccordionTrigger className="px-4 hover:no-underline">
-                  <div className="flex items-center gap-2">
-                    <Code className="w-4 h-4 text-yellow-500" />
-                    <span>Python Strategy Example (AI)</span>
-                  </div>
-                </AccordionTrigger>
-                <AccordionContent className="px-4 pb-4">
-                  <pre className="bg-muted/50 p-3 rounded-lg text-xs overflow-x-auto font-mono">
-{`# strategy.py
-from bitwise_api import *
-
-def execute():
-    log(f"Budget: {budget}, Ops: {len(enabled_operations)}")
-    
-    # Calculate current state
-    entropy = get_metric("entropy")
-    balance = get_metric("balance")
-    
-    # Simple heuristic (or use ML model)
-    while budget > 0:
-        if entropy > 0.8 and is_operation_allowed("XOR"):
-            apply_operation("XOR", {"mask": "11110000"})
-        elif balance < 0.4 and is_operation_allowed("OR"):
-            apply_operation("OR", {"mask": "00001111"})
-        else:
-            break
-    
-    log(f"Final entropy: {get_metric('entropy')}")
-`}
-                  </pre>
-                </AccordionContent>
-              </AccordionItem>
-
-              {/* Lua Scoring Example */}
-              <AccordionItem value="lua" className="border rounded-lg">
-                <AccordionTrigger className="px-4 hover:no-underline">
-                  <div className="flex items-center gap-2">
-                    <Code className="w-4 h-4 text-orange-500" />
-                    <span>Lua Scoring Script Example</span>
-                  </div>
-                </AccordionTrigger>
-                <AccordionContent className="px-4 pb-4">
-                  <pre className="bg-muted/50 p-3 rounded-lg text-xs overflow-x-auto font-mono">
-{`-- scoring.lua
-initial_budget = 1000
-
--- Operation costs (strategy reads these)
-costs = {
-    AND = 5, OR = 4, XOR = 6, NOT = 2,
-    SHL = 3, SHR = 3, ROL = 4, ROR = 4,
-    INSERT = 8, DELETE = 10, MOVE = 12
-}
-
--- Combo discounts (non-linear costs)
-combos = {
-    { ops = {"XOR", "NOT"}, cost = 6 },  -- Discount
-    { ops = {"SHL", "SHR"}, cost = 4 },  -- Discount
-}
-
-function get_cost(op_name)
-    return costs[op_name] or 5
-end
-
-function get_combo_cost(op1, op2)
-    for _, combo in ipairs(combos) do
-        if combo.ops[1] == op1 and combo.ops[2] == op2 then
-            return combo.cost
-        end
-    end
-    return costs[op1] + costs[op2]
-end`}
-                  </pre>
-                </AccordionContent>
-              </AccordionItem>
-
-              {/* Policy Example */}
-              <AccordionItem value="policy" className="border rounded-lg">
-                <AccordionTrigger className="px-4 hover:no-underline">
-                  <div className="flex items-center gap-2">
-                    <Code className="w-4 h-4 text-red-500" />
-                    <span>Lua Policy Script Example</span>
-                  </div>
-                </AccordionTrigger>
-                <AccordionContent className="px-4 pb-4">
-                  <pre className="bg-muted/50 p-3 rounded-lg text-xs overflow-x-auto font-mono">
-{`-- policy.lua
-max_operations = 100
-operation_count = 0
-
--- Only allow these operations
-allowed_operations = {
-    "XOR", "AND", "OR", "NOT",
-    "SHL", "SHR"
-}
-
--- These are forbidden regardless
-forbidden = { "DELETE", "MOVE" }
-
-function validate(op_name, state)
-    operation_count = operation_count + 1
-    
-    if operation_count > max_operations then
-        return false, "Max operations exceeded"
-    end
-    
-    for _, f in ipairs(forbidden) do
-        if op_name == f then
-            return false, "Operation forbidden"
-        end
-    end
-    
-    return true
-end`}
-                  </pre>
-                </AccordionContent>
-              </AccordionItem>
-            </Accordion>
-          </CardContent>
-        </Card>
-      </div>
-    </ScrollArea>
   );
 };
