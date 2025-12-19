@@ -1,6 +1,6 @@
 /**
  * Player Tab - Plays transformations with full controls
- * Step-by-step, timeline slider, auto-play with speed
+ * Creates temporary player file, syncs with binary viewer
  */
 
 import { useState, useEffect, useRef } from 'react';
@@ -28,20 +28,23 @@ import {
   Clock,
   Zap,
   Layers,
+  Binary,
+  FileCode,
 } from 'lucide-react';
 import { TransformationStep, ExecutionResultV2 } from '@/lib/resultsManager';
 import { predefinedManager } from '@/lib/predefinedManager';
+import { pythonModuleSystem } from '@/lib/pythonModuleSystem';
 
 interface PlayerTabProps {
   result: ExecutionResultV2 | null;
-  onStepChange?: (step: TransformationStep | null) => void;
+  onStepChange?: (step: TransformationStep | null, binaryHighlights?: { start: number; end: number; color: string }[]) => void;
 }
 
 export const PlayerTab = ({ result, onStepChange }: PlayerTabProps) => {
   const [currentStep, setCurrentStep] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
-  const [, forceUpdate] = useState({});
+  const [showDiff, setShowDiff] = useState(true);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const operations = predefinedManager.getAllOperations();
@@ -67,17 +70,59 @@ export const PlayerTab = ({ result, onStepChange }: PlayerTabProps) => {
     };
   }, [isPlaying, playbackSpeed, result]);
 
+  // Sync with binary viewer when step changes
   useEffect(() => {
     if (result && result.steps[currentStep]) {
-      onStepChange?.(result.steps[currentStep]);
+      const step = result.steps[currentStep];
+      
+      // Generate highlights for changed bits
+      const highlights: { start: number; end: number; color: string }[] = [];
+      
+      if (showDiff) {
+        const before = step.beforeBits;
+        const after = step.afterBits;
+        
+        // Find changed regions
+        let changeStart = -1;
+        for (let i = 0; i < Math.max(before.length, after.length); i++) {
+          const different = i >= before.length || i >= after.length || before[i] !== after[i];
+          
+          if (different && changeStart === -1) {
+            changeStart = i;
+          } else if (!different && changeStart !== -1) {
+            highlights.push({ start: changeStart, end: i - 1, color: 'hsl(var(--primary))' });
+            changeStart = -1;
+          }
+        }
+        
+        if (changeStart !== -1) {
+          highlights.push({ start: changeStart, end: Math.max(before.length, after.length) - 1, color: 'hsl(var(--primary))' });
+        }
+      }
+      
+      // Update player state for binary viewer sync
+      pythonModuleSystem.setPlayerState({
+        isPlaying,
+        currentStep,
+        highlightedTransformations: [step.operation],
+        binaryHighlights: highlights
+      });
+      
+      onStepChange?.(step, highlights);
     }
-  }, [currentStep, result, onStepChange]);
+  }, [currentStep, result, showDiff, isPlaying, onStepChange]);
 
   const handlePlay = () => setIsPlaying(true);
   const handlePause = () => setIsPlaying(false);
   const handleStop = () => {
     setIsPlaying(false);
     setCurrentStep(0);
+    pythonModuleSystem.setPlayerState({
+      isPlaying: false,
+      currentStep: 0,
+      highlightedTransformations: [],
+      binaryHighlights: []
+    });
   };
   const handlePrevious = () => setCurrentStep(prev => Math.max(0, prev - 1));
   const handleNext = () => setCurrentStep(prev => 
@@ -100,8 +145,46 @@ export const PlayerTab = ({ result, onStepChange }: PlayerTabProps) => {
   const step = result.steps[currentStep];
   const progress = result.steps.length > 0 ? (currentStep / (result.steps.length - 1)) * 100 : 0;
 
+  // Generate diff view
+  const generateDiff = () => {
+    if (!step) return null;
+    
+    const before = step.beforeBits;
+    const after = step.afterBits;
+    const diffChars: { char: string; changed: boolean }[] = [];
+    
+    for (let i = 0; i < Math.max(before.length, after.length); i++) {
+      const beforeChar = before[i] || '';
+      const afterChar = after[i] || '';
+      diffChars.push({
+        char: afterChar || '∅',
+        changed: beforeChar !== afterChar
+      });
+    }
+    
+    return diffChars;
+  };
+
   return (
     <div className="h-full flex flex-col gap-4 p-4">
+      {/* Player File Info */}
+      <Card className="bg-muted/30">
+        <CardContent className="py-3">
+          <div className="flex items-center gap-4">
+            <FileCode className="w-5 h-5 text-purple-500" />
+            <div>
+              <span className="text-sm font-medium">Temporary Player File</span>
+              <p className="text-xs text-muted-foreground">
+                This view is temporary and won't affect your results database
+              </p>
+            </div>
+            <Badge variant="outline" className="ml-auto">
+              {result.strategyName}
+            </Badge>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Playback Controls */}
       <Card>
         <CardContent className="py-4">
@@ -176,6 +259,7 @@ export const PlayerTab = ({ result, onStepChange }: PlayerTabProps) => {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="0.25">0.25x</SelectItem>
                   <SelectItem value="0.5">0.5x</SelectItem>
                   <SelectItem value="1">1x</SelectItem>
                   <SelectItem value="2">2x</SelectItem>
@@ -184,6 +268,16 @@ export const PlayerTab = ({ result, onStepChange }: PlayerTabProps) => {
                 </SelectContent>
               </Select>
             </div>
+
+            {/* Diff Toggle */}
+            <Button
+              size="sm"
+              variant={showDiff ? "default" : "outline"}
+              onClick={() => setShowDiff(!showDiff)}
+            >
+              <Binary className="w-4 h-4 mr-1" />
+              Show Diff
+            </Button>
 
             {/* Step Counter */}
             <div className="flex-1 text-center">
@@ -215,7 +309,7 @@ export const PlayerTab = ({ result, onStepChange }: PlayerTabProps) => {
 
       {/* Current Step Details */}
       <div className="flex-1 grid grid-cols-2 gap-4 min-h-0">
-        {/* Left: Operation Details */}
+        {/* Left: Operation Details + Binary Diff */}
         <Card className="flex flex-col min-h-0">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm flex items-center gap-2">
@@ -253,6 +347,29 @@ export const PlayerTab = ({ result, onStepChange }: PlayerTabProps) => {
                   </div>
                 </div>
 
+                {/* Binary Diff View */}
+                {showDiff && (
+                  <div className="border-t pt-4">
+                    <h5 className="text-sm font-medium mb-2 flex items-center gap-2">
+                      <Binary className="w-4 h-4" />
+                      Binary Diff (first 128 bits)
+                    </h5>
+                    <div className="font-mono text-xs bg-muted p-2 rounded overflow-hidden">
+                      <div className="flex flex-wrap">
+                        {generateDiff()?.slice(0, 128).map((d, i) => (
+                          <span 
+                            key={i} 
+                            className={d.changed ? 'bg-primary text-primary-foreground px-0.5' : ''}
+                          >
+                            {d.char}
+                          </span>
+                        ))}
+                        {step.afterBits.length > 128 && <span className="text-muted-foreground">...</span>}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 <div className="border-t pt-4">
                   <h5 className="text-sm font-medium mb-2">Bit Preview</h5>
                   <div className="font-mono text-xs bg-muted p-2 rounded overflow-hidden">
@@ -283,6 +400,11 @@ export const PlayerTab = ({ result, onStepChange }: PlayerTabProps) => {
                 <div className="space-y-2">
                   {Object.entries(step.metrics).map(([key, value]) => {
                     const metricDef = metrics.find(m => m.id === key);
+                    // Calculate change from previous step
+                    const prevStep = currentStep > 0 ? result.steps[currentStep - 1] : null;
+                    const prevValue = prevStep?.metrics[key] ?? value;
+                    const change = value - prevValue;
+                    
                     return (
                       <div
                         key={key}
@@ -296,7 +418,14 @@ export const PlayerTab = ({ result, onStepChange }: PlayerTabProps) => {
                             </span>
                           )}
                         </div>
-                        <span className="font-mono">{value.toFixed(4)}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono">{value.toFixed(4)}</span>
+                          {change !== 0 && (
+                            <Badge variant={change < 0 ? 'default' : 'secondary'} className="text-xs">
+                              {change > 0 ? '+' : ''}{change.toFixed(4)}
+                            </Badge>
+                          )}
+                        </div>
                       </div>
                     );
                   })}

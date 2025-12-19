@@ -1,6 +1,6 @@
 /**
  * Strategy Tab - Create and manage strategies (presets)
- * Each strategy requires one file from each group: algorithm, scoring, policies
+ * V2 - Scheduler required, multiple files per group supported
  */
 
 import { useState, useEffect } from 'react';
@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Select,
   SelectContent,
@@ -28,6 +29,7 @@ import {
   Code,
   Calculator,
   Shield,
+  Clock,
   Loader2,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -43,13 +45,13 @@ export const StrategyTab = ({ onRunStrategy, isExecuting = false }: StrategyTabP
   const [strategies, setStrategies] = useState<StrategyConfig[]>([]);
   const [files, setFiles] = useState<PythonFile[]>([]);
   const [selectedStrategy, setSelectedStrategy] = useState<StrategyConfig | null>(null);
-  const [, forceUpdate] = useState({});
 
   // Form state for new strategy
   const [strategyName, setStrategyName] = useState('');
-  const [selectedAlgorithm, setSelectedAlgorithm] = useState('');
-  const [selectedScoring, setSelectedScoring] = useState('');
-  const [selectedPolicy, setSelectedPolicy] = useState('');
+  const [selectedScheduler, setSelectedScheduler] = useState('');
+  const [selectedAlgorithms, setSelectedAlgorithms] = useState<string[]>([]);
+  const [selectedScoring, setSelectedScoring] = useState<string[]>([]);
+  const [selectedPolicies, setSelectedPolicies] = useState<string[]>([]);
 
   useEffect(() => {
     setStrategies(pythonModuleSystem.getAllStrategies());
@@ -61,42 +63,53 @@ export const StrategyTab = ({ onRunStrategy, isExecuting = false }: StrategyTabP
     return unsubscribe;
   }, []);
 
+  const schedulerFiles = files.filter(f => f.group === 'scheduler');
   const algorithmFiles = files.filter(f => f.group === 'algorithm');
   const scoringFiles = files.filter(f => f.group === 'scoring');
   const policyFiles = files.filter(f => f.group === 'policies');
+
+  const toggleFile = (fileName: string, list: string[], setter: (val: string[]) => void) => {
+    if (list.includes(fileName)) {
+      setter(list.filter(f => f !== fileName));
+    } else {
+      setter([...list, fileName]);
+    }
+  };
 
   const handleCreateStrategy = () => {
     if (!strategyName.trim()) {
       toast.error('Enter a strategy name');
       return;
     }
-    if (!selectedAlgorithm) {
-      toast.error('Select an algorithm file');
+    if (!selectedScheduler) {
+      toast.error('Select a scheduler file (required)');
       return;
     }
-    if (!selectedScoring) {
-      toast.error('Select a scoring file');
+    if (selectedAlgorithms.length === 0) {
+      toast.error('Select at least one algorithm file');
       return;
     }
-    if (!selectedPolicy) {
-      toast.error('Select a policy file');
+    if (selectedScoring.length === 0) {
+      toast.error('Select at least one scoring file');
       return;
     }
 
     try {
       const strategy = pythonModuleSystem.createStrategy(
         strategyName,
-        selectedAlgorithm,
+        selectedScheduler,
+        selectedAlgorithms,
         selectedScoring,
-        selectedPolicy
+        selectedPolicies
       );
       toast.success(`Strategy "${strategyName}" created`);
       
       // Reset form
       setStrategyName('');
-      setSelectedAlgorithm('');
-      setSelectedScoring('');
-      setSelectedPolicy('');
+      setSelectedScheduler('');
+      setSelectedAlgorithms([]);
+      setSelectedScoring([]);
+      setSelectedPolicies([]);
       setSelectedStrategy(strategy);
     } catch (error) {
       toast.error((error as Error).message);
@@ -137,6 +150,37 @@ export const StrategyTab = ({ onRunStrategy, isExecuting = false }: StrategyTabP
     return validation;
   };
 
+  const FileCheckboxList = ({ 
+    files, 
+    selected, 
+    onChange,
+    emptyText 
+  }: { 
+    files: PythonFile[]; 
+    selected: string[]; 
+    onChange: (fileName: string) => void;
+    emptyText: string;
+  }) => (
+    <div className="space-y-2 max-h-32 overflow-y-auto">
+      {files.length === 0 ? (
+        <p className="text-xs text-muted-foreground">{emptyText}</p>
+      ) : (
+        files.map(f => (
+          <div key={f.id} className="flex items-center gap-2">
+            <Checkbox
+              id={f.id}
+              checked={selected.includes(f.name)}
+              onCheckedChange={() => onChange(f.name)}
+            />
+            <label htmlFor={f.id} className="text-sm font-mono cursor-pointer">
+              {f.name}
+            </label>
+          </div>
+        ))
+      )}
+    </div>
+  );
+
   return (
     <div className="h-full flex gap-4 p-4">
       {/* Left: Strategy List */}
@@ -160,20 +204,22 @@ export const StrategyTab = ({ onRunStrategy, isExecuting = false }: StrategyTabP
               />
             </div>
 
+            {/* Scheduler - Required, Single Select */}
             <div className="space-y-2">
               <Label className="text-xs flex items-center gap-2">
-                <Code className="w-3 h-3" />
-                Algorithm File
+                <Clock className="w-3 h-3 text-purple-500" />
+                Scheduler File
+                <Badge variant="destructive" className="text-xs">Required</Badge>
               </Label>
-              {algorithmFiles.length === 0 ? (
-                <p className="text-xs text-muted-foreground">No algorithm files uploaded</p>
+              {schedulerFiles.length === 0 ? (
+                <p className="text-xs text-muted-foreground">No scheduler files uploaded</p>
               ) : (
-                <Select value={selectedAlgorithm} onValueChange={setSelectedAlgorithm}>
+                <Select value={selectedScheduler} onValueChange={setSelectedScheduler}>
                   <SelectTrigger className="h-9">
-                    <SelectValue placeholder="Select algorithm" />
+                    <SelectValue placeholder="Select scheduler" />
                   </SelectTrigger>
                   <SelectContent>
-                    {algorithmFiles.map(f => (
+                    {schedulerFiles.map(f => (
                       <SelectItem key={f.id} value={f.name}>{f.name}</SelectItem>
                     ))}
                   </SelectContent>
@@ -181,52 +227,55 @@ export const StrategyTab = ({ onRunStrategy, isExecuting = false }: StrategyTabP
               )}
             </div>
 
+            {/* Algorithm - Multiple Select */}
             <div className="space-y-2">
               <Label className="text-xs flex items-center gap-2">
-                <Calculator className="w-3 h-3" />
-                Scoring File
+                <Code className="w-3 h-3 text-primary" />
+                Algorithm Files
+                <Badge variant="secondary" className="text-xs">{selectedAlgorithms.length} selected</Badge>
               </Label>
-              {scoringFiles.length === 0 ? (
-                <p className="text-xs text-muted-foreground">No scoring files uploaded</p>
-              ) : (
-                <Select value={selectedScoring} onValueChange={setSelectedScoring}>
-                  <SelectTrigger className="h-9">
-                    <SelectValue placeholder="Select scoring" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {scoringFiles.map(f => (
-                      <SelectItem key={f.id} value={f.name}>{f.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
+              <FileCheckboxList
+                files={algorithmFiles}
+                selected={selectedAlgorithms}
+                onChange={(name) => toggleFile(name, selectedAlgorithms, setSelectedAlgorithms)}
+                emptyText="No algorithm files uploaded"
+              />
             </div>
 
+            {/* Scoring - Multiple Select */}
             <div className="space-y-2">
               <Label className="text-xs flex items-center gap-2">
-                <Shield className="w-3 h-3" />
-                Policy File
+                <Calculator className="w-3 h-3 text-yellow-500" />
+                Scoring Files
+                <Badge variant="secondary" className="text-xs">{selectedScoring.length} selected</Badge>
               </Label>
-              {policyFiles.length === 0 ? (
-                <p className="text-xs text-muted-foreground">No policy files uploaded</p>
-              ) : (
-                <Select value={selectedPolicy} onValueChange={setSelectedPolicy}>
-                  <SelectTrigger className="h-9">
-                    <SelectValue placeholder="Select policy" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {policyFiles.map(f => (
-                      <SelectItem key={f.id} value={f.name}>{f.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
+              <FileCheckboxList
+                files={scoringFiles}
+                selected={selectedScoring}
+                onChange={(name) => toggleFile(name, selectedScoring, setSelectedScoring)}
+                emptyText="No scoring files uploaded"
+              />
+            </div>
+
+            {/* Policies - Multiple Select (Optional) */}
+            <div className="space-y-2">
+              <Label className="text-xs flex items-center gap-2">
+                <Shield className="w-3 h-3 text-green-500" />
+                Policy Files
+                <Badge variant="outline" className="text-xs">Optional</Badge>
+              </Label>
+              <FileCheckboxList
+                files={policyFiles}
+                selected={selectedPolicies}
+                onChange={(name) => toggleFile(name, selectedPolicies, setSelectedPolicies)}
+                emptyText="No policy files uploaded"
+              />
             </div>
 
             <Button
               onClick={handleCreateStrategy}
               className="w-full"
-              disabled={!strategyName || !selectedAlgorithm || !selectedScoring || !selectedPolicy}
+              disabled={!strategyName || !selectedScheduler || selectedAlgorithms.length === 0 || selectedScoring.length === 0}
             >
               <Save className="w-4 h-4 mr-2" />
               Create Strategy
@@ -266,17 +315,23 @@ export const StrategyTab = ({ onRunStrategy, isExecuting = false }: StrategyTabP
                           </div>
                           <div className="mt-2 space-y-1 text-xs text-muted-foreground">
                             <div className="flex items-center gap-2">
+                              <Clock className="w-3 h-3" />
+                              {strategy.schedulerFile}
+                            </div>
+                            <div className="flex items-center gap-2">
                               <Code className="w-3 h-3" />
-                              {strategy.algorithmFile}
+                              {strategy.algorithmFiles.length} algorithm(s)
                             </div>
                             <div className="flex items-center gap-2">
                               <Calculator className="w-3 h-3" />
-                              {strategy.scoringFile}
+                              {strategy.scoringFiles.length} scoring
                             </div>
-                            <div className="flex items-center gap-2">
-                              <Shield className="w-3 h-3" />
-                              {strategy.policyFile}
-                            </div>
+                            {strategy.policyFiles.length > 0 && (
+                              <div className="flex items-center gap-2">
+                                <Shield className="w-3 h-3" />
+                                {strategy.policyFiles.length} policies
+                              </div>
+                            )}
                           </div>
                         </div>
                         <Button
@@ -307,7 +362,7 @@ export const StrategyTab = ({ onRunStrategy, isExecuting = false }: StrategyTabP
             {selectedStrategy ? selectedStrategy.name : 'Strategy Details'}
           </CardTitle>
         </CardHeader>
-        <CardContent className="flex-1 flex flex-col">
+        <CardContent className="flex-1 flex flex-col overflow-hidden">
           {selectedStrategy ? (
             <>
               {/* Validation Status */}
@@ -340,31 +395,55 @@ export const StrategyTab = ({ onRunStrategy, isExecuting = false }: StrategyTabP
               })()}
 
               {/* File Details */}
-              <div className="space-y-4 flex-1">
-                <div className="p-3 border rounded-lg">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Code className="w-4 h-4 text-primary" />
-                    <span className="font-medium">Algorithm</span>
+              <ScrollArea className="flex-1">
+                <div className="space-y-4">
+                  <div className="p-3 border rounded-lg">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Clock className="w-4 h-4 text-purple-500" />
+                      <span className="font-medium">Scheduler</span>
+                    </div>
+                    <p className="font-mono text-sm">{selectedStrategy.schedulerFile}</p>
                   </div>
-                  <p className="font-mono text-sm">{selectedStrategy.algorithmFile}</p>
-                </div>
 
-                <div className="p-3 border rounded-lg">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Calculator className="w-4 h-4 text-yellow-500" />
-                    <span className="font-medium">Scoring</span>
+                  <div className="p-3 border rounded-lg">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Code className="w-4 h-4 text-primary" />
+                      <span className="font-medium">Algorithms ({selectedStrategy.algorithmFiles.length})</span>
+                    </div>
+                    <div className="space-y-1">
+                      {selectedStrategy.algorithmFiles.map(f => (
+                        <p key={f} className="font-mono text-sm">{f}</p>
+                      ))}
+                    </div>
                   </div>
-                  <p className="font-mono text-sm">{selectedStrategy.scoringFile}</p>
-                </div>
 
-                <div className="p-3 border rounded-lg">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Shield className="w-4 h-4 text-green-500" />
-                    <span className="font-medium">Policy</span>
+                  <div className="p-3 border rounded-lg">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Calculator className="w-4 h-4 text-yellow-500" />
+                      <span className="font-medium">Scoring ({selectedStrategy.scoringFiles.length})</span>
+                    </div>
+                    <div className="space-y-1">
+                      {selectedStrategy.scoringFiles.map(f => (
+                        <p key={f} className="font-mono text-sm">{f}</p>
+                      ))}
+                    </div>
                   </div>
-                  <p className="font-mono text-sm">{selectedStrategy.policyFile}</p>
+
+                  {selectedStrategy.policyFiles.length > 0 && (
+                    <div className="p-3 border rounded-lg">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Shield className="w-4 h-4 text-green-500" />
+                        <span className="font-medium">Policies ({selectedStrategy.policyFiles.length})</span>
+                      </div>
+                      <div className="space-y-1">
+                        {selectedStrategy.policyFiles.map(f => (
+                          <p key={f} className="font-mono text-sm">{f}</p>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
-              </div>
+              </ScrollArea>
 
               {/* Run Button */}
               <Button
