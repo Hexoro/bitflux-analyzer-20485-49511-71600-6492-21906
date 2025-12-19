@@ -6,6 +6,8 @@
 import { pythonModuleSystem, StrategyConfig, PythonFile } from './pythonModuleSystem';
 import { fileSystemManager } from './fileSystemManager';
 import { predefinedManager } from './predefinedManager';
+import { executeOperation, executeOperationOnRange, getOperationCost } from './operationsRouter';
+import { calculateAllMetrics as calculateAllMetricsFromRouter, calculateMetric } from './metricsCalculator';
 
 export interface TransformationStep {
   stepIndex: number;
@@ -410,120 +412,32 @@ class StrategyExecutor {
   }
 
   /**
-   * Apply a single operation to bits
+   * Apply a single operation to bits using the operations router
    */
-  private applyOperation(bits: string, operation: string): string {
+  private applyOperation(bits: string, operation: string, params: Record<string, any> = {}): string {
     if (!bits || bits.length === 0) return bits;
     
-    switch (operation) {
-      case 'NOT':
-        return bits.split('').map(b => b === '0' ? '1' : '0').join('');
-      
-      case 'AND':
-        return bits.split('').map((b, i) => (b === '1' && (i % 2 === 0)) ? '1' : '0').join('');
-      
-      case 'OR':
-        return bits.split('').map((b, i) => (b === '1' || (i % 2 === 0)) ? '1' : '0').join('');
-      
-      case 'XOR':
-        return bits.split('').map((b, i) => b === ((i % 2 === 0) ? '1' : '0') ? '0' : '1').join('');
-      
-      case 'NAND':
-        return bits.split('').map((b, i) => (b === '1' && (i % 2 === 0)) ? '0' : '1').join('');
-      
-      case 'NOR':
-        return bits.split('').map((b, i) => (b === '1' || (i % 2 === 0)) ? '0' : '1').join('');
-      
-      case 'XNOR':
-        return bits.split('').map((b, i) => b === ((i % 2 === 0) ? '1' : '0') ? '1' : '0').join('');
-      
-      case 'SHL':
-        return bits.slice(1) + '0';
-      
-      case 'SHR':
-        return '0' + bits.slice(0, -1);
-      
-      case 'ROL':
-        return bits.slice(1) + bits.charAt(0);
-      
-      case 'ROR':
-        return bits.charAt(bits.length - 1) + bits.slice(0, -1);
-      
-      case 'GRAY':
-        if (bits.length < 2) return bits;
-        return bits.charAt(0) + bits.split('').slice(1).map((b, i) => 
-          (parseInt(bits[i]) ^ parseInt(b)).toString()
-        ).join('');
-      
-      case 'REVERSE':
-        return bits.split('').reverse().join('');
-      
-      case 'SWAP':
-        const mid = Math.floor(bits.length / 2);
-        return bits.slice(mid) + bits.slice(0, mid);
-      
-      default:
-        return bits;
+    const result = executeOperation(operation, bits, params);
+    
+    if (result.success) {
+      return result.bits;
     }
+    
+    // Fallback for unknown operations - return unchanged
+    console.warn(`Operation ${operation} failed: ${result.error}`);
+    return bits;
   }
 
   /**
-   * Calculate all metrics for bits
+   * Calculate all metrics for bits using the metrics router
    */
   private calculateAllMetrics(bits: string): Record<string, number> {
-    const metrics: Record<string, number> = {};
-    
     if (!bits || bits.length === 0) {
-      return metrics;
+      return {};
     }
 
-    const ones = (bits.match(/1/g) || []).length;
-    const zeros = bits.length - ones;
-
-    // Entropy
-    const p0 = zeros / bits.length;
-    const p1 = ones / bits.length;
-    let entropy = 0;
-    if (p0 > 0) entropy -= p0 * Math.log2(p0);
-    if (p1 > 0) entropy -= p1 * Math.log2(p1);
-    metrics['entropy'] = parseFloat(entropy.toFixed(4));
-
-    // Hamming weight
-    metrics['hamming_weight'] = ones;
-
-    // Balance
-    metrics['balance'] = parseFloat((ones / bits.length).toFixed(4));
-
-    // Transition count
-    let transitions = 0;
-    for (let i = 1; i < bits.length; i++) {
-      if (bits[i] !== bits[i - 1]) transitions++;
-    }
-    metrics['transition_count'] = transitions;
-
-    // Run length average
-    let runs = 1;
-    for (let i = 1; i < bits.length; i++) {
-      if (bits[i] !== bits[i - 1]) runs++;
-    }
-    metrics['run_length_avg'] = parseFloat((bits.length / runs).toFixed(4));
-
-    // Compression ratio (estimated)
-    metrics['compression_ratio'] = parseFloat((entropy < 1 ? 2 - entropy : 1).toFixed(4));
-
-    // Chi-square (simplified)
-    const expected = bits.length / 2;
-    const chiSquare = ((ones - expected) ** 2 / expected) + ((zeros - expected) ** 2 / expected);
-    metrics['chi_square'] = parseFloat(chiSquare.toFixed(4));
-
-    // Autocorrelation (lag 1)
-    let autocorr = 0;
-    for (let i = 1; i < bits.length; i++) {
-      autocorr += (parseInt(bits[i]) * parseInt(bits[i - 1]));
-    }
-    metrics['autocorrelation'] = parseFloat((autocorr / (bits.length - 1)).toFixed(4));
-
-    return metrics;
+    const result = calculateAllMetricsFromRouter(bits);
+    return result.metrics;
   }
 
   /**
