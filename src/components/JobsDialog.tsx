@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -33,9 +33,9 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { jobManager, Job, JobPresetConfig } from '@/lib/jobManager';
-import { fileSystemManager, BinaryFile, FileSystemManager } from '@/lib/fileSystemManager';
-import { algorithmManager } from '@/lib/algorithmManager';
+import { jobManagerV2, Job, JobPreset } from '@/lib/jobManagerV2';
+import { fileSystemManager } from '@/lib/fileSystemManager';
+import { pythonModuleSystem } from '@/lib/pythonModuleSystem';
 
 interface JobsDialogProps {
   open: boolean;
@@ -49,17 +49,17 @@ export const JobsDialog = ({ open, onOpenChange }: JobsDialogProps) => {
   // Create job state
   const [jobName, setJobName] = useState('');
   const [selectedFileId, setSelectedFileId] = useState<string>('');
-  const [presets, setPresets] = useState<JobPresetConfig[]>([]);
-  const [selectedPresetId, setSelectedPresetId] = useState<string>('');
+  const [presets, setPresets] = useState<JobPreset[]>([]);
+  const [selectedStrategyId, setSelectedStrategyId] = useState<string>('');
   const [presetIterations, setPresetIterations] = useState(1);
   
   // Expanded job details
   const [expandedJobId, setExpandedJobId] = useState<string | null>(null);
 
   useEffect(() => {
-    const unsubscribe1 = jobManager.subscribe(() => forceUpdate({}));
+    const unsubscribe1 = jobManagerV2.subscribe(() => forceUpdate({}));
     const unsubscribe2 = fileSystemManager.subscribe(() => forceUpdate({}));
-    const unsubscribe3 = algorithmManager.subscribe(() => forceUpdate({}));
+    const unsubscribe3 = pythonModuleSystem.subscribe(() => forceUpdate({}));
     return () => {
       unsubscribe1();
       unsubscribe2();
@@ -68,26 +68,26 @@ export const JobsDialog = ({ open, onOpenChange }: JobsDialogProps) => {
   }, []);
 
   const dataFiles = fileSystemManager.getFiles();
-  const presetFiles = algorithmManager.getPresets();
-  const activeJobs = jobManager.getAllJobs();
-  const completedJobs = jobManager.getCompletedJobs();
+  const strategies = pythonModuleSystem.getAllStrategies();
+  const activeJobs = jobManagerV2.getAllJobs();
+  const completedJobs = jobManagerV2.getCompletedJobs();
 
-  const handleAddPreset = () => {
-    if (!selectedPresetId) {
-      toast.error('Select a preset');
+  const handleAddStrategy = () => {
+    if (!selectedStrategyId) {
+      toast.error('Select a strategy');
       return;
     }
     
-    const preset = presetFiles.find(p => p.id === selectedPresetId);
-    if (!preset) return;
+    const strategy = strategies.find(s => s.id === selectedStrategyId);
+    if (!strategy) return;
 
     setPresets([...presets, {
-      presetId: selectedPresetId,
-      presetName: preset.name,
+      strategyId: selectedStrategyId,
+      strategyName: strategy.name,
       iterations: presetIterations,
     }]);
     
-    setSelectedPresetId('');
+    setSelectedStrategyId('');
     setPresetIterations(1);
   };
 
@@ -105,7 +105,7 @@ export const JobsDialog = ({ open, onOpenChange }: JobsDialogProps) => {
       return;
     }
     if (presets.length === 0) {
-      toast.error('Add at least one preset');
+      toast.error('Add at least one strategy');
       return;
     }
 
@@ -116,7 +116,7 @@ export const JobsDialog = ({ open, onOpenChange }: JobsDialogProps) => {
     }
 
     try {
-      const job = jobManager.createJob(jobName, selectedFileId, presets);
+      const job = jobManagerV2.createJob(jobName, selectedFileId, presets);
       toast.success(`Job "${jobName}" created`);
       
       // Reset form
@@ -126,7 +126,7 @@ export const JobsDialog = ({ open, onOpenChange }: JobsDialogProps) => {
       setActiveTab('queue');
       
       // Auto-start
-      jobManager.startJob(job.id);
+      jobManagerV2.startJob(job.id);
     } catch (error) {
       toast.error((error as Error).message);
     }
@@ -164,7 +164,7 @@ export const JobsDialog = ({ open, onOpenChange }: JobsDialogProps) => {
               <div>
                 <p className="font-medium">{job.name}</p>
                 <p className="text-xs text-muted-foreground">
-                  {job.dataFileName} • {job.presets.length} preset(s)
+                  {job.dataFileName} • {job.presets.length} strategy(ies)
                 </p>
               </div>
             </div>
@@ -173,22 +173,17 @@ export const JobsDialog = ({ open, onOpenChange }: JobsDialogProps) => {
               {showControls && (
                 <div className="flex gap-1" onClick={e => e.stopPropagation()}>
                   {job.status === 'running' && (
-                    <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => jobManager.pauseJob(job.id)}>
+                    <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => jobManagerV2.cancelJob(job.id)}>
                       <Pause className="w-3 h-3" />
                     </Button>
                   )}
-                  {job.status === 'paused' && (
-                    <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => jobManager.resumeJob(job.id)}>
-                      <Play className="w-3 h-3" />
-                    </Button>
-                  )}
                   {(job.status === 'running' || job.status === 'paused' || job.status === 'pending') && (
-                    <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" onClick={() => jobManager.cancelJob(job.id)}>
+                    <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" onClick={() => jobManagerV2.cancelJob(job.id)}>
                       <Square className="w-3 h-3" />
                     </Button>
                   )}
                   {(job.status === 'completed' || job.status === 'failed' || job.status === 'cancelled') && (
-                    <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" onClick={() => jobManager.deleteJob(job.id)}>
+                    <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" onClick={() => jobManagerV2.deleteJob(job.id)}>
                       <Trash2 className="w-3 h-3" />
                     </Button>
                   )}
@@ -201,7 +196,7 @@ export const JobsDialog = ({ open, onOpenChange }: JobsDialogProps) => {
             <div className="mt-3">
               <div className="flex justify-between text-xs mb-1">
                 <span>
-                  Preset {job.currentPresetIndex + 1}/{job.presets.length} • 
+                  Strategy {job.currentPresetIndex + 1}/{job.presets.length} • 
                   Iteration {job.currentIteration + 1}/{job.presets[job.currentPresetIndex]?.iterations || 1}
                 </span>
                 <span>{job.progress}%</span>
@@ -212,16 +207,16 @@ export const JobsDialog = ({ open, onOpenChange }: JobsDialogProps) => {
 
           {isExpanded && (
             <div className="mt-4 pt-4 border-t space-y-3">
-              {/* Presets */}
+              {/* Strategies */}
               <div>
-                <h4 className="text-xs font-medium mb-2">Presets in Order</h4>
+                <h4 className="text-xs font-medium mb-2">Strategies in Order</h4>
                 <div className="space-y-1">
                   {job.presets.map((preset, idx) => (
                     <div key={idx} className="flex items-center justify-between p-2 bg-muted/30 rounded text-xs">
                       <div className="flex items-center gap-2">
                         <span className="text-muted-foreground">{idx + 1}.</span>
                         <Settings2 className="w-3 h-3" />
-                        <span>{preset.presetName}</span>
+                        <span>{preset.strategyName}</span>
                       </div>
                       <Badge variant="outline">×{preset.iterations}</Badge>
                     </div>
@@ -238,35 +233,14 @@ export const JobsDialog = ({ open, onOpenChange }: JobsDialogProps) => {
                       <div key={idx} className={`flex items-center justify-between p-2 rounded text-xs ${result.success ? 'bg-green-500/10' : 'bg-destructive/10'}`}>
                         <div className="flex items-center gap-2">
                           {result.success ? <CheckCircle className="w-3 h-3 text-green-500" /> : <XCircle className="w-3 h-3 text-destructive" />}
-                          <span>{result.presetName} #{result.iteration + 1}</span>
+                          <span>{result.strategyName}</span>
                         </div>
                         <div className="flex items-center gap-2 text-muted-foreground">
-                          <span>{result.operationsExecuted} ops</span>
-                          <span>{result.duration.toFixed(0)}ms</span>
+                          <span>{result.steps.length} ops</span>
+                          <span>{result.totalDuration.toFixed(0)}ms</span>
                         </div>
                       </div>
                     ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Bit Ranges Accessed */}
-              {job.bitRangesAccessed.length > 0 && (
-                <div>
-                  <h4 className="text-xs font-medium mb-2">Bit Ranges Accessed</h4>
-                  <div className="max-h-32 overflow-y-auto">
-                    <div className="flex flex-wrap gap-1">
-                      {job.bitRangesAccessed.slice(0, 20).map((range, idx) => (
-                        <Badge key={idx} variant="outline" className="text-xs">
-                          [{range.start}-{range.end}] {range.operation}
-                        </Badge>
-                      ))}
-                      {job.bitRangesAccessed.length > 20 && (
-                        <Badge variant="secondary" className="text-xs">
-                          +{job.bitRangesAccessed.length - 20} more
-                        </Badge>
-                      )}
-                    </div>
                   </div>
                 </div>
               )}
@@ -342,7 +316,7 @@ export const JobsDialog = ({ open, onOpenChange }: JobsDialogProps) => {
                     <Loader2 className="w-4 h-4 text-cyan-500" />
                     <span>Running</span>
                   </div>
-                  <p className="text-2xl font-bold mt-1">{jobManager.getRunningCount()}</p>
+                  <p className="text-2xl font-bold mt-1">{jobManagerV2.getRunningCount()}</p>
                 </CardContent>
               </Card>
               <Card>
@@ -351,7 +325,7 @@ export const JobsDialog = ({ open, onOpenChange }: JobsDialogProps) => {
                     <Clock className="w-4 h-4 text-yellow-500" />
                     <span>Pending</span>
                   </div>
-                  <p className="text-2xl font-bold mt-1">{jobManager.getPendingCount()}</p>
+                  <p className="text-2xl font-bold mt-1">{jobManagerV2.getPendingCount()}</p>
                 </CardContent>
               </Card>
               <Card>
@@ -360,7 +334,7 @@ export const JobsDialog = ({ open, onOpenChange }: JobsDialogProps) => {
                     <CheckCircle className="w-4 h-4 text-green-500" />
                     <span>Completed</span>
                   </div>
-                  <p className="text-2xl font-bold mt-1">{jobManager.getCompletedCount()}</p>
+                  <p className="text-2xl font-bold mt-1">{jobManagerV2.getCompletedCount()}</p>
                 </CardContent>
               </Card>
               <Card>
@@ -369,7 +343,7 @@ export const JobsDialog = ({ open, onOpenChange }: JobsDialogProps) => {
                     <XCircle className="w-4 h-4 text-red-500" />
                     <span>Failed</span>
                   </div>
-                  <p className="text-2xl font-bold mt-1">{jobManager.getFailedCount()}</p>
+                  <p className="text-2xl font-bold mt-1">{jobManagerV2.getFailedCount()}</p>
                 </CardContent>
               </Card>
             </div>
@@ -432,11 +406,9 @@ export const JobsDialog = ({ open, onOpenChange }: JobsDialogProps) => {
                               return (
                                 <SelectItem key={file.id} value={file.id} disabled={!hasBits}>
                                   <div className="flex items-center gap-2">
-                                    <FileText className="w-4 h-4" />
+                                    <FileText className="w-3 h-3" />
                                     <span>{file.name}</span>
-                                    {!hasBits && (
-                                      <Badge variant="destructive" className="text-xs">No data</Badge>
-                                    )}
+                                    {!hasBits && <Badge variant="outline" className="ml-2 text-xs">No data</Badge>}
                                   </div>
                                 </SelectItem>
                               );
@@ -446,81 +418,84 @@ export const JobsDialog = ({ open, onOpenChange }: JobsDialogProps) => {
                       )}
                     </div>
 
-                    {/* Preset Selection */}
+                    {/* Strategy Selection */}
                     <div className="space-y-2">
-                      <Label>Add Presets (in order)</Label>
-                      {presetFiles.length === 0 ? (
-                        <div className="p-3 border border-dashed rounded-lg text-center text-muted-foreground text-sm">
-                          <Settings2 className="w-6 h-6 mx-auto mb-1 opacity-50" />
-                          No presets available. Create presets in Algorithm mode first.
-                        </div>
-                      ) : (
-                        <div className="flex gap-2">
-                          <Select value={selectedPresetId} onValueChange={setSelectedPresetId}>
-                            <SelectTrigger className="flex-1">
-                              <SelectValue placeholder="Select preset" />
-                            </SelectTrigger>
-                            <SelectContent className="bg-popover border border-border z-50">
-                              {presetFiles.map(preset => (
-                                <SelectItem key={preset.id} value={preset.id}>
-                                  {preset.name}
+                      <Label>Add Strategies</Label>
+                      <div className="flex gap-2">
+                        <Select value={selectedStrategyId} onValueChange={setSelectedStrategyId}>
+                          <SelectTrigger className="flex-1">
+                            <SelectValue placeholder="Select a strategy" />
+                          </SelectTrigger>
+                          <SelectContent className="bg-popover border border-border z-50">
+                            {strategies.length === 0 ? (
+                              <div className="p-2 text-center text-muted-foreground text-sm">
+                                No strategies available. Create one first.
+                              </div>
+                            ) : (
+                              strategies.map(strategy => (
+                                <SelectItem key={strategy.id} value={strategy.id}>
+                                  <div className="flex items-center gap-2">
+                                    <Settings2 className="w-3 h-3" />
+                                    <span>{strategy.name}</span>
+                                    {strategy.schedulerFile && <Badge variant="secondary" className="ml-2 text-xs">Ready</Badge>}
+                                  </div>
                                 </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <Input
-                            type="number"
-                            min={1}
-                            className="w-20"
-                            value={presetIterations}
-                            onChange={e => setPresetIterations(parseInt(e.target.value) || 1)}
-                            placeholder="×"
-                          />
-                          <Button onClick={handleAddPreset} disabled={!selectedPresetId}>
-                            <Plus className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      )}
+                              ))
+                            )}
+                          </SelectContent>
+                        </Select>
+                        <Input
+                          type="number"
+                          min={1}
+                          max={100}
+                          value={presetIterations}
+                          onChange={e => setPresetIterations(parseInt(e.target.value) || 1)}
+                          className="w-20"
+                          placeholder="×"
+                        />
+                        <Button onClick={handleAddStrategy} disabled={!selectedStrategyId}>
+                          <Plus className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </div>
 
-                      {/* Added Presets */}
-                      {presets.length > 0 && (
-                        <div className="space-y-1 mt-2">
+                    {/* Selected Strategies */}
+                    {presets.length > 0 && (
+                      <div className="space-y-2">
+                        <Label>Execution Order</Label>
+                        <div className="space-y-1">
                           {presets.map((preset, idx) => (
-                            <div key={idx} className="flex items-center justify-between p-2 bg-muted/30 rounded">
+                            <div key={idx} className="flex items-center justify-between p-2 bg-muted/30 rounded text-sm">
                               <div className="flex items-center gap-2">
-                                <span className="text-xs text-muted-foreground">{idx + 1}.</span>
-                                <Settings2 className="w-4 h-4" />
-                                <span className="text-sm">{preset.presetName}</span>
+                                <span className="text-muted-foreground">{idx + 1}.</span>
+                                <Settings2 className="w-3 h-3" />
+                                <span>{preset.strategyName}</span>
                                 <Badge variant="outline">×{preset.iterations}</Badge>
                               </div>
-                              <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => handleRemovePreset(idx)}>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="h-6 w-6 text-destructive"
+                                onClick={() => handleRemovePreset(idx)}
+                              >
                                 <Trash2 className="w-3 h-3" />
                               </Button>
                             </div>
                           ))}
                         </div>
-                      )}
-                    </div>
+                      </div>
+                    )}
+
+                    <Button
+                      className="w-full"
+                      onClick={handleCreateJob}
+                      disabled={!jobName.trim() || !selectedFileId || presets.length === 0}
+                    >
+                      <Play className="w-4 h-4 mr-2" />
+                      Create & Start Job
+                    </Button>
                   </CardContent>
                 </Card>
-
-                {/* Scheduling Info */}
-                <Card>
-                  <CardContent className="pt-4">
-                    <h4 className="text-sm font-medium mb-2">Scheduling Rules</h4>
-                    <ul className="text-xs text-muted-foreground space-y-1">
-                      <li>• Jobs on different files run in parallel</li>
-                      <li>• Jobs on the same file run sequentially (queued)</li>
-                      <li>• Presets within a job run in the order added</li>
-                      <li>• Each preset runs for the specified number of iterations</li>
-                    </ul>
-                  </CardContent>
-                </Card>
-
-                <Button onClick={handleCreateJob} className="w-full" disabled={!jobName || !selectedFileId || presets.length === 0}>
-                  <Play className="w-4 h-4 mr-2" />
-                  Create & Start Job
-                </Button>
               </div>
             </ScrollArea>
           </TabsContent>
