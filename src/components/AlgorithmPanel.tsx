@@ -1,6 +1,6 @@
 /**
  * Algorithm Panel V3 - Redesigned with new tab structure
- * Tabs: Files, Strategy, Player, Results, Metrics, Operations (fixed order)
+ * Tabs: Files, Strategy, Player, Results, Metrics, Operations, Python (fixed order)
  * No custom tabs
  */
 
@@ -18,6 +18,7 @@ import {
   Cog,
   ChevronRight,
   ChevronDown,
+  Terminal,
 } from 'lucide-react';
 import { predefinedManager } from '@/lib/predefinedManager';
 import { strategyExecutor, ExecutionResult, TransformationStep } from '@/lib/strategyExecutor';
@@ -25,8 +26,9 @@ import { PlayerTab } from './algorithm/PlayerTab';
 import { ResultsTab } from './algorithm/ResultsTab';
 import { FilesTab } from './algorithm/FilesTab';
 import { StrategyTab } from './algorithm/StrategyTab';
+import { PythonConsoleTab } from './algorithm/PythonConsoleTab';
 
-type AlgorithmTab = 'files' | 'strategy' | 'player' | 'results' | 'metrics' | 'operations';
+type AlgorithmTab = 'files' | 'strategy' | 'player' | 'results' | 'metrics' | 'operations' | 'python';
 
 export const AlgorithmPanel = () => {
   const [activeTab, setActiveTab] = useState<AlgorithmTab>('files');
@@ -110,6 +112,10 @@ export const AlgorithmPanel = () => {
         <TabsTrigger value="operations">
           <Cog className="w-4 h-4 mr-1" />
           Operations
+        </TabsTrigger>
+        <TabsTrigger value="python">
+          <Terminal className="w-4 h-4 mr-1" />
+          Python
         </TabsTrigger>
       </TabsList>
 
@@ -232,6 +238,11 @@ export const AlgorithmPanel = () => {
               </CardContent>
             </Card>
           </ScrollArea>
+        </TabsContent>
+
+        {/* Python Console Tab */}
+        <TabsContent value="python" className="h-full m-0">
+          <PythonConsoleTab />
         </TabsContent>
       </div>
     </Tabs>
