@@ -33,9 +33,10 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { resultsManager, ExecutionResultV2 } from '@/lib/resultsManager';
+import { ExecutionResult } from '@/lib/strategyExecutor';
 
 interface ResultsTabProps {
-  onSelectResult?: (result: ExecutionResultV2 | null) => void;
+  onSelectResult?: (result: ExecutionResult | null) => void;
 }
 
 export const ResultsTab = ({ onSelectResult }: ResultsTabProps) => {
@@ -63,7 +64,24 @@ export const ResultsTab = ({ onSelectResult }: ResultsTabProps) => {
 
   const handleSelect = (result: ExecutionResultV2) => {
     setSelectedResult(result);
-    onSelectResult?.(result);
+    // Convert to ExecutionResult format for player
+    const executionResult: ExecutionResult = {
+      id: result.id,
+      strategyId: result.strategyId,
+      strategyName: result.strategyName,
+      dataFileId: result.id,
+      dataFileName: result.strategyName,
+      initialBits: result.initialBits,
+      finalBits: result.finalBits,
+      steps: result.steps.map((s, i) => ({ ...s, stepIndex: i, timestamp: new Date() })),
+      totalDuration: result.duration,
+      startTime: new Date(),
+      endTime: new Date(),
+      metricsHistory: {},
+      success: true,
+      resourceUsage: { peakMemory: 0, cpuTime: result.duration, operationsCount: result.steps.length }
+    };
+    onSelectResult?.(executionResult);
   };
 
   const handleExportCSV = (result: ExecutionResultV2) => {
