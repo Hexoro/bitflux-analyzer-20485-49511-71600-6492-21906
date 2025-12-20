@@ -1,12 +1,13 @@
 /**
  * Python Executor - Pyodide-based Python execution for AI strategies
  * Connected to real operations and metrics via routers
+ * V2 - Fixed module state reset between runs
  */
 
 import { executeOperation, getOperationCost, getAvailableOperations, hasImplementation as hasOpImpl } from './operationsRouter';
 import { calculateMetric, calculateAllMetrics, getAvailableMetrics, hasImplementation as hasMetricImpl } from './metricsCalculator';
 
-interface PythonContext {
+export interface PythonContext {
   bits: string;
   budget: number;
   metrics: Record<string, number>;
@@ -21,12 +22,31 @@ interface PythonValidationResult {
   hasKeras: boolean;
 }
 
-interface PythonExecutionResult {
+export interface TransformationRecord {
+  operation: string;
+  params: Record<string, any>;
+  beforeBits: string;
+  afterBits: string;
+  bitRanges: { start: number; end: number }[];
+  bitsChanged: number;
+  duration: number;
+}
+
+export interface PythonExecutionResult {
   success: boolean;
   output: any;
   logs: string[];
   error?: string;
   duration: number;
+  transformations: TransformationRecord[];
+  finalBits: string;
+  metrics: Record<string, number>;
+  stats: {
+    totalOperations: number;
+    totalBitsChanged: number;
+    budgetUsed: number;
+    budgetRemaining: number;
+  };
 }
 
 class PythonExecutor {
@@ -35,10 +55,8 @@ class PythonExecutor {
   private loadPromise: Promise<void> | null = null;
   private loadProgress = 0;
   private listeners: Set<(progress: number) => void> = new Set();
+  private executionCounter = 0;
 
-  /**
-   * Load Pyodide on-demand
-   */
   async loadPyodide(): Promise<void> {
     if (this.isLoaded) return;
     if (this.loadPromise) return this.loadPromise;
@@ -47,7 +65,6 @@ class PythonExecutor {
       try {
         this.notifyProgress(10);
         
-        // Load Pyodide from CDN
         const script = document.createElement('script');
         script.src = 'https://cdn.jsdelivr.net/pyodide/v0.24.1/full/pyodide.js';
         
@@ -59,15 +76,12 @@ class PythonExecutor {
 
         this.notifyProgress(30);
 
-        // Initialize Pyodide
-        // @ts-ignore - Pyodide is loaded globally
+        // @ts-ignore
         this.pyodide = await window.loadPyodide({
           indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.24.1/full/',
         });
 
         this.notifyProgress(70);
-
-        // Install numpy (commonly needed for AI)
         await this.pyodide.loadPackage(['numpy']);
         
         this.notifyProgress(100);
@@ -100,9 +114,6 @@ class PythonExecutor {
     return this.isLoaded;
   }
 
-  /**
-   * Validate Python code syntax and structure
-   */
   async validateSyntax(pythonCode: string): Promise<PythonValidationResult> {
     const result: PythonValidationResult = {
       valid: true,
@@ -113,7 +124,6 @@ class PythonExecutor {
     };
 
     try {
-      // Check for TensorFlow/Keras imports
       result.hasTensorflow = pythonCode.includes('tensorflow') || pythonCode.includes('import tf');
       result.hasKeras = pythonCode.includes('keras');
 
@@ -121,17 +131,14 @@ class PythonExecutor {
         result.warnings.push('TensorFlow detected - ensure model file is accessible');
       }
 
-      // Check for required execute function
       if (!pythonCode.includes('def execute')) {
         result.warnings.push('Strategy should define an "execute()" function');
       }
 
-      // Check for API imports
       if (!pythonCode.includes('from bitwise_api import') && !pythonCode.includes('import bitwise_api')) {
         result.warnings.push('Consider importing bitwise_api for access to operations');
       }
 
-      // Basic syntax checks
       const openParens = (pythonCode.match(/\(/g) || []).length;
       const closeParens = (pythonCode.match(/\)/g) || []).length;
       if (openParens !== closeParens) {
@@ -146,7 +153,6 @@ class PythonExecutor {
         result.errors.push(`Mismatched brackets: ${openBrackets} open, ${closeBrackets} close`);
       }
 
-      // Check indentation (basic)
       const lines = pythonCode.split('\n');
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
@@ -155,7 +161,6 @@ class PythonExecutor {
         }
       }
 
-      // If Pyodide is loaded, do actual syntax check
       if (this.isLoaded) {
         try {
           await this.pyodide.runPythonAsync(`
@@ -179,38 +184,84 @@ except SyntaxError as e:
     }
   }
 
-  /**
-   * Run sandbox test of Python script
-   */
-  /**
-   * Create the JavaScript bridge for Python to call real operations/metrics
-   */
   private createBitwiseApiBridge(context: PythonContext) {
     let currentBits = context.bits;
     let currentBudget = context.budget;
+    const initialBudget = context.budget;
     const logs: string[] = [];
+    const transformations: TransformationRecord[] = [];
 
     return {
       bridge: {
-        // Execute real operations via operationsRouter
-        apply_operation: (opName: string, bits: string, params?: any) => {
+        apply_operation: (opName: string, bits: string, params?: any, rangeStart?: number, rangeEnd?: number) => {
+          const startTime = performance.now();
+          const beforeBits = bits || currentBits;
           try {
-            const result = executeOperation(opName, bits, params || {});
+            const result = executeOperation(opName, beforeBits, params || {});
             if (result.success) {
+              // Track transformation
+              const bitsChanged = this.countChangedBits(beforeBits, result.bits);
+              transformations.push({
+                operation: opName,
+                params: params || {},
+                beforeBits,
+                afterBits: result.bits,
+                bitRanges: rangeStart !== undefined && rangeEnd !== undefined 
+                  ? [{ start: rangeStart, end: rangeEnd }]
+                  : [{ start: 0, end: result.bits.length }],
+                bitsChanged,
+                duration: performance.now() - startTime,
+              });
+              
+              // Update current bits if operating on default
+              if (!bits) {
+                currentBits = result.bits;
+              }
               return result.bits;
             }
             logs.push(`[ERROR] Operation ${opName} failed: ${result.error}`);
-            return bits; // Return unchanged on error
+            return beforeBits;
           } catch (e) {
             logs.push(`[ERROR] Operation ${opName} exception: ${e}`);
-            return bits;
+            return beforeBits;
           }
         },
 
-        // Get real metrics via metricsCalculator
-        get_metric: (metricName: string, bits: string) => {
+        apply_operation_range: (opName: string, start: number, end: number, params?: any) => {
+          const startTime = performance.now();
+          const beforeBits = currentBits;
           try {
-            const result = calculateMetric(metricName, bits);
+            const targetBits = currentBits.slice(start, end);
+            const result = executeOperation(opName, targetBits, params || {});
+            if (result.success) {
+              const newBits = currentBits.slice(0, start) + result.bits + currentBits.slice(end);
+              const bitsChanged = this.countChangedBits(targetBits, result.bits);
+              
+              transformations.push({
+                operation: opName,
+                params: { ...params, range: { start, end } },
+                beforeBits,
+                afterBits: newBits,
+                bitRanges: [{ start, end }],
+                bitsChanged,
+                duration: performance.now() - startTime,
+              });
+              
+              currentBits = newBits;
+              return result.bits;
+            }
+            logs.push(`[ERROR] Operation ${opName} on range [${start}:${end}] failed: ${result.error}`);
+            return targetBits;
+          } catch (e) {
+            logs.push(`[ERROR] Operation ${opName} exception: ${e}`);
+            return currentBits.slice(start, end);
+          }
+        },
+
+        get_metric: (metricName: string, bits?: string) => {
+          try {
+            const targetBits = bits || currentBits;
+            const result = calculateMetric(metricName, targetBits);
             if (result.success) {
               return result.value;
             }
@@ -222,10 +273,10 @@ except SyntaxError as e:
           }
         },
 
-        // Get all metrics at once
-        get_all_metrics: (bits: string) => {
+        get_all_metrics: (bits?: string) => {
           try {
-            const result = calculateAllMetrics(bits);
+            const targetBits = bits || currentBits;
+            const result = calculateAllMetrics(targetBits);
             return result.metrics;
           } catch (e) {
             logs.push(`[WARN] get_all_metrics exception: ${e}`);
@@ -233,32 +284,11 @@ except SyntaxError as e:
           }
         },
 
-        // Get real operation costs
-        get_cost: (opName: string) => {
-          return getOperationCost(opName);
-        },
-
-        // Check if operation exists
-        has_operation: (opName: string) => {
-          return hasOpImpl(opName);
-        },
-
-        // Check if metric exists
-        has_metric: (metricName: string) => {
-          return hasMetricImpl(metricName);
-        },
-
-        // Get available operations
-        get_available_operations: () => {
-          return getAvailableOperations();
-        },
-
-        // Get available metrics
-        get_available_metrics: () => {
-          return getAvailableMetrics();
-        },
-
-        // Budget management
+        get_cost: (opName: string) => getOperationCost(opName),
+        has_operation: (opName: string) => hasOpImpl(opName),
+        has_metric: (metricName: string) => hasMetricImpl(metricName),
+        get_available_operations: () => getAvailableOperations(),
+        get_available_metrics: () => getAvailableMetrics(),
         get_budget: () => currentBudget,
         
         deduct_budget: (amount: number) => {
@@ -269,125 +299,152 @@ except SyntaxError as e:
           return false;
         },
 
-        // Logging
-        log: (msg: string) => {
-          logs.push(msg);
-        },
-
-        // Get current bits
+        log: (msg: string) => { logs.push(String(msg)); },
         get_bits: () => currentBits,
-        
-        // Update bits
-        set_bits: (newBits: string) => {
-          currentBits = newBits;
+        set_bits: (newBits: string) => { currentBits = newBits; },
+        get_bits_length: () => currentBits.length,
+        get_bit: (index: number) => currentBits[index] || '0',
+        set_bit: (index: number, value: string) => {
+          if (index >= 0 && index < currentBits.length) {
+            currentBits = currentBits.slice(0, index) + (value === '1' ? '1' : '0') + currentBits.slice(index + 1);
+          }
         },
       },
       getLogs: () => logs,
       getCurrentBits: () => currentBits,
       getCurrentBudget: () => currentBudget,
+      getTransformations: () => transformations,
+      getStats: () => ({
+        totalOperations: transformations.length,
+        totalBitsChanged: transformations.reduce((sum, t) => sum + t.bitsChanged, 0),
+        budgetUsed: initialBudget - currentBudget,
+        budgetRemaining: currentBudget,
+      }),
     };
   }
 
-  /**
-   * Run sandbox test of Python script with REAL operations and metrics
-   */
+  private countChangedBits(before: string, after: string): number {
+    let count = 0;
+    const maxLen = Math.max(before.length, after.length);
+    for (let i = 0; i < maxLen; i++) {
+      if ((before[i] || '0') !== (after[i] || '0')) count++;
+    }
+    return count;
+  }
+
   async sandboxTest(pythonCode: string, context: PythonContext): Promise<PythonExecutionResult> {
     const startTime = performance.now();
+    this.executionCounter++;
+    const execId = this.executionCounter;
 
     try {
       if (!this.isLoaded) {
         await this.loadPyodide();
       }
 
-      // Create the bridge with real implementations
       const bridgeObj = this.createBitwiseApiBridge(context);
+      
+      // Use unique module name to avoid state pollution
+      const bridgeName = `bitwise_bridge_${execId}`;
+      this.pyodide.registerJsModule(bridgeName, bridgeObj.bridge);
 
-      // Register the JavaScript bridge module
-      this.pyodide.registerJsModule('bitwise_bridge', bridgeObj.bridge);
+      // Reset Python state and create fresh module
+      await this.pyodide.runPythonAsync(`
+import sys
 
-      // Set up Python globals
-      this.pyodide.globals.set('bits', context.bits);
-      this.pyodide.globals.set('budget', context.budget);
-      this.pyodide.globals.set('bits_length', context.bits.length);
+# Clean up old modules
+for mod_name in list(sys.modules.keys()):
+    if mod_name.startswith('bitwise_') or mod_name == 'bitwise_api':
+        del sys.modules[mod_name]
 
-      // Create the Python bitwise_api module that wraps the JS bridge
+# Clean up global namespace
+for name in list(globals().keys()):
+    if not name.startswith('_') and name not in ['sys', 'ast', 'ModuleType']:
+        try:
+            del globals()[name]
+        except:
+            pass
+      `);
+
       await this.pyodide.runPythonAsync(`
 import sys
 from types import ModuleType
-import bitwise_bridge
+import ${bridgeName} as _bridge
 
+# Create fresh bitwise_api module
 bitwise_api = ModuleType('bitwise_api')
-
-# Initial state
 bitwise_api.bits = '${context.bits}'
 bitwise_api.budget = ${context.budget}
 bitwise_api.OPERATIONS = ${JSON.stringify(context.operations)}
 
 def apply_operation(op_name, bits=None, params=None):
-    """Apply a real operation via the router"""
     if bits is None:
-        bits = bitwise_api.bits
-    result = bitwise_bridge.apply_operation(op_name, bits, params)
+        bits = _bridge.get_bits()
+    result = _bridge.apply_operation(op_name, bits, params)
     return result
 
+def apply_operation_range(op_name, start, end, params=None):
+    return _bridge.apply_operation_range(op_name, start, end, params)
+
 def get_metric(metric_name, bits=None):
-    """Get a real metric value via the calculator"""
     if bits is None:
-        bits = bitwise_api.bits
-    return bitwise_bridge.get_metric(metric_name, bits)
+        bits = _bridge.get_bits()
+    return _bridge.get_metric(metric_name, bits)
 
 def get_all_metrics(bits=None):
-    """Get all metrics at once"""
-    if bits is None:
-        bits = bitwise_api.bits
-    result = bitwise_bridge.get_all_metrics(bits)
-    # Convert JS object to Python dict
+    result = _bridge.get_all_metrics(bits)
     return dict(result.to_py()) if hasattr(result, 'to_py') else dict(result)
 
 def get_cost(op_name):
-    """Get the cost of an operation"""
-    return bitwise_bridge.get_cost(op_name)
+    return _bridge.get_cost(op_name)
 
 def has_operation(op_name):
-    """Check if operation is implemented"""
-    return bitwise_bridge.has_operation(op_name)
+    return _bridge.has_operation(op_name)
 
 def has_metric(metric_name):
-    """Check if metric is implemented"""
-    return bitwise_bridge.has_metric(metric_name)
+    return _bridge.has_metric(metric_name)
 
 def get_available_operations():
-    """Get list of available operations"""
-    result = bitwise_bridge.get_available_operations()
+    result = _bridge.get_available_operations()
     return list(result.to_py()) if hasattr(result, 'to_py') else list(result)
 
 def get_available_metrics():
-    """Get list of available metrics"""
-    result = bitwise_bridge.get_available_metrics()
+    result = _bridge.get_available_metrics()
     return list(result.to_py()) if hasattr(result, 'to_py') else list(result)
 
 def is_operation_allowed(op_name):
-    """Check if operation is in allowed list"""
     return op_name in bitwise_api.OPERATIONS
 
 def deduct_budget(amount):
-    """Deduct from budget, returns True if successful"""
-    return bitwise_bridge.deduct_budget(amount)
+    return _bridge.deduct_budget(amount)
 
 def get_budget():
-    """Get current remaining budget"""
-    return bitwise_bridge.get_budget()
+    return _bridge.get_budget()
+
+def get_bits():
+    return _bridge.get_bits()
+
+def set_bits(new_bits):
+    _bridge.set_bits(new_bits)
+
+def get_bits_length():
+    return _bridge.get_bits_length()
+
+def get_bit(index):
+    return _bridge.get_bit(index)
+
+def set_bit(index, value):
+    _bridge.set_bit(index, value)
 
 def log(msg):
-    """Log a message"""
-    bitwise_bridge.log(str(msg))
+    _bridge.log(str(msg))
 
 def halt():
-    """Stop execution (placeholder)"""
     pass
 
-# Attach all functions to the module
+# Attach to module
 bitwise_api.apply_operation = apply_operation
+bitwise_api.apply_operation_range = apply_operation_range
 bitwise_api.get_metric = get_metric
 bitwise_api.get_all_metrics = get_all_metrics
 bitwise_api.get_cost = get_cost
@@ -398,34 +455,48 @@ bitwise_api.get_available_metrics = get_available_metrics
 bitwise_api.is_operation_allowed = is_operation_allowed
 bitwise_api.deduct_budget = deduct_budget
 bitwise_api.get_budget = get_budget
+bitwise_api.get_bits = get_bits
+bitwise_api.set_bits = set_bits
+bitwise_api.get_bits_length = get_bits_length
+bitwise_api.get_bit = get_bit
+bitwise_api.set_bit = set_bit
 bitwise_api.log = log
 bitwise_api.halt = halt
 
 sys.modules['bitwise_api'] = bitwise_api
       `);
 
-      // Run the user's code
+      // Run user code
       const result = await this.pyodide.runPythonAsync(pythonCode);
 
       // Try to call execute() if it exists
       let executeResult = null;
       try {
         executeResult = await this.pyodide.runPythonAsync(`
-result = None
+_result = None
 if 'execute' in dir():
-    result = execute()
-result
+    _result = execute()
+_result
         `);
       } catch (e) {
-        // execute() might not exist or might fail
         bridgeObj.bridge.log(`execute() error: ${e}`);
       }
 
+      // Get final metrics
+      const finalMetrics = bridgeObj.bridge.get_all_metrics();
+      const metricsDict = (finalMetrics && typeof finalMetrics === 'object') 
+        ? finalMetrics as Record<string, number>
+        : {};
+
       return {
         success: true,
-        output: executeResult || result,
+        output: executeResult !== null ? executeResult : result,
         logs: bridgeObj.getLogs(),
         duration: performance.now() - startTime,
+        transformations: bridgeObj.getTransformations(),
+        finalBits: bridgeObj.getCurrentBits(),
+        metrics: metricsDict,
+        stats: bridgeObj.getStats(),
       };
     } catch (error) {
       return {
@@ -434,8 +505,28 @@ result
         logs: [],
         error: error instanceof Error ? error.message : String(error),
         duration: performance.now() - startTime,
+        transformations: [],
+        finalBits: context.bits,
+        metrics: {},
+        stats: {
+          totalOperations: 0,
+          totalBitsChanged: 0,
+          budgetUsed: 0,
+          budgetRemaining: context.budget,
+        },
       };
     }
+  }
+
+  /**
+   * Execute a full strategy with file integration
+   */
+  async executeStrategy(
+    pythonCode: string, 
+    context: PythonContext,
+    onProgress?: (step: number, total: number, bits: string) => void
+  ): Promise<PythonExecutionResult> {
+    return this.sandboxTest(pythonCode, context);
   }
 }
 
