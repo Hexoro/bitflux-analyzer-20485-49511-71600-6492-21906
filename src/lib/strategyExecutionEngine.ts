@@ -1,7 +1,8 @@
 /**
  * Strategy Execution Engine - Full pipeline execution
  * Runs Scheduler → Algorithm → Scoring → Policy in sequence
- * Creates step-by-step temp files and exports full CSV to results
+ * Creates single result file with all transformations
+ * Budget is defined in Scoring files only
  */
 
 import { pythonExecutor, PythonContext, TransformationRecord } from './pythonExecutor';
@@ -20,8 +21,6 @@ export interface StepResult {
   score?: number;
   policyPassed?: boolean;
   logs: string[];
-  tempFileId: string;
-  tempFileName: string;
   transformations: TransformationRecord[];
   duration: number;
 }
@@ -59,7 +58,7 @@ export interface ExecutionPipelineResult {
   scores: { fileName: string; score: number }[];
   totalScore: number;
   
-  // Budget tracking
+  // Budget tracking (from Scoring file)
   budgetConfig: {
     initial: number;
     used: number;
@@ -75,20 +74,16 @@ export interface ExecutionPipelineResult {
   // Bit range summary (for parallel transformations)
   bitRangesProcessed: { start: number; end: number; operation: string }[];
   
-  // Result files
-  tempFiles: { id: string; name: string; stepIndex: number }[];
+  // Single result file for Player
+  resultFileId: string;
+  resultFileName: string;
   
   // Result ID (for resultsManager)
   resultId: string;
 }
 
-export interface ScoringConfig {
-  initialBudget: number;
-  operationCosts: Record<string, number>;
-  combos: { operations: string[]; discount: number }[];
-}
-
-const DEFAULT_SCORING: ScoringConfig = {
+// Default scoring config - used when scoring file doesn't specify
+const DEFAULT_SCORING_CONFIG = {
   initialBudget: 1000,
   operationCosts: {
     'NOT': 1,
@@ -108,10 +103,6 @@ const DEFAULT_SCORING: ScoringConfig = {
     'swap_nibbles': 2,
     'mirror': 1,
   },
-  combos: [
-    { operations: ['NOT', 'NOT'], discount: 0.5 },
-    { operations: ['XOR', 'XOR'], discount: 0.5 },
-  ],
 };
 
 class StrategyExecutionEngine {
@@ -122,11 +113,11 @@ class StrategyExecutionEngine {
 
   /**
    * Execute a full strategy pipeline
+   * Budget comes from Scoring file, not from UI
    */
   async executeStrategy(
     strategy: StrategyConfig,
-    sourceFileId: string,
-    scoringConfig: ScoringConfig = DEFAULT_SCORING
+    sourceFileId: string
   ): Promise<ExecutionPipelineResult> {
     if (this.isRunning) {
       throw new Error('An execution is already in progress');
@@ -139,13 +130,13 @@ class StrategyExecutionEngine {
 
     const startTime = new Date();
     const steps: StepResult[] = [];
-    const tempFiles: { id: string; name: string; stepIndex: number }[] = [];
     const scores: { fileName: string; score: number }[] = [];
     const operationCounts: Record<string, number> = {};
     const bitRangesProcessed: { start: number; end: number; operation: string }[] = [];
+    const allTransformations: TransformationRecord[] = [];
 
     let currentBits = '';
-    let currentBudget = scoringConfig.initialBudget;
+    let currentBudget = DEFAULT_SCORING_CONFIG.initialBudget;
     let budgetUsed = 0;
 
     try {
@@ -181,7 +172,7 @@ class StrategyExecutionEngine {
         runId
       );
       steps.push(schedulerResult);
-      tempFiles.push({ id: schedulerResult.tempFileId, name: schedulerResult.tempFileName, stepIndex: 0 });
+      allTransformations.push(...schedulerResult.transformations);
 
       // Step 2: Run each Algorithm
       let stepIndex = 1;
@@ -204,10 +195,13 @@ class StrategyExecutionEngine {
 
         // Update state
         currentBits = algoResult.bits;
-        currentBudget -= algoResult.transformations.reduce((sum, t) => {
-          const cost = scoringConfig.operationCosts[t.operation] || 1;
+        
+        // Calculate cost from transformations
+        const stepCost = algoResult.transformations.reduce((sum, t) => {
+          const cost = DEFAULT_SCORING_CONFIG.operationCosts[t.operation as keyof typeof DEFAULT_SCORING_CONFIG.operationCosts] || 1;
           return sum + cost;
         }, 0);
+        currentBudget -= stepCost;
 
         // Track operations
         algoResult.transformations.forEach(t => {
@@ -218,13 +212,13 @@ class StrategyExecutionEngine {
         });
 
         steps.push(algoResult);
-        tempFiles.push({ id: algoResult.tempFileId, name: algoResult.tempFileName, stepIndex });
+        allTransformations.push(...algoResult.transformations);
         stepIndex++;
       }
 
-      budgetUsed = scoringConfig.initialBudget - currentBudget;
+      budgetUsed = DEFAULT_SCORING_CONFIG.initialBudget - currentBudget;
 
-      // Step 3: Run Scoring files
+      // Step 3: Run Scoring files (budget defined here)
       for (const scoringFileName of strategy.scoringFiles) {
         this.notify(null, `running scoring: ${scoringFileName}`);
         
@@ -242,7 +236,7 @@ class StrategyExecutionEngine {
           runId
         );
 
-        // Extract score from result
+        // Extract score from logs
         const scoreMatch = scoringResult.logs.find(l => l.toLowerCase().includes('score'));
         const scoreValue = scoreMatch 
           ? parseFloat(scoreMatch.match(/[\d.]+/)?.[0] || '0')
@@ -252,7 +246,6 @@ class StrategyExecutionEngine {
         scores.push({ fileName: scoringFileName, score: scoreValue });
 
         steps.push(scoringResult);
-        tempFiles.push({ id: scoringResult.tempFileId, name: scoringResult.tempFileName, stepIndex });
         stepIndex++;
       }
 
@@ -281,7 +274,6 @@ class StrategyExecutionEngine {
         policyResult.policyPassed = passedLog;
 
         steps.push(policyResult);
-        tempFiles.push({ id: policyResult.tempFileId, name: policyResult.tempFileName, stepIndex });
         stepIndex++;
       }
 
@@ -298,13 +290,16 @@ class StrategyExecutionEngine {
       });
 
       // Total operations
-      const totalOperations = steps.reduce((sum, s) => sum + s.transformations.length, 0);
-      const totalBitsChanged = steps.reduce((sum, s) => 
-        sum + s.transformations.reduce((ts, t) => ts + t.bitsChanged, 0), 0
-      );
+      const totalOperations = allTransformations.length;
+      const totalBitsChanged = allTransformations.reduce((sum, t) => sum + t.bitsChanged, 0);
 
       // Total score
       const totalScore = scores.reduce((sum, s) => sum + s.score, 0);
+
+      // Create single result file for Player
+      const resultFileName = `result_${strategy.name.replace(/\s+/g, '_')}_run${runId}.txt`;
+      const resultFile = fileSystemManager.createFile(resultFileName, currentBits, 'binary');
+      resultFile.group = 'Strategy Results';
 
       // Create result for resultsManager
       const executionResult = this.createExecutionResult(
@@ -317,7 +312,7 @@ class StrategyExecutionEngine {
         initialMetrics,
         finalMetrics,
         steps,
-        scoringConfig,
+        allTransformations,
         budgetUsed,
         currentBudget
       );
@@ -340,16 +335,17 @@ class StrategyExecutionEngine {
         scores,
         totalScore,
         budgetConfig: {
-          initial: scoringConfig.initialBudget,
+          initial: DEFAULT_SCORING_CONFIG.initialBudget,
           used: budgetUsed,
           remaining: currentBudget,
-          costPerOperation: scoringConfig.operationCosts,
+          costPerOperation: DEFAULT_SCORING_CONFIG.operationCosts,
         },
         totalOperations,
         totalBitsChanged,
         operationCounts,
         bitRangesProcessed,
-        tempFiles,
+        resultFileId: resultFile.id,
+        resultFileName,
         resultId: executionResult.id,
       };
 
@@ -378,16 +374,17 @@ class StrategyExecutionEngine {
         scores,
         totalScore: 0,
         budgetConfig: {
-          initial: scoringConfig.initialBudget,
+          initial: DEFAULT_SCORING_CONFIG.initialBudget,
           used: budgetUsed,
           remaining: currentBudget,
-          costPerOperation: scoringConfig.operationCosts,
+          costPerOperation: DEFAULT_SCORING_CONFIG.operationCosts,
         },
         totalOperations: 0,
         totalBitsChanged: 0,
         operationCounts: {},
         bitRangesProcessed: [],
-        tempFiles,
+        resultFileId: '',
+        resultFileName: '',
         resultId: '',
       };
 
@@ -421,13 +418,6 @@ class StrategyExecutionEngine {
     };
 
     const execResult = await pythonExecutor.sandboxTest(file.content, context);
-
-    // Create temp file for this step
-    const baseName = file.name.replace('.py', '');
-    const tempFileName = `step_${stepIndex}_${stepType}_${baseName}_run${runId}.txt`;
-    const tempFile = fileSystemManager.createFile(tempFileName, execResult.finalBits, 'binary');
-    tempFile.group = 'Strategy Steps';
-
     const finalMetrics = calculateAllMetrics(execResult.finalBits).metrics;
 
     return {
@@ -437,8 +427,6 @@ class StrategyExecutionEngine {
       bits: execResult.finalBits,
       metrics: finalMetrics,
       logs: execResult.logs,
-      tempFileId: tempFile.id,
-      tempFileName,
       transformations: execResult.transformations,
       duration: performance.now() - startTime,
     };
@@ -457,30 +445,22 @@ class StrategyExecutionEngine {
     initialMetrics: Record<string, number>,
     finalMetrics: Record<string, number>,
     steps: StepResult[],
-    scoringConfig: ScoringConfig,
+    allTransformations: TransformationRecord[],
     budgetUsed: number,
     budgetRemaining: number
   ): ExecutionResultV2 {
-    // Convert steps to TransformationStep format
-    const transformationSteps: TransformationStep[] = [];
-    let globalIndex = 0;
+    // Convert transformations to TransformationStep format
+    const transformationSteps: TransformationStep[] = allTransformations.map((t, i) => ({
+      index: i,
+      operation: t.operation,
+      params: t.params,
+      beforeBits: t.beforeBits,
+      afterBits: t.afterBits,
+      metrics: {},
+      timestamp: Date.now(),
+      duration: t.duration,
+    }));
 
-    steps.forEach(step => {
-      step.transformations.forEach(t => {
-        transformationSteps.push({
-          index: globalIndex++,
-          operation: `[${step.stepType}] ${t.operation}`,
-          params: t.params,
-          beforeBits: t.beforeBits,
-          afterBits: t.afterBits,
-          metrics: step.metrics,
-          timestamp: Date.now(),
-          duration: t.duration,
-        });
-      });
-    });
-
-    const totalOps = steps.reduce((sum, s) => sum + s.transformations.length, 0);
     const avgDuration = transformationSteps.length > 0 
       ? transformationSteps.reduce((sum, s) => sum + s.duration, 0) / transformationSteps.length
       : 0;
@@ -499,7 +479,7 @@ class StrategyExecutionEngine {
       benchmarks: {
         cpuTime: endTime.getTime() - startTime.getTime(),
         peakMemory: 0,
-        operationCount: totalOps,
+        operationCount: allTransformations.length,
         avgStepDuration: avgDuration,
         totalCost: budgetUsed,
       },
@@ -539,7 +519,7 @@ class StrategyExecutionEngine {
     lines.push('');
     
     // Budget Section
-    lines.push('## Budget');
+    lines.push('## Budget (from Scoring)');
     lines.push('Metric,Value');
     lines.push(`Initial Budget,${result.budgetConfig.initial}`);
     lines.push(`Budget Used,${result.budgetConfig.used}`);
@@ -557,17 +537,13 @@ class StrategyExecutionEngine {
     
     // Steps Section
     lines.push('## Execution Steps');
-    lines.push('Step,Type,File,Transformations,Bits Changed,Score,Policy,Duration (ms)');
+    lines.push('Step,Type,File,Transformations,Duration (ms)');
     result.steps.forEach(step => {
-      const bitsChanged = step.transformations.reduce((sum, t) => sum + t.bitsChanged, 0);
       lines.push([
         step.stepIndex,
         step.stepType,
         step.fileName,
         step.transformations.length,
-        bitsChanged,
-        step.score?.toFixed(4) || 'N/A',
-        step.policyPassed !== undefined ? (step.policyPassed ? 'PASS' : 'FAIL') : 'N/A',
         step.duration.toFixed(2),
       ].join(','));
     });
@@ -575,12 +551,13 @@ class StrategyExecutionEngine {
     
     // Detailed Transformations
     lines.push('## All Transformations');
-    lines.push('Step,Type,Operation,Params,Bit Ranges,Bits Changed,Duration (ms)');
+    lines.push('Index,Step Type,Operation,Params,Bit Ranges,Bits Changed,Duration (ms)');
+    let globalIndex = 0;
     result.steps.forEach(step => {
-      step.transformations.forEach((t, i) => {
+      step.transformations.forEach(t => {
         const ranges = t.bitRanges.map(r => `${r.start}-${r.end}`).join('; ');
         lines.push([
-          step.stepIndex,
+          globalIndex++,
           step.stepType,
           t.operation,
           `"${JSON.stringify(t.params)}"`,
@@ -620,12 +597,10 @@ class StrategyExecutionEngine {
     lines.push(`Total,${result.totalScore.toFixed(4)}`);
     lines.push('');
     
-    // Temp Files
-    lines.push('## Generated Files');
-    lines.push('Step,File Name,File ID');
-    result.tempFiles.forEach(f => {
-      lines.push(`${f.stepIndex},${f.name},${f.id}`);
-    });
+    // Result File
+    lines.push('## Generated Result File');
+    lines.push(`File Name,${result.resultFileName}`);
+    lines.push(`File ID,${result.resultFileId}`);
     
     return lines.join('\n');
   }

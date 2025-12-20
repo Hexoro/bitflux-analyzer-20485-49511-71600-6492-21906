@@ -1,11 +1,10 @@
 /**
- * Python Console Tab - Interactive Python REPL with:
+ * Python Console Tab - Simple CLI for running Python scripts
+ * Features:
  * - Syntax highlighting (Prism)
- * - Command history (up/down arrows)
+ * - Command history
  * - Multiple terminal tabs
- * - Script manager integration
- * - Strategy runner integration
- * - CSV export
+ * - Example snippets
  */
 
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
@@ -13,8 +12,6 @@ import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import {
   Dialog,
   DialogContent,
@@ -29,13 +26,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { 
   Play, 
   Trash2, 
@@ -44,34 +34,21 @@ import {
   CheckCircle, 
   Plus, 
   X, 
-  ChevronUp, 
-  ChevronDown,
   Copy,
   Check,
-  Save,
-  FolderOpen,
   FileCode,
-  Download,
   Keyboard,
   MoreVertical,
   RotateCcw,
   Clipboard,
-  FileText,
-  Activity,
-  Zap
 } from 'lucide-react';
-import { pythonExecutor, PythonExecutionResult } from '@/lib/pythonExecutor';
-import { pythonModuleSystem, PythonFile } from '@/lib/pythonModuleSystem';
-import { strategyRunner, REAL_TEST_STRATEGY, StrategyRunResult } from '@/lib/strategyRunner';
-import { strategyExecutionEngine, ExecutionPipelineResult } from '@/lib/strategyExecutionEngine';
-import { fileSystemManager, BinaryFile } from '@/lib/fileSystemManager';
-import { loadExampleAlgorithmFiles } from '@/lib/exampleAlgorithmFiles';
+import { pythonExecutor } from '@/lib/pythonExecutor';
 import { toast } from 'sonner';
 import { Highlight, themes } from 'prism-react-renderer';
 
 interface ConsoleEntry {
   id: string;
-  type: 'input' | 'output' | 'error' | 'info' | 'stats';
+  type: 'input' | 'output' | 'error' | 'info';
   content: string;
   timestamp: Date;
 }
@@ -83,70 +60,58 @@ interface TerminalTab {
   history: string[];
   historyIndex: number;
   code: string;
-  lastResult?: StrategyRunResult;
 }
-
-interface SavedScript {
-  id: string;
-  name: string;
-  code: string;
-  created: Date;
-}
-
-const STORAGE_KEY = 'python_console_scripts';
 
 const EXAMPLE_SNIPPETS = [
   {
-    name: 'Quick Test',
-    code: `from bitwise_api import apply_operation, get_metric, get_bits, log
+    name: 'Hello World',
+    code: `print("Hello from Python!")
 
-bits = get_bits()
-log(f"Input: {bits[:20]}... ({len(bits)} bits)")
-log(f"Entropy: {get_metric('entropy'):.4f}")
+# Basic Python works here
+x = 5 + 3
+print(f"5 + 3 = {x}")
 
-result = apply_operation("NOT", bits)
-log(f"After NOT: {result[:20]}...")
-log(f"New Entropy: {get_metric('entropy', result):.4f}")`,
+for i in range(5):
+    print(f"  Count: {i}")`,
   },
   {
-    name: 'Full Analysis',
-    code: `from bitwise_api import get_all_metrics, get_bits, log
+    name: 'Math Operations',
+    code: `import math
 
-bits = get_bits()
-log(f"Analyzing {len(bits)} bits...")
-log("")
+# Calculate some values
+print(f"Pi: {math.pi:.6f}")
+print(f"E: {math.e:.6f}")
+print(f"sqrt(2): {math.sqrt(2):.6f}")
 
-metrics = get_all_metrics()
-log("=== Metrics ===")
-for name, value in sorted(metrics.items()):
-    log(f"  {name}: {value:.4f}")`,
+# Fibonacci
+fib = [0, 1]
+for i in range(10):
+    fib.append(fib[-1] + fib[-2])
+print(f"Fibonacci: {fib}")`,
   },
   {
-    name: 'Real Strategy',
-    code: REAL_TEST_STRATEGY,
+    name: 'Data Processing',
+    code: `# Simple data analysis
+data = [23, 45, 12, 67, 89, 34, 56, 78, 90, 11]
+
+print(f"Data: {data}")
+print(f"Sum: {sum(data)}")
+print(f"Average: {sum(data)/len(data):.2f}")
+print(f"Min: {min(data)}")
+print(f"Max: {max(data)}")
+print(f"Sorted: {sorted(data)}")`,
   },
 ];
-
-// Load example files on first render
-let examplesLoaded = false;
-const ensureExamplesLoaded = () => {
-  if (!examplesLoaded) {
-    loadExampleAlgorithmFiles(pythonModuleSystem);
-    examplesLoaded = true;
-  }
-};
 
 const KEYBOARD_SHORTCUTS = [
   { keys: 'Ctrl+Enter', description: 'Run code' },
   { keys: 'Ctrl+L', description: 'Clear console' },
-  { keys: 'Ctrl+S', description: 'Save script' },
   { keys: 'Ctrl+↑', description: 'Previous history' },
   { keys: 'Ctrl+↓', description: 'Next history' },
   { keys: 'Ctrl+K', description: 'Clear input' },
   { keys: 'Ctrl+D', description: 'Duplicate terminal' },
   { keys: 'Ctrl+W', description: 'Close terminal' },
   { keys: 'Ctrl+T', description: 'New terminal' },
-  { keys: 'Ctrl+E', description: 'Export CSV' },
 ];
 
 // Python syntax highlighting component
@@ -223,34 +188,6 @@ const SyntaxTextarea = ({
   );
 };
 
-// Stats Display Component
-const StatsDisplay = ({ result }: { result: StrategyRunResult }) => (
-  <div className="grid grid-cols-2 gap-2 p-3 bg-muted/30 rounded-lg text-sm">
-    <div className="flex items-center gap-2">
-      <Activity className="w-4 h-4 text-primary" />
-      <span>Operations: {result.totalOperations}</span>
-    </div>
-    <div className="flex items-center gap-2">
-      <Zap className="w-4 h-4 text-yellow-500" />
-      <span>Bits Changed: {result.totalBitsChanged}</span>
-    </div>
-    <div className="flex items-center gap-2">
-      <span className="text-muted-foreground">Duration:</span>
-      <span>{result.duration}ms</span>
-    </div>
-    <div className="flex items-center gap-2">
-      <span className="text-muted-foreground">Budget:</span>
-      <span>{result.budgetUsed} used / {result.budgetRemaining} left</span>
-    </div>
-    {result.tempFileName && (
-      <div className="col-span-2 flex items-center gap-2 text-primary">
-        <FileText className="w-4 h-4" />
-        <span>Created: {result.tempFileName}</span>
-      </div>
-    )}
-  </div>
-);
-
 // Keyboard Shortcuts Dialog
 const KeyboardShortcutsDialog = () => (
   <Dialog>
@@ -292,9 +229,6 @@ export const PythonConsoleTab = () => {
   const [pyodideProgress, setPyodideProgress] = useState(0);
   const [isPyodideReady, setIsPyodideReady] = useState(pythonExecutor.isReady());
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [selectedFileId, setSelectedFileId] = useState<string>('');
-  const [budget, setBudget] = useState(100);
-  const [binaryFiles, setBinaryFiles] = useState<BinaryFile[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const tabCounter = useRef(2);
@@ -305,17 +239,6 @@ export const PythonConsoleTab = () => {
     const unsubscribe = pythonExecutor.subscribeProgress((progress) => {
       setPyodideProgress(progress);
       if (progress >= 100) setIsPyodideReady(true);
-    });
-    return unsubscribe;
-  }, []);
-
-  useEffect(() => {
-    setBinaryFiles(fileSystemManager.getFiles());
-    const activeFile = fileSystemManager.getActiveFile();
-    if (activeFile) setSelectedFileId(activeFile.id);
-    
-    const unsubscribe = fileSystemManager.subscribe(() => {
-      setBinaryFiles(fileSystemManager.getFiles());
     });
     return unsubscribe;
   }, []);
@@ -360,27 +283,6 @@ export const PythonConsoleTab = () => {
     navigator.clipboard.writeText(output);
     toast.success('Output copied');
   }, [activeTab]);
-
-  const exportCSV = useCallback(() => {
-    if (!activeTab?.lastResult) {
-      toast.error('No results to export. Run a strategy first.');
-      return;
-    }
-    const csv = strategyRunner.exportToCSV(activeTab.lastResult);
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `strategy_result_${Date.now()}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-    toast.success('CSV exported');
-  }, [activeTab?.lastResult]);
-
-  // Load examples on mount
-  useEffect(() => {
-    ensureExamplesLoaded();
-  }, []);
 
   const addTab = useCallback(() => {
     const newTab: TerminalTab = {
@@ -429,11 +331,6 @@ export const PythonConsoleTab = () => {
     const code = activeTab?.code || '';
     if (!code.trim()) return;
 
-    if (!selectedFileId) {
-      toast.error('Select a data file first');
-      return;
-    }
-
     setIsLoading(true);
     addEntry('input', code);
 
@@ -449,53 +346,35 @@ export const PythonConsoleTab = () => {
         await pythonExecutor.loadPyodide();
       }
 
-      addEntry('info', 'Running strategy...');
+      // Run simple Python code
+      const result = await pythonExecutor.execute(code);
 
-      const result = await strategyRunner.runStrategy({
-        strategyCode: code,
-        sourceFileId: selectedFileId,
-        budget,
-      });
+      // Add output
+      if (result.output) {
+        addEntry('output', result.output);
+      }
 
       // Add logs
       result.logs.forEach(log => {
         if (log.startsWith('[ERROR]')) {
           addEntry('error', log);
-        } else if (log.startsWith('[WARN]')) {
-          addEntry('info', log);
         } else {
           addEntry('output', log);
         }
       });
 
-      if (result.success) {
-        addEntry('info', `✓ Completed in ${result.duration}ms`);
-        
-        // Store result for export
-        updateActiveTab(tab => ({ ...tab, lastResult: result }));
-        
-        // Show stats summary
-        addEntry('stats', JSON.stringify({
-          operations: result.totalOperations,
-          bitsChanged: result.totalBitsChanged,
-          budgetUsed: result.budgetUsed,
-          tempFile: result.tempFileName,
-        }));
-
-        if (result.tempFileName) {
-          toast.success(`Created ${result.tempFileName} - switch to Analysis mode to view`);
-        }
+      if (result.error) {
+        addEntry('error', result.error);
       } else {
-        addEntry('error', result.error || 'Execution failed');
+        addEntry('info', `✓ Completed in ${result.executionTime.toFixed(0)}ms`);
       }
     } catch (error) {
       addEntry('error', error instanceof Error ? error.message : String(error));
-      toast.error('Execution failed');
     } finally {
       setIsLoading(false);
       setCode('');
     }
-  }, [activeTab?.code, selectedFileId, budget, addEntry, setCode, updateActiveTab]);
+  }, [activeTab?.code, addEntry, setCode, updateActiveTab]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -506,13 +385,12 @@ export const PythonConsoleTab = () => {
       else if (isCtrl && e.key === 't') { e.preventDefault(); addTab(); }
       else if (isCtrl && e.key === 'd') { e.preventDefault(); duplicateTab(); }
       else if (isCtrl && e.key === 'w') { e.preventDefault(); closeTab(activeTabId); }
-      else if (isCtrl && e.key === 'e') { e.preventDefault(); exportCSV(); }
       else if (isCtrl && e.shiftKey && e.key === 'C') { e.preventDefault(); copyAllOutput(); }
     };
 
     window.addEventListener('keydown', handleGlobalKeyDown);
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-  }, [clearConsole, addTab, duplicateTab, closeTab, activeTabId, exportCSV, copyAllOutput]);
+  }, [clearConsole, addTab, duplicateTab, closeTab, activeTabId, copyAllOutput]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     const isCtrl = e.ctrlKey || e.metaKey;
@@ -557,37 +435,6 @@ export const PythonConsoleTab = () => {
     }
   }, [activeTab?.entries]);
 
-  const renderEntry = (entry: ConsoleEntry) => {
-    if (entry.type === 'stats') {
-      try {
-        const stats = JSON.parse(entry.content);
-        return (
-          <div className="p-2 bg-primary/10 rounded-lg text-sm border border-primary/20">
-            <div className="grid grid-cols-2 gap-2">
-              <div><span className="text-muted-foreground">Operations:</span> {stats.operations}</div>
-              <div><span className="text-muted-foreground">Bits Changed:</span> {stats.bitsChanged}</div>
-              <div><span className="text-muted-foreground">Budget Used:</span> {stats.budgetUsed}</div>
-              {stats.tempFile && (
-                <div className="col-span-2 text-primary">
-                  <FileText className="w-3 h-3 inline mr-1" />
-                  {stats.tempFile}
-                </div>
-              )}
-            </div>
-          </div>
-        );
-      } catch {
-        return <span>{entry.content}</span>;
-      }
-    }
-
-    if (entry.type === 'input') {
-      return <PythonCodeHighlight code={entry.content} />;
-    }
-
-    return <span>{entry.content}</span>;
-  };
-
   return (
     <div className="h-full flex flex-col p-4 gap-3">
       {/* Header */}
@@ -625,41 +472,7 @@ export const PythonConsoleTab = () => {
             </DropdownMenuContent>
           </DropdownMenu>
           
-          <Button variant="outline" size="sm" onClick={exportCSV} disabled={!activeTab?.lastResult}>
-            <Download className="w-4 h-4 mr-1" />
-            CSV
-          </Button>
-
           <KeyboardShortcutsDialog />
-        </div>
-      </div>
-
-      {/* Data File Selection */}
-      <div className="flex items-center gap-4 p-3 bg-muted/30 rounded-lg flex-shrink-0">
-        <div className="flex items-center gap-2 flex-1">
-          <Label className="text-sm whitespace-nowrap">Data File:</Label>
-          <Select value={selectedFileId} onValueChange={setSelectedFileId}>
-            <SelectTrigger className="flex-1">
-              <SelectValue placeholder="Select data file..." />
-            </SelectTrigger>
-            <SelectContent>
-              {binaryFiles.map(file => (
-                <SelectItem key={file.id} value={file.id}>
-                  {file.name} ({file.state.model.getBits().length} bits)
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="flex items-center gap-2">
-          <Label className="text-sm">Budget:</Label>
-          <Input
-            type="number"
-            value={budget}
-            onChange={(e) => setBudget(Number(e.target.value))}
-            className="w-20 h-8"
-            min={1}
-          />
         </div>
       </div>
 
@@ -713,10 +526,6 @@ export const PythonConsoleTab = () => {
                 <DropdownMenuItem onClick={copyAllOutput}>
                   <Clipboard className="w-4 h-4 mr-2" />Copy all
                 </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={exportCSV} disabled={!activeTab?.lastResult}>
-                  <Download className="w-4 h-4 mr-2" />Export CSV (Ctrl+E)
-                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
@@ -726,8 +535,8 @@ export const PythonConsoleTab = () => {
             <div className="p-3 font-mono text-sm space-y-2">
               {(!activeTab || activeTab.entries.length === 0) ? (
                 <div className="text-muted-foreground italic">
-                  <p>Python console connected to REAL operations and metrics.</p>
-                  <p className="mt-2 text-xs">Select a data file, then run code with <kbd className="px-1 bg-muted rounded">Ctrl+Enter</kbd></p>
+                  <p>Python console ready. Run any Python code here.</p>
+                  <p className="mt-2 text-xs">Press <kbd className="px-1 bg-muted rounded">Ctrl+Enter</kbd> to run</p>
                 </div>
               ) : (
                 activeTab.entries.map((entry) => (
@@ -740,22 +549,22 @@ export const PythonConsoleTab = () => {
                         ? 'text-red-400'
                         : entry.type === 'info'
                         ? 'text-muted-foreground text-xs'
-                        : entry.type === 'stats'
-                        ? ''
                         : 'text-green-400'
                     }`}
                   >
-                    {renderEntry(entry)}
-                    {entry.type !== 'stats' && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="absolute right-0 top-0 w-6 h-6 opacity-0 group-hover:opacity-100"
-                        onClick={() => copyEntry(entry)}
-                      >
-                        {copiedId === entry.id ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />}
-                      </Button>
+                    {entry.type === 'input' ? (
+                      <PythonCodeHighlight code={entry.content} />
+                    ) : (
+                      <span>{entry.content}</span>
                     )}
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="absolute right-0 top-0 w-6 h-6 opacity-0 group-hover:opacity-100"
+                      onClick={() => copyEntry(entry)}
+                    >
+                      {copiedId === entry.id ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />}
+                    </Button>
                   </div>
                 ))
               )}
@@ -770,7 +579,7 @@ export const PythonConsoleTab = () => {
           value={activeTab?.code || ''}
           onChange={setCode}
           onKeyDown={handleKeyDown}
-          placeholder="Enter Python code... Use 'from bitwise_api import *' for all functions"
+          placeholder="Enter Python code..."
           disabled={isLoading}
           textareaRef={textareaRef}
         />
@@ -783,7 +592,7 @@ export const PythonConsoleTab = () => {
             <Button variant="outline" size="sm" onClick={clearInput} disabled={!activeTab?.code?.trim()}>
               <RotateCcw className="w-4 h-4 mr-1" />Clear
             </Button>
-            <Button onClick={runCode} disabled={isLoading || !activeTab?.code?.trim() || !selectedFileId}>
+            <Button onClick={runCode} disabled={isLoading || !activeTab?.code?.trim()}>
               {isLoading ? (
                 <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Running...</>
               ) : (

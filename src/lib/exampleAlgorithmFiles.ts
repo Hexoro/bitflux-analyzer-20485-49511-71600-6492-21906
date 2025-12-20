@@ -1,6 +1,7 @@
 /**
  * Complete Working Example Algorithm Files
  * Scheduler, Algorithm, Scoring, Policy - all work together
+ * Budget is defined ONLY in the Scoring file
  */
 
 // ===== SCHEDULER =====
@@ -50,7 +51,7 @@ def schedule():
             "segment_id": i,
             "start": start,
             "end": end,
-            "priority": segments - i,  # Earlier segments have higher priority
+            "priority": segments - i,
             "max_iterations": 3
         })
     
@@ -210,16 +211,62 @@ result = execute()
 `;
 
 // ===== SCORING =====
+// NOTE: Budget configuration is defined here, not in UI
 export const EXAMPLE_SCORING = `"""
 Performance Scoring System
 Evaluates algorithm performance based on multiple metrics
-Applies budget economy and efficiency bonuses
+
+*** BUDGET CONFIGURATION ***
+This file defines the budget economy:
+- Initial budget
+- Operation costs
+- Efficiency bonuses
 """
 
 from bitwise_api import (
     get_bits, get_metric, get_all_metrics,
     get_budget, log
 )
+
+# ============================================
+# BUDGET CONFIGURATION (Define budget here!)
+# ============================================
+INITIAL_BUDGET = 1000
+
+OPERATION_COSTS = {
+    "NOT": 1,
+    "AND": 2,
+    "OR": 2,
+    "XOR": 2,
+    "NAND": 3,
+    "NOR": 3,
+    "XNOR": 3,
+    "left_shift": 1,
+    "right_shift": 1,
+    "rotate_left": 2,
+    "rotate_right": 2,
+    "reverse": 1,
+    "invert": 1,
+    "swap_pairs": 2,
+    "swap_nibbles": 2,
+    "mirror": 1,
+}
+
+# Combo discounts for chained operations
+COMBO_DISCOUNTS = [
+    (["NOT", "NOT"], 0.5),      # Double NOT = 50% discount
+    (["XOR", "XOR"], 0.5),      # Double XOR = 50% discount
+    (["left_shift", "right_shift"], 0.3),  # Shift pair = 30% discount
+]
+
+# Budget efficiency bonuses
+BUDGET_THRESHOLDS = [
+    (0.9, 1.5),   # 90%+ remaining = 1.5x bonus
+    (0.7, 1.3),   # 70%+ remaining = 1.3x bonus
+    (0.5, 1.1),   # 50%+ remaining = 1.1x bonus
+    (0.3, 1.0),   # 30%+ remaining = no penalty
+    (0.0, 0.8),   # <30% remaining = 0.8x penalty
+]
 
 # Scoring weights
 WEIGHTS = {
@@ -229,19 +276,9 @@ WEIGHTS = {
     "budget_efficiency": 20
 }
 
-# Budget economy bonuses
-BUDGET_THRESHOLDS = [
-    (0.9, 1.5),   # 90%+ remaining = 1.5x bonus
-    (0.7, 1.3),   # 70%+ remaining = 1.3x bonus
-    (0.5, 1.1),   # 50%+ remaining = 1.1x bonus
-    (0.3, 1.0),   # 30%+ remaining = no penalty
-    (0.0, 0.8),   # <30% remaining = 0.8x penalty
-]
-
 def calculate_entropy_score(metrics):
     """Score based on entropy (lower is better)"""
     entropy = metrics.get('entropy', 1.0)
-    # Convert entropy to score (0-100)
     score = (1.0 - entropy) * 100
     return max(0, min(100, score))
 
@@ -254,29 +291,25 @@ def calculate_compression_score(metrics):
     if max_patterns == 0:
         return 50
     
-    # Fewer unique patterns = better compression
     ratio = unique_patterns / max_patterns
     score = (1.0 - ratio) * 100
     return max(0, min(100, score))
 
 def calculate_balance_score(metrics):
-    """Score based on bit balance (50/50 is neutral)"""
+    """Score based on bit balance"""
     bits = get_bits()
     if len(bits) == 0:
         return 50
     
     ones_ratio = bits.count('1') / len(bits)
-    # Score how far from 0.5 (either direction can be good)
     deviation = abs(ones_ratio - 0.5)
-    
-    # Lower deviation from extreme = higher score
-    score = deviation * 200  # 0-100 scale
+    score = deviation * 200
     return max(0, min(100, score))
 
-def calculate_budget_score(initial_budget=1000):
+def calculate_budget_score():
     """Score based on budget efficiency"""
     remaining = get_budget()
-    ratio = remaining / initial_budget if initial_budget > 0 else 0
+    ratio = remaining / INITIAL_BUDGET if INITIAL_BUDGET > 0 else 0
     
     # Find applicable bonus
     multiplier = 1.0
@@ -285,7 +318,6 @@ def calculate_budget_score(initial_budget=1000):
             multiplier = bonus
             break
     
-    # Base score from remaining budget
     base_score = ratio * 100
     return base_score * multiplier
 
@@ -300,7 +332,6 @@ def calculate_total_score():
         "budget_efficiency": calculate_budget_score()
     }
     
-    # Apply weights
     weighted_total = sum(
         scores[key] * (WEIGHTS[key] / 100)
         for key in scores
@@ -312,6 +343,7 @@ def execute():
     """Main scoring execution"""
     log("=" * 50)
     log("SCORING: Evaluating performance")
+    log(f"Budget Configuration: Initial={INITIAL_BUDGET}")
     
     scores, total = calculate_total_score()
     
@@ -345,7 +377,12 @@ def execute():
     return {
         "scores": scores,
         "total": total,
-        "grade": grade
+        "grade": grade,
+        "budget_config": {
+            "initial": INITIAL_BUDGET,
+            "remaining": get_budget(),
+            "operation_costs": OPERATION_COSTS
+        }
     }
 
 # Run scoring
@@ -368,22 +405,22 @@ from bitwise_api import (
 # Policy Configuration
 POLICY_CONFIG = {
     # Size constraints
-    "max_size_multiplier": 2.0,    # Final size can't exceed 2x initial
-    "min_size_multiplier": 0.1,    # Final size can't go below 10% of initial
+    "max_size_multiplier": 2.0,
+    "min_size_multiplier": 0.1,
     
     # Entropy constraints
-    "max_entropy": 0.999,          # Entropy shouldn't hit maximum
-    "max_entropy_increase": 0.3,   # Entropy shouldn't increase too much
+    "max_entropy": 0.999,
+    "max_entropy_increase": 0.3,
     
-    # Budget constraints
-    "min_budget_remaining": 0.05,  # At least 5% budget should remain
+    # Budget constraints (references Scoring budget)
+    "min_budget_remaining": 0.05,
     
     # Data integrity
-    "require_valid_binary": True,  # Must be valid 0/1 string
-    "min_length": 8,               # Minimum 8 bits
+    "require_valid_binary": True,
+    "min_length": 8,
     
     # Balance constraints
-    "max_imbalance": 0.95,         # Can't be more than 95% ones or zeros
+    "max_imbalance": 0.95,
 }
 
 def check_size_policy(bits, initial_size):
@@ -412,7 +449,7 @@ def check_entropy_policy(metrics, initial_entropy):
     
     return True, f"Entropy OK ({entropy:.4f})"
 
-def check_budget_policy(initial_budget):
+def check_budget_policy(initial_budget=1000):
     """Check budget constraints"""
     remaining = get_budget()
     ratio = remaining / initial_budget if initial_budget > 0 else 0
@@ -433,7 +470,6 @@ def check_data_integrity():
         if not all(b in '01' for b in bits):
             return False, "Invalid binary data (contains non-0/1 characters)"
     
-    # Check balance
     if len(bits) > 0:
         ones_ratio = bits.count('1') / len(bits)
         if ones_ratio > POLICY_CONFIG["max_imbalance"] or ones_ratio < (1 - POLICY_CONFIG["max_imbalance"]):
@@ -482,7 +518,7 @@ def execute():
     log("")
     log("Policy Checks:")
     for r in results:
-        status = "✓ PASS" if r["passed"] else "✗ FAIL"
+        status = "PASS" if r["passed"] else "FAIL"
         log(f"  [{status}] {r['check']}: {r['message']}")
     
     log("")

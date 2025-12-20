@@ -1,6 +1,7 @@
 /**
- * Strategy Tab - Create and manage strategies (presets)
- * V3 - Integrated with StrategyExecutionEngine for full pipeline
+ * Strategy Tab - Create and manage strategies
+ * Runs strategies on selected data files, results go to Results tab
+ * Budget is defined in Scoring files only
  */
 
 import { useState, useEffect } from 'react';
@@ -31,14 +32,12 @@ import {
   Shield,
   Clock,
   Loader2,
-  Download,
   FileText,
-  Activity,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { pythonModuleSystem, PythonFile, StrategyConfig } from '@/lib/pythonModuleSystem';
 import { fileSystemManager, BinaryFile } from '@/lib/fileSystemManager';
-import { strategyExecutionEngine, ExecutionPipelineResult, ScoringConfig } from '@/lib/strategyExecutionEngine';
+import { strategyExecutionEngine, ExecutionPipelineResult } from '@/lib/strategyExecutionEngine';
 import { loadExampleAlgorithmFiles } from '@/lib/exampleAlgorithmFiles';
 
 interface StrategyTabProps {
@@ -52,9 +51,8 @@ export const StrategyTab = ({ onRunStrategy, isExecuting = false }: StrategyTabP
   const [binaryFiles, setBinaryFiles] = useState<BinaryFile[]>([]);
   const [selectedStrategy, setSelectedStrategy] = useState<StrategyConfig | null>(null);
   const [selectedDataFile, setSelectedDataFile] = useState<string>('');
-  const [budget, setBudget] = useState(1000);
   const [isRunning, setIsRunning] = useState(false);
-  const [lastResult, setLastResult] = useState<ExecutionPipelineResult | null>(null);
+  const [executionStatus, setExecutionStatus] = useState<string>('');
 
   // Form state for new strategy
   const [strategyName, setStrategyName] = useState('');
@@ -81,7 +79,22 @@ export const StrategyTab = ({ onRunStrategy, isExecuting = false }: StrategyTabP
     const unsubscribe2 = fileSystemManager.subscribe(() => {
       setBinaryFiles(fileSystemManager.getFiles());
     });
-    return () => { unsubscribe1(); unsubscribe2(); };
+
+    // Subscribe to execution engine updates
+    const unsubscribe3 = strategyExecutionEngine.subscribe((result, status) => {
+      setExecutionStatus(status);
+      if (status === 'completed' && result?.success) {
+        toast.success(`Strategy completed! Check Results tab for details.`);
+      } else if (status === 'failed') {
+        toast.error(`Strategy failed: ${result?.error || 'Unknown error'}`);
+      }
+    });
+
+    return () => { 
+      unsubscribe1(); 
+      unsubscribe2(); 
+      unsubscribe3();
+    };
   }, []);
 
   const schedulerFiles = files.filter(f => f.group === 'scheduler');
@@ -111,7 +124,7 @@ export const StrategyTab = ({ onRunStrategy, isExecuting = false }: StrategyTabP
       return;
     }
     if (selectedScoring.length === 0) {
-      toast.error('Select at least one scoring file');
+      toast.error('Select at least one scoring file (defines budget)');
       return;
     }
 
@@ -166,52 +179,22 @@ export const StrategyTab = ({ onRunStrategy, isExecuting = false }: StrategyTabP
     toast.info('Starting strategy execution...');
 
     try {
-      const scoringConfig: ScoringConfig = {
-        initialBudget: budget,
-        operationCosts: {
-          'NOT': 1, 'AND': 2, 'OR': 2, 'XOR': 2,
-          'NAND': 3, 'NOR': 3, 'XNOR': 3,
-          'left_shift': 1, 'right_shift': 1,
-          'rotate_left': 2, 'rotate_right': 2,
-          'reverse': 1, 'invert': 1,
-        },
-        combos: [],
-      };
-
+      // Budget comes from scoring file - use default config
       const result = await strategyExecutionEngine.executeStrategy(
         selectedStrategy,
-        selectedDataFile,
-        scoringConfig
+        selectedDataFile
       );
 
-      setLastResult(result);
-
       if (result.success) {
-        toast.success(`Strategy completed! Score: ${result.totalScore.toFixed(2)}`);
-      } else {
-        toast.error(`Strategy failed: ${result.error}`);
+        // Results are automatically saved to resultsManager by the engine
+        toast.success(`Strategy completed! Score: ${result.totalScore.toFixed(2)} - Check Results tab`);
       }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Execution failed');
     } finally {
       setIsRunning(false);
+      setExecutionStatus('');
     }
-  };
-
-  const handleExportCSV = () => {
-    if (!lastResult) {
-      toast.error('No results to export. Run a strategy first.');
-      return;
-    }
-    const csv = strategyExecutionEngine.exportFullCSV(lastResult);
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `strategy_${lastResult.strategyName}_${Date.now()}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-    toast.success('Full CSV report exported');
   };
 
   const getValidationStatus = (strategy: StrategyConfig) => {
@@ -252,13 +235,13 @@ export const StrategyTab = ({ onRunStrategy, isExecuting = false }: StrategyTabP
 
   return (
     <div className="h-full flex flex-col gap-4 p-4">
-      {/* Data File & Budget Selection */}
+      {/* Data File Selection */}
       <div className="flex items-center gap-4 p-3 bg-muted/30 rounded-lg flex-shrink-0">
         <div className="flex items-center gap-2 flex-1">
           <Label className="text-sm whitespace-nowrap">Data File:</Label>
           <Select value={selectedDataFile} onValueChange={setSelectedDataFile}>
             <SelectTrigger className="flex-1">
-              <SelectValue placeholder="Select data file..." />
+              <SelectValue placeholder="Select data file to analyze..." />
             </SelectTrigger>
             <SelectContent>
               {binaryFiles.map(file => (
@@ -269,316 +252,320 @@ export const StrategyTab = ({ onRunStrategy, isExecuting = false }: StrategyTabP
             </SelectContent>
           </Select>
         </div>
-        <div className="flex items-center gap-2">
-          <Label className="text-sm">Budget:</Label>
-          <Input
-            type="number"
-            value={budget}
-            onChange={(e) => setBudget(Number(e.target.value))}
-            className="w-24 h-8"
-            min={1}
-          />
-        </div>
-        {lastResult && (
-          <Button variant="outline" size="sm" onClick={handleExportCSV}>
-            <Download className="w-4 h-4 mr-1" />
-            Export CSV
-          </Button>
+        {executionStatus && (
+          <Badge variant="secondary" className="animate-pulse">
+            <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+            {executionStatus}
+          </Badge>
         )}
       </div>
 
       <div className="flex-1 flex gap-4 overflow-hidden">
-      {/* Left: Strategy List */}
-      <div className="w-1/2 flex flex-col gap-4">
-        {/* Create New Strategy */}
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm flex items-center gap-2">
-              <Plus className="w-4 h-4" />
-              Create New Strategy
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label className="text-xs">Strategy Name</Label>
-              <Input
-                value={strategyName}
-                onChange={(e) => setStrategyName(e.target.value)}
-                placeholder="My Analysis Strategy"
-                className="h-9"
-              />
-            </div>
+        {/* Left: Strategy List */}
+        <div className="w-1/2 flex flex-col gap-4">
+          {/* Create New Strategy */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <Plus className="w-4 h-4" />
+                Create New Strategy
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label className="text-xs">Strategy Name</Label>
+                <Input
+                  value={strategyName}
+                  onChange={(e) => setStrategyName(e.target.value)}
+                  placeholder="My Analysis Strategy"
+                  className="h-9"
+                />
+              </div>
 
-            {/* Scheduler - Required, Single Select */}
+              {/* Scheduler - Required, Single Select */}
+              <div className="space-y-2">
+                <Label className="text-xs flex items-center gap-2">
+                  <Clock className="w-3 h-3 text-purple-500" />
+                  Scheduler File
+                  <Badge variant="destructive" className="text-xs">Required</Badge>
+                </Label>
+                {schedulerFiles.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">No scheduler files uploaded</p>
+                ) : (
+                  <Select value={selectedScheduler} onValueChange={setSelectedScheduler}>
+                    <SelectTrigger className="h-9">
+                      <SelectValue placeholder="Select scheduler" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {schedulerFiles.map(f => (
+                        <SelectItem key={f.id} value={f.name}>{f.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+
+              {/* Algorithm - Multiple Select */}
+              <div className="space-y-2">
+                <Label className="text-xs flex items-center gap-2">
+                  <Code className="w-3 h-3 text-primary" />
+                  Algorithm Files
+                  <Badge variant="secondary" className="text-xs">{selectedAlgorithms.length} selected</Badge>
+                </Label>
+                <FileCheckboxList
+                  files={algorithmFiles}
+                  selected={selectedAlgorithms}
+                  onChange={(name) => toggleFile(name, selectedAlgorithms, setSelectedAlgorithms)}
+                  emptyText="No algorithm files uploaded"
+                />
+              </div>
+
+              {/* Scoring - Multiple Select */}
+              <div className="space-y-2">
+                <Label className="text-xs flex items-center gap-2">
+                  <Calculator className="w-3 h-3 text-yellow-500" />
+                  Scoring Files
+                  <Badge variant="secondary" className="text-xs">{selectedScoring.length} selected</Badge>
+                  <span className="text-xs text-muted-foreground">(defines budget)</span>
+                </Label>
+                <FileCheckboxList
+                  files={scoringFiles}
+                  selected={selectedScoring}
+                  onChange={(name) => toggleFile(name, selectedScoring, setSelectedScoring)}
+                  emptyText="No scoring files uploaded"
+                />
+              </div>
+
+              {/* Policies - Multiple Select (Optional) */}
+              <div className="space-y-2">
+                <Label className="text-xs flex items-center gap-2">
+                  <Shield className="w-3 h-3 text-green-500" />
+                  Policy Files
+                  <Badge variant="outline" className="text-xs">Optional</Badge>
+                </Label>
+                <FileCheckboxList
+                  files={policyFiles}
+                  selected={selectedPolicies}
+                  onChange={(name) => toggleFile(name, selectedPolicies, setSelectedPolicies)}
+                  emptyText="No policy files uploaded"
+                />
+              </div>
+
+              <Button
+                onClick={handleCreateStrategy}
+                className="w-full"
+                disabled={!strategyName || !selectedScheduler || selectedAlgorithms.length === 0 || selectedScoring.length === 0}
+              >
+                <Save className="w-4 h-4 mr-2" />
+                Create Strategy
+              </Button>
+            </CardContent>
+          </Card>
+
+          {/* Strategy List */}
+          <ScrollArea className="flex-1">
             <div className="space-y-2">
-              <Label className="text-xs flex items-center gap-2">
-                <Clock className="w-3 h-3 text-purple-500" />
-                Scheduler File
-                <Badge variant="destructive" className="text-xs">Required</Badge>
-              </Label>
-              {schedulerFiles.length === 0 ? (
-                <p className="text-xs text-muted-foreground">No scheduler files uploaded</p>
+              {strategies.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <p>No strategies created yet</p>
+                  <p className="text-sm mt-1">Upload files and create a strategy above</p>
+                </div>
               ) : (
-                <Select value={selectedScheduler} onValueChange={setSelectedScheduler}>
-                  <SelectTrigger className="h-9">
-                    <SelectValue placeholder="Select scheduler" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {schedulerFiles.map(f => (
-                      <SelectItem key={f.id} value={f.name}>{f.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                strategies.map(strategy => {
+                  const validation = getValidationStatus(strategy);
+                  return (
+                    <Card
+                      key={strategy.id}
+                      className={`cursor-pointer transition-colors ${
+                        selectedStrategy?.id === strategy.id ? 'border-primary' : 'hover:bg-muted/30'
+                      }`}
+                      onClick={() => setSelectedStrategy(strategy)}
+                    >
+                      <CardContent className="p-4">
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2">
+                              <h4 className="font-medium">{strategy.name}</h4>
+                              {validation.valid ? (
+                                <CheckCircle2 className="w-4 h-4 text-green-500" />
+                              ) : (
+                                <AlertTriangle className="w-4 h-4 text-destructive" />
+                              )}
+                            </div>
+                            <div className="mt-2 space-y-1 text-xs text-muted-foreground">
+                              <div className="flex items-center gap-2">
+                                <Clock className="w-3 h-3" />
+                                {strategy.schedulerFile}
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Code className="w-3 h-3" />
+                                {strategy.algorithmFiles.length} algorithm(s)
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Calculator className="w-3 h-3" />
+                                {strategy.scoringFiles.length} scoring
+                              </div>
+                              {strategy.policyFiles.length > 0 && (
+                                <div className="flex items-center gap-2">
+                                  <Shield className="w-3 h-3" />
+                                  {strategy.policyFiles.length} policies
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-8 w-8 text-destructive"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteStrategy(strategy.id);
+                            }}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })
               )}
             </div>
+          </ScrollArea>
+        </div>
 
-            {/* Algorithm - Multiple Select */}
-            <div className="space-y-2">
-              <Label className="text-xs flex items-center gap-2">
-                <Code className="w-3 h-3 text-primary" />
-                Algorithm Files
-                <Badge variant="secondary" className="text-xs">{selectedAlgorithms.length} selected</Badge>
-              </Label>
-              <FileCheckboxList
-                files={algorithmFiles}
-                selected={selectedAlgorithms}
-                onChange={(name) => toggleFile(name, selectedAlgorithms, setSelectedAlgorithms)}
-                emptyText="No algorithm files uploaded"
-              />
-            </div>
-
-            {/* Scoring - Multiple Select */}
-            <div className="space-y-2">
-              <Label className="text-xs flex items-center gap-2">
-                <Calculator className="w-3 h-3 text-yellow-500" />
-                Scoring Files
-                <Badge variant="secondary" className="text-xs">{selectedScoring.length} selected</Badge>
-              </Label>
-              <FileCheckboxList
-                files={scoringFiles}
-                selected={selectedScoring}
-                onChange={(name) => toggleFile(name, selectedScoring, setSelectedScoring)}
-                emptyText="No scoring files uploaded"
-              />
-            </div>
-
-            {/* Policies - Multiple Select (Optional) */}
-            <div className="space-y-2">
-              <Label className="text-xs flex items-center gap-2">
-                <Shield className="w-3 h-3 text-green-500" />
-                Policy Files
-                <Badge variant="outline" className="text-xs">Optional</Badge>
-              </Label>
-              <FileCheckboxList
-                files={policyFiles}
-                selected={selectedPolicies}
-                onChange={(name) => toggleFile(name, selectedPolicies, setSelectedPolicies)}
-                emptyText="No policy files uploaded"
-              />
-            </div>
-
-            <Button
-              onClick={handleCreateStrategy}
-              className="w-full"
-              disabled={!strategyName || !selectedScheduler || selectedAlgorithms.length === 0 || selectedScoring.length === 0}
-            >
-              <Save className="w-4 h-4 mr-2" />
-              Create Strategy
-            </Button>
-          </CardContent>
-        </Card>
-
-        {/* Strategy List */}
-        <ScrollArea className="flex-1">
-          <div className="space-y-2">
-            {strategies.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                <p>No strategies created yet</p>
-                <p className="text-sm mt-1">Upload files and create a strategy above</p>
-              </div>
-            ) : (
-              strategies.map(strategy => {
-                const validation = getValidationStatus(strategy);
-                return (
-                  <Card
-                    key={strategy.id}
-                    className={`cursor-pointer transition-colors ${
-                      selectedStrategy?.id === strategy.id ? 'border-primary' : 'hover:bg-muted/30'
-                    }`}
-                    onClick={() => setSelectedStrategy(strategy)}
-                  >
-                    <CardContent className="p-4">
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2">
-                            <h4 className="font-medium">{strategy.name}</h4>
-                            {validation.valid ? (
-                              <CheckCircle2 className="w-4 h-4 text-green-500" />
-                            ) : (
-                              <AlertTriangle className="w-4 h-4 text-destructive" />
-                            )}
-                          </div>
-                          <div className="mt-2 space-y-1 text-xs text-muted-foreground">
-                            <div className="flex items-center gap-2">
-                              <Clock className="w-3 h-3" />
-                              {strategy.schedulerFile}
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <Code className="w-3 h-3" />
-                              {strategy.algorithmFiles.length} algorithm(s)
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <Calculator className="w-3 h-3" />
-                              {strategy.scoringFiles.length} scoring
-                            </div>
-                            {strategy.policyFiles.length > 0 && (
-                              <div className="flex items-center gap-2">
-                                <Shield className="w-3 h-3" />
-                                {strategy.policyFiles.length} policies
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="h-8 w-8 text-destructive"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeleteStrategy(strategy.id);
-                          }}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
+        {/* Right: Selected Strategy Details */}
+        <Card className="w-1/2 flex flex-col">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">
+              {selectedStrategy ? selectedStrategy.name : 'Strategy Details'}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="flex-1 flex flex-col overflow-hidden">
+            {selectedStrategy ? (
+              <>
+                {/* Validation Status */}
+                {(() => {
+                  const validation = getValidationStatus(selectedStrategy);
+                  return (
+                    <div className={`p-3 rounded-lg mb-4 ${validation.valid ? 'bg-green-500/10' : 'bg-destructive/10'}`}>
+                      <div className="flex items-center gap-2">
+                        {validation.valid ? (
+                          <>
+                            <CheckCircle2 className="w-5 h-5 text-green-500" />
+                            <span className="text-green-500 font-medium">Ready to run</span>
+                          </>
+                        ) : (
+                          <>
+                            <XCircle className="w-5 h-5 text-destructive" />
+                            <span className="text-destructive font-medium">Missing files</span>
+                          </>
+                        )}
                       </div>
-                    </CardContent>
-                  </Card>
-                );
-              })
-            )}
-          </div>
-        </ScrollArea>
-      </div>
-
-      {/* Right: Selected Strategy Details */}
-      <Card className="w-1/2 flex flex-col">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm">
-            {selectedStrategy ? selectedStrategy.name : 'Strategy Details'}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="flex-1 flex flex-col overflow-hidden">
-          {selectedStrategy ? (
-            <>
-              {/* Validation Status */}
-              {(() => {
-                const validation = getValidationStatus(selectedStrategy);
-                return (
-                  <div className={`p-3 rounded-lg mb-4 ${validation.valid ? 'bg-green-500/10' : 'bg-destructive/10'}`}>
-                    <div className="flex items-center gap-2">
-                      {validation.valid ? (
-                        <>
-                          <CheckCircle2 className="w-5 h-5 text-green-500" />
-                          <span className="text-green-500 font-medium">Ready to run</span>
-                        </>
-                      ) : (
-                        <>
-                          <XCircle className="w-5 h-5 text-destructive" />
-                          <span className="text-destructive font-medium">Missing files</span>
-                        </>
+                      {!validation.valid && (
+                        <ul className="mt-2 text-sm text-destructive">
+                          {validation.errors.map((err, i) => (
+                            <li key={i}>• {err}</li>
+                          ))}
+                        </ul>
                       )}
                     </div>
-                    {!validation.valid && (
-                      <ul className="mt-2 text-sm text-destructive">
-                        {validation.errors.map((err, i) => (
-                          <li key={i}>• {err}</li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                );
-              })()}
+                  );
+                })()}
 
-              {/* File Details */}
-              <ScrollArea className="flex-1">
-                <div className="space-y-4">
-                  <div className="p-3 border rounded-lg">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Clock className="w-4 h-4 text-purple-500" />
-                      <span className="font-medium">Scheduler</span>
-                    </div>
-                    <p className="font-mono text-sm">{selectedStrategy.schedulerFile}</p>
-                  </div>
-
-                  <div className="p-3 border rounded-lg">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Code className="w-4 h-4 text-primary" />
-                      <span className="font-medium">Algorithms ({selectedStrategy.algorithmFiles.length})</span>
-                    </div>
-                    <div className="space-y-1">
-                      {selectedStrategy.algorithmFiles.map(f => (
-                        <p key={f} className="font-mono text-sm">{f}</p>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="p-3 border rounded-lg">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Calculator className="w-4 h-4 text-yellow-500" />
-                      <span className="font-medium">Scoring ({selectedStrategy.scoringFiles.length})</span>
-                    </div>
-                    <div className="space-y-1">
-                      {selectedStrategy.scoringFiles.map(f => (
-                        <p key={f} className="font-mono text-sm">{f}</p>
-                      ))}
-                    </div>
-                  </div>
-
-                  {selectedStrategy.policyFiles.length > 0 && (
+                {/* File Details */}
+                <ScrollArea className="flex-1">
+                  <div className="space-y-4">
                     <div className="p-3 border rounded-lg">
                       <div className="flex items-center gap-2 mb-2">
-                        <Shield className="w-4 h-4 text-green-500" />
-                        <span className="font-medium">Policies ({selectedStrategy.policyFiles.length})</span>
+                        <Clock className="w-4 h-4 text-purple-500" />
+                        <span className="font-medium">Scheduler</span>
+                      </div>
+                      <p className="font-mono text-sm">{selectedStrategy.schedulerFile}</p>
+                    </div>
+
+                    <div className="p-3 border rounded-lg">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Code className="w-4 h-4 text-primary" />
+                        <span className="font-medium">Algorithms ({selectedStrategy.algorithmFiles.length})</span>
                       </div>
                       <div className="space-y-1">
-                        {selectedStrategy.policyFiles.map(f => (
+                        {selectedStrategy.algorithmFiles.map(f => (
                           <p key={f} className="font-mono text-sm">{f}</p>
                         ))}
                       </div>
                     </div>
-                  )}
-                </div>
-              </ScrollArea>
 
-              {/* Run Button */}
-              <Button
-                onClick={handleRunStrategy}
-                className="w-full mt-4"
-                disabled={isExecuting || !getValidationStatus(selectedStrategy).valid}
-              >
-                {isExecuting ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Executing...
-                  </>
-                ) : (
-                  <>
-                    <Play className="w-4 h-4 mr-2" />
-                    Run Strategy
-                  </>
-                )}
-              </Button>
-            </>
-          ) : (
-            <div className="h-full flex items-center justify-center text-muted-foreground">
-              <div className="text-center">
-                <Code className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                <p>Select a strategy to view details</p>
+                    <div className="p-3 border rounded-lg">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Calculator className="w-4 h-4 text-yellow-500" />
+                        <span className="font-medium">Scoring ({selectedStrategy.scoringFiles.length})</span>
+                        <span className="text-xs text-muted-foreground">(defines budget)</span>
+                      </div>
+                      <div className="space-y-1">
+                        {selectedStrategy.scoringFiles.map(f => (
+                          <p key={f} className="font-mono text-sm">{f}</p>
+                        ))}
+                      </div>
+                    </div>
+
+                    {selectedStrategy.policyFiles.length > 0 && (
+                      <div className="p-3 border rounded-lg">
+                        <div className="flex items-center gap-2 mb-2">
+                          <Shield className="w-4 h-4 text-green-500" />
+                          <span className="font-medium">Policies ({selectedStrategy.policyFiles.length})</span>
+                        </div>
+                        <div className="space-y-1">
+                          {selectedStrategy.policyFiles.map(f => (
+                            <p key={f} className="font-mono text-sm">{f}</p>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Info about results */}
+                    <div className="p-3 border rounded-lg bg-muted/30">
+                      <div className="flex items-center gap-2 mb-2">
+                        <FileText className="w-4 h-4 text-primary" />
+                        <span className="font-medium">Results</span>
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        Results will be saved to the Results tab with full CSV export, 
+                        step-by-step transformations, and metrics comparison.
+                      </p>
+                    </div>
+                  </div>
+                </ScrollArea>
+
+                {/* Run Button */}
+                <Button
+                  onClick={handleRunStrategy}
+                  className="w-full mt-4"
+                  disabled={isRunning || isExecuting || !getValidationStatus(selectedStrategy).valid || !selectedDataFile}
+                >
+                  {isRunning ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      {executionStatus || 'Executing...'}
+                    </>
+                  ) : (
+                    <>
+                      <Play className="w-4 h-4 mr-2" />
+                      Run Strategy
+                    </>
+                  )}
+                </Button>
+              </>
+            ) : (
+              <div className="h-full flex items-center justify-center text-muted-foreground">
+                <div className="text-center">
+                  <Code className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                  <p>Select a strategy to view details</p>
+                </div>
               </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+            )}
+          </CardContent>
+        </Card>
       </div>
     </div>
   );
