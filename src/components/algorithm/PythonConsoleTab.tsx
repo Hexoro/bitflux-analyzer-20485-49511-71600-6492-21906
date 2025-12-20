@@ -1,10 +1,10 @@
 /**
- * Python Console Tab - Simple CLI for running Python scripts
+ * Python Console Tab - Master Control CLI
  * Features:
- * - Syntax highlighting (Prism)
- * - Command history
- * - Multiple terminal tabs
- * - Example snippets
+ * - Load files, run strategies, manage temp files
+ * - Full execution logging
+ * - Syntax highlighting
+ * - Command history and multiple terminals
  */
 
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
@@ -41,14 +41,20 @@ import {
   MoreVertical,
   RotateCcw,
   Clipboard,
+  FolderOpen,
+  Zap,
+  Settings,
 } from 'lucide-react';
 import { pythonExecutor } from '@/lib/pythonExecutor';
+import { fileSystemManager } from '@/lib/fileSystemManager';
+import { pythonModuleSystem } from '@/lib/pythonModuleSystem';
+import { strategyExecutionEngine } from '@/lib/strategyExecutionEngine';
 import { toast } from 'sonner';
 import { Highlight, themes } from 'prism-react-renderer';
 
 interface ConsoleEntry {
   id: string;
-  type: 'input' | 'output' | 'error' | 'info';
+  type: 'input' | 'output' | 'error' | 'info' | 'success';
   content: string;
   timestamp: Date;
 }
@@ -75,32 +81,76 @@ for i in range(5):
     print(f"  Count: {i}")`,
   },
   {
-    name: 'Math Operations',
-    code: `import math
+    name: 'Load and Analyze File',
+    code: `from bitwise_api import get_bits, get_all_metrics, log
 
-# Calculate some values
-print(f"Pi: {math.pi:.6f}")
-print(f"E: {math.e:.6f}")
-print(f"sqrt(2): {math.sqrt(2):.6f}")
+# Get current bits
+bits = get_bits()
+print(f"Current data: {len(bits)} bits")
 
-# Fibonacci
-fib = [0, 1]
-for i in range(10):
-    fib.append(fib[-1] + fib[-2])
-print(f"Fibonacci: {fib}")`,
+# Get all metrics
+metrics = get_all_metrics()
+for name, value in metrics.items():
+    print(f"  {name}: {value:.4f}")`,
   },
   {
-    name: 'Data Processing',
-    code: `# Simple data analysis
-data = [23, 45, 12, 67, 89, 34, 56, 78, 90, 11]
+    name: 'Apply Operations',
+    code: `from bitwise_api import (
+    get_bits, apply_operation, apply_operation_range,
+    get_metric, log
+)
 
-print(f"Data: {data}")
-print(f"Sum: {sum(data)}")
-print(f"Average: {sum(data)/len(data):.2f}")
-print(f"Min: {min(data)}")
-print(f"Max: {max(data)}")
-print(f"Sorted: {sorted(data)}")`,
+# Get initial state
+bits = get_bits()
+print(f"Initial: {len(bits)} bits, entropy={get_metric('entropy'):.4f}")
+
+# Apply XOR to first 32 bits
+apply_operation_range('XOR', 0, 32)
+print(f"After XOR: entropy={get_metric('entropy'):.4f}")
+
+# Apply NOT
+apply_operation('NOT')
+print(f"After NOT: entropy={get_metric('entropy'):.4f}")`,
   },
+  {
+    name: 'List Available Operations',
+    code: `from bitwise_api import get_available_operations, get_available_metrics
+
+print("Available Operations:")
+for op in get_available_operations():
+    print(f"  - {op}")
+
+print("\\nAvailable Metrics:")
+for metric in get_available_metrics():
+    print(f"  - {metric}")`,
+  },
+  {
+    name: 'Budget Management',
+    code: `from bitwise_api import get_budget, deduct_budget, get_cost, log
+
+budget = get_budget()
+print(f"Current budget: {budget}")
+
+# Check operation costs
+ops = ['NOT', 'XOR', 'AND', 'left_shift']
+for op in ops:
+    cost = get_cost(op)
+    print(f"  {op}: {cost}")
+
+# Deduct some budget
+if deduct_budget(10):
+    print(f"Deducted 10, remaining: {get_budget()}")`,
+  },
+];
+
+const CLI_COMMANDS = [
+  { cmd: 'help()', desc: 'Show available commands' },
+  { cmd: 'list_files()', desc: 'List all files in sidebar' },
+  { cmd: 'load_file("name")', desc: 'Load a file by name' },
+  { cmd: 'list_strategies()', desc: 'List all strategies' },
+  { cmd: 'run_strategy("name")', desc: 'Run a strategy by name' },
+  { cmd: 'cleanup_temp()', desc: 'Clean up temp files' },
+  { cmd: 'get_results()', desc: 'Get recent results' },
 ];
 
 const KEYBOARD_SHORTCUTS = [
@@ -162,7 +212,7 @@ const SyntaxTextarea = ({
   };
 
   return (
-    <div className="relative font-mono text-sm min-h-[150px] border rounded-md overflow-hidden bg-card">
+    <div className="relative font-mono text-sm min-h-[120px] border rounded-md overflow-hidden bg-card">
       <div 
         className="absolute inset-0 p-3 pointer-events-none overflow-hidden whitespace-pre-wrap break-words"
         style={{ transform: `translate(${-scrollLeft}px, ${-scrollTop}px)` }}
@@ -180,7 +230,7 @@ const SyntaxTextarea = ({
         onKeyDown={onKeyDown}
         onScroll={handleScroll}
         disabled={disabled}
-        className="relative z-10 w-full h-full min-h-[150px] p-3 bg-transparent text-transparent caret-foreground resize-none outline-none"
+        className="relative z-10 w-full h-full min-h-[120px] p-3 bg-transparent text-transparent caret-foreground resize-none outline-none"
         spellCheck={false}
         style={{ caretColor: 'hsl(var(--foreground))' }}
       />
@@ -219,7 +269,12 @@ export const PythonConsoleTab = () => {
   const [tabs, setTabs] = useState<TerminalTab[]>([{
     id: 'terminal-1',
     name: 'Terminal 1',
-    entries: [],
+    entries: [{
+      id: 'welcome',
+      type: 'info',
+      content: '🐍 Python Console - Master Control CLI\nType help() for available commands\n',
+      timestamp: new Date(),
+    }],
     history: [],
     historyIndex: -1,
     code: '',
@@ -332,7 +387,7 @@ export const PythonConsoleTab = () => {
     if (!code.trim()) return;
 
     setIsLoading(true);
-    addEntry('input', code);
+    addEntry('input', `>>> ${code.split('\n').join('\n... ')}`);
 
     updateActiveTab(tab => ({
       ...tab,
@@ -342,34 +397,138 @@ export const PythonConsoleTab = () => {
 
     try {
       if (!pythonExecutor.isReady()) {
-        addEntry('info', 'Loading Python runtime (first time only)...');
+        addEntry('info', '⏳ Loading Python runtime (first time only)...');
         await pythonExecutor.loadPyodide();
       }
 
-      // Run simple Python code with default context
-      const result = await pythonExecutor.sandboxTest(code, {
-        bits: '01010101',
+      // Get active file for context
+      const activeFile = fileSystemManager.getActiveFile();
+      const bits = activeFile?.state.model.getBits() || '01010101';
+
+      // Create enhanced context with CLI commands
+      const enhancedCode = `
+# CLI Helper Functions
+def help():
+    """Show available commands"""
+    commands = [
+        ("help()", "Show this help message"),
+        ("list_files()", "List all files in sidebar"),
+        ("load_file('name')", "Load a file by name"),
+        ("list_strategies()", "List all strategies"),
+        ("run_strategy('name')", "Run a strategy by name"),
+        ("cleanup_temp()", "Clean up temp files"),
+        ("get_results()", "Get recent results count"),
+    ]
+    print("Available CLI Commands:")
+    for cmd, desc in commands:
+        print(f"  {cmd:25} - {desc}")
+    return "Type any command to execute"
+
+def list_files():
+    """List all files"""
+    log("[FILES]")
+    return "Check console output for file list"
+
+def list_strategies():
+    """List all strategies"""
+    log("[STRATEGIES]")
+    return "Check console output for strategies"
+
+def run_strategy(name):
+    """Run a strategy by name"""
+    log(f"[RUN_STRATEGY] {name}")
+    return f"Strategy '{name}' execution requested"
+
+def load_file(name):
+    """Load a file by name"""
+    log(f"[LOAD_FILE] {name}")
+    return f"File '{name}' load requested"
+
+def cleanup_temp():
+    """Clean up temp files"""
+    log("[CLEANUP_TEMP]")
+    return "Temp file cleanup requested"
+
+def get_results():
+    """Get results count"""
+    log("[GET_RESULTS]")
+    return "Check console output for results"
+
+# User code
+${code}
+`;
+
+      // Run with full context
+      const result = await pythonExecutor.sandboxTest(enhancedCode, {
+        bits,
         budget: 1000,
         metrics: {},
-        operations: ['NOT', 'AND', 'OR', 'XOR']
+        operations: ['NOT', 'AND', 'OR', 'XOR', 'NAND', 'NOR', 'XNOR', 'left_shift', 'right_shift', 'rotate_left', 'rotate_right', 'reverse', 'invert']
       });
 
-      // Add output
-      if (result.output !== null && result.output !== undefined) {
-        addEntry('output', String(result.output));
-      }
-
-      // Add logs
-      result.logs.forEach(log => {
-        if (log.startsWith('[ERROR]')) {
+      // Process CLI commands from logs
+      for (const log of result.logs) {
+        if (log.startsWith('[FILES]')) {
+          const files = fileSystemManager.getFiles();
+          addEntry('output', `📁 Files (${files.length}):\n${files.map(f => `  ${f.isTemp ? '⏱️' : '📄'} ${f.name} (${f.state.model.getBits().length} bits)`).join('\n')}`);
+        } else if (log.startsWith('[STRATEGIES]')) {
+          const strategies = pythonModuleSystem.getAllStrategies();
+          addEntry('output', `📋 Strategies (${strategies.length}):\n${strategies.map(s => `  - ${s.name}`).join('\n') || '  (none)'}`);
+        } else if (log.startsWith('[RUN_STRATEGY]')) {
+          const stratName = log.replace('[RUN_STRATEGY]', '').trim();
+          const strategies = pythonModuleSystem.getAllStrategies();
+          const strategy = strategies.find(s => s.name.toLowerCase().includes(stratName.toLowerCase()));
+          if (strategy) {
+            const activeFile = fileSystemManager.getActiveFile();
+            if (activeFile) {
+              addEntry('info', `🚀 Running strategy: ${strategy.name}...`);
+              try {
+                const stratResult = await strategyExecutionEngine.executeStrategy(strategy, activeFile.id);
+                addEntry('success', `✅ Strategy completed!\n  Score: ${stratResult.totalScore.toFixed(2)}\n  Operations: ${stratResult.totalOperations}\n  Duration: ${stratResult.totalDuration}ms`);
+              } catch (e) {
+                addEntry('error', `❌ Strategy failed: ${e}`);
+              }
+            } else {
+              addEntry('error', 'No active file selected');
+            }
+          } else {
+            addEntry('error', `Strategy "${stratName}" not found`);
+          }
+        } else if (log.startsWith('[LOAD_FILE]')) {
+          const fileName = log.replace('[LOAD_FILE]', '').trim();
+          const files = fileSystemManager.getFiles();
+          const file = files.find(f => f.name.toLowerCase().includes(fileName.toLowerCase()));
+          if (file) {
+            fileSystemManager.setActiveFile(file.id);
+            addEntry('success', `📄 Loaded: ${file.name} (${file.state.model.getBits().length} bits)`);
+          } else {
+            addEntry('error', `File "${fileName}" not found`);
+          }
+        } else if (log.startsWith('[CLEANUP_TEMP]')) {
+          const { deleted, remaining } = fileSystemManager.cleanupTempFiles();
+          addEntry('success', `🧹 Cleaned up ${deleted} temp files (${remaining} remaining)`);
+        } else if (log.startsWith('[GET_RESULTS]')) {
+          const { resultsManager } = await import('@/lib/resultsManager');
+          const stats = resultsManager.getStatistics();
+          addEntry('output', `📊 Results: ${stats.totalResults} total, ${stats.bookmarkedCount} bookmarked, ${stats.successRate.toFixed(0)}% success rate`);
+        } else if (log.startsWith('[ERROR]')) {
           addEntry('error', log);
+        } else if (log.startsWith('[WARN]')) {
+          addEntry('info', log);
         } else {
           addEntry('output', log);
         }
-      });
+      }
+
+      // Add output
+      if (result.output !== null && result.output !== undefined && result.output !== 'None') {
+        addEntry('output', String(result.output));
+      }
 
       if (result.error) {
         addEntry('error', result.error);
+      } else if (result.transformations.length > 0) {
+        addEntry('success', `✓ ${result.transformations.length} transformations, ${result.stats.totalBitsChanged} bits changed`);
       } else {
         addEntry('info', `✓ Completed in ${result.duration.toFixed(0)}ms`);
       }
@@ -447,6 +606,7 @@ export const PythonConsoleTab = () => {
         <div className="flex items-center gap-2">
           <Terminal className="w-5 h-5" />
           <h3 className="font-semibold">Python Console</h3>
+          <Badge variant="outline" className="text-xs">Master CLI</Badge>
           {isPyodideReady ? (
             <Badge variant="default" className="bg-green-600">
               <CheckCircle className="w-3 h-3 mr-1" />
@@ -465,13 +625,33 @@ export const PythonConsoleTab = () => {
         <div className="flex items-center gap-2 flex-wrap">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm">Examples</Button>
+              <Button variant="outline" size="sm">
+                <FileCode className="w-4 h-4 mr-1" />
+                Examples
+              </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent>
+            <DropdownMenuContent align="end">
               {EXAMPLE_SNIPPETS.map((snippet) => (
                 <DropdownMenuItem key={snippet.name} onClick={() => loadSnippet(snippet)}>
-                  <FileCode className="w-4 h-4 mr-2" />
+                  <Zap className="w-4 h-4 mr-2" />
                   {snippet.name}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm">
+                <Settings className="w-4 h-4 mr-1" />
+                Commands
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {CLI_COMMANDS.map((cmd) => (
+                <DropdownMenuItem key={cmd.cmd} onClick={() => setCode(cmd.cmd)}>
+                  <code className="text-xs mr-2">{cmd.cmd}</code>
+                  <span className="text-muted-foreground text-xs">{cmd.desc}</span>
                 </DropdownMenuItem>
               ))}
             </DropdownMenuContent>
@@ -499,7 +679,7 @@ export const PythonConsoleTab = () => {
               <Button
                 variant="ghost"
                 size="icon"
-                className="w-4 h-4 p-0 ml-1 hover:bg-destructive/20"
+                className="h-4 w-4 p-0 ml-1"
                 onClick={(e) => { e.stopPropagation(); closeTab(tab.id); }}
               >
                 <X className="w-3 h-3" />
@@ -507,75 +687,44 @@ export const PythonConsoleTab = () => {
             )}
           </div>
         ))}
-        <Button variant="ghost" size="icon" className="w-7 h-7 flex-shrink-0" onClick={addTab}>
+        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={addTab}>
           <Plus className="w-4 h-4" />
         </Button>
       </div>
 
       {/* Console Output */}
       <Card className="flex-1 overflow-hidden">
-        <CardHeader className="py-2 px-3 flex-row items-center justify-between">
-          <CardTitle className="text-sm">Output</CardTitle>
-          <div className="flex items-center gap-2">
-            {activeTab?.history.length ? (
-              <Badge variant="outline" className="text-xs">{activeTab.history.length} in history</Badge>
-            ) : null}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm"><MoreVertical className="w-4 h-4" /></Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={clearConsole}>
-                  <Trash2 className="w-4 h-4 mr-2" />Clear (Ctrl+L)
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={copyAllOutput}>
-                  <Clipboard className="w-4 h-4 mr-2" />Copy all
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+        <ScrollArea className="h-full" ref={scrollRef as any}>
+          <div className="p-3 font-mono text-sm space-y-2">
+            {activeTab?.entries.map(entry => (
+              <div 
+                key={entry.id} 
+                className={`group relative p-2 rounded ${
+                  entry.type === 'input' ? 'bg-muted/30 text-muted-foreground' :
+                  entry.type === 'error' ? 'bg-destructive/10 text-destructive' :
+                  entry.type === 'success' ? 'bg-green-500/10 text-green-500' :
+                  entry.type === 'info' ? 'bg-blue-500/10 text-blue-400' :
+                  'bg-background'
+                }`}
+              >
+                <pre className="whitespace-pre-wrap break-words">{entry.content}</pre>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="absolute top-1 right-1 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                  onClick={() => copyEntry(entry)}
+                >
+                  {copiedId === entry.id ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                </Button>
+              </div>
+            ))}
+            {activeTab?.entries.length === 0 && (
+              <div className="text-muted-foreground text-center py-4">
+                Console is empty. Type code below and press Ctrl+Enter to run.
+              </div>
+            )}
           </div>
-        </CardHeader>
-        <CardContent className="p-0 h-[calc(100%-40px)]">
-          <ScrollArea className="h-full" ref={scrollRef}>
-            <div className="p-3 font-mono text-sm space-y-2">
-              {(!activeTab || activeTab.entries.length === 0) ? (
-                <div className="text-muted-foreground italic">
-                  <p>Python console ready. Run any Python code here.</p>
-                  <p className="mt-2 text-xs">Press <kbd className="px-1 bg-muted rounded">Ctrl+Enter</kbd> to run</p>
-                </div>
-              ) : (
-                activeTab.entries.map((entry) => (
-                  <div
-                    key={entry.id}
-                    className={`group whitespace-pre-wrap relative pr-8 ${
-                      entry.type === 'input'
-                        ? 'border-l-2 border-blue-400 pl-2 bg-blue-400/5 py-1 rounded'
-                        : entry.type === 'error'
-                        ? 'text-red-400'
-                        : entry.type === 'info'
-                        ? 'text-muted-foreground text-xs'
-                        : 'text-green-400'
-                    }`}
-                  >
-                    {entry.type === 'input' ? (
-                      <PythonCodeHighlight code={entry.content} />
-                    ) : (
-                      <span>{entry.content}</span>
-                    )}
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="absolute right-0 top-0 w-6 h-6 opacity-0 group-hover:opacity-100"
-                      onClick={() => copyEntry(entry)}
-                    >
-                      {copiedId === entry.id ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />}
-                    </Button>
-                  </div>
-                ))
-              )}
-            </div>
-          </ScrollArea>
-        </CardContent>
+        </ScrollArea>
       </Card>
 
       {/* Input Area */}
@@ -584,26 +733,27 @@ export const PythonConsoleTab = () => {
           value={activeTab?.code || ''}
           onChange={setCode}
           onKeyDown={handleKeyDown}
-          placeholder="Enter Python code..."
+          placeholder="Enter Python code... (Ctrl+Enter to run)"
           disabled={isLoading}
           textareaRef={textareaRef}
         />
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3 text-xs text-muted-foreground">
-            <span><kbd className="px-1 bg-muted rounded">Ctrl+Enter</kbd> run</span>
-            <span><kbd className="px-1 bg-muted rounded">Ctrl+↑/↓</kbd> history</span>
-          </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={clearInput} disabled={!activeTab?.code?.trim()}>
-              <RotateCcw className="w-4 h-4 mr-1" />Clear
-            </Button>
-            <Button onClick={runCode} disabled={isLoading || !activeTab?.code?.trim()}>
+            <Button onClick={runCode} disabled={isLoading || !activeTab?.code.trim()}>
               {isLoading ? (
-                <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Running...</>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
               ) : (
-                <><Play className="w-4 h-4 mr-2" />Run</>
+                <Play className="w-4 h-4 mr-2" />
               )}
+              Run (Ctrl+Enter)
             </Button>
+            <Button variant="outline" onClick={clearConsole}>
+              <Trash2 className="w-4 h-4 mr-2" />
+              Clear
+            </Button>
+          </div>
+          <div className="text-xs text-muted-foreground">
+            {activeTab?.history.length || 0} commands in history
           </div>
         </div>
       </div>

@@ -1,6 +1,6 @@
 /**
- * Results Tab - Displays execution results with full CSV export and sorting
- * Results come from strategy execution, sorted and stored by metrics
+ * Results Tab V2 - Enhanced with rich cards, Player button, and comparison feature
+ * Displays execution results with full CSV export and sorting
  */
 
 import { useState, useEffect, useMemo } from 'react';
@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Select,
   SelectContent,
@@ -17,6 +18,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
 import {
   Download,
   Bookmark,
@@ -37,11 +45,15 @@ import {
   Zap,
   DollarSign,
   BarChart3,
+  Play,
+  GitCompare,
+  X,
+  Layers,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { resultsManager, ExecutionResultV2 } from '@/lib/resultsManager';
 import { fileSystemManager } from '@/lib/fileSystemManager';
-import { ExecutionResult } from '@/components/algorithm/PlayerTab';
+import { ExecutionResult, TransformationStep } from '@/components/algorithm/PlayerTab';
 
 interface ResultsTabProps {
   onSelectResult?: (result: ExecutionResult | null) => void;
@@ -58,6 +70,11 @@ export const ResultsTab = ({ onSelectResult }: ResultsTabProps) => {
   const [newTag, setNewTag] = useState('');
   const [sortField, setSortField] = useState<SortField>('date');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+  
+  // Comparison mode
+  const [compareMode, setCompareMode] = useState(false);
+  const [compareIds, setCompareIds] = useState<string[]>([]);
+  const [showCompareDialog, setShowCompareDialog] = useState(false);
 
   useEffect(() => {
     setResults(resultsManager.getAllResults());
@@ -95,7 +112,6 @@ export const ResultsTab = ({ onSelectResult }: ResultsTabProps) => {
           bVal = b.benchmarks.operationCount;
           break;
         case 'score':
-          // Use total cost as proxy for score if available
           aVal = a.benchmarks.totalCost || 0;
           bVal = b.benchmarks.totalCost || 0;
           break;
@@ -120,11 +136,13 @@ export const ResultsTab = ({ onSelectResult }: ResultsTabProps) => {
 
   const handleSelect = (result: ExecutionResultV2) => {
     setSelectedResult(result);
-    
+  };
+
+  const handleOpenInPlayer = (result: ExecutionResultV2) => {
     // Create temp file in sidebar for viewing
     const fileName = `result_${result.strategyName.replace(/\s+/g, '_')}_${Date.now()}.tmp`;
     const tempFile = fileSystemManager.createFile(fileName, result.finalBits, 'binary');
-    tempFile.group = 'Results';
+    fileSystemManager.setFileGroup(tempFile.id, 'Results');
     fileSystemManager.setActiveFile(tempFile.id);
     
     // Convert to ExecutionResult format for player with bit ranges
@@ -141,81 +159,139 @@ export const ResultsTab = ({ onSelectResult }: ResultsTabProps) => {
         params: s.params || {}, 
         stepIndex: i, 
         timestamp: new Date(),
-        bitRanges: (s as any).bitRanges || []
+        bitRanges: (s as any).bitRanges || [],
+        cost: (s as any).cost || 1,
       })),
       totalDuration: result.duration,
       startTime: new Date(result.startTime),
       endTime: new Date(result.endTime),
       metricsHistory: {},
       success: result.status === 'completed',
-      resourceUsage: { peakMemory: 0, cpuTime: result.duration, operationsCount: result.steps.length }
+      resourceUsage: { 
+        peakMemory: result.benchmarks.peakMemory, 
+        cpuTime: result.duration, 
+        operationsCount: result.steps.length 
+      },
+      budgetConfig: {
+        initial: 1000,
+        used: result.benchmarks.totalCost || 0,
+        remaining: 1000 - (result.benchmarks.totalCost || 0),
+      }
     };
     onSelectResult?.(executionResult);
-    toast.success('Result loaded - temp file created in sidebar');
+    toast.success('Result loaded in Player - check Player tab');
   };
 
   const handleExportCSV = (result: ExecutionResultV2) => {
-    // Generate comprehensive CSV
+    // Generate comprehensive CSV with all details
     const lines: string[] = [];
     
-    // Header
-    lines.push('# Strategy Execution Report');
+    // Header section
+    lines.push('# ====================================');
+    lines.push('# STRATEGY EXECUTION REPORT');
+    lines.push('# ====================================');
     lines.push(`# Strategy: ${result.strategyName}`);
     lines.push(`# Executed: ${new Date(result.startTime).toISOString()}`);
     lines.push(`# Duration: ${result.duration}ms`);
+    lines.push(`# Status: ${result.status}`);
     lines.push('');
     
-    // Summary
-    lines.push('## Summary');
+    // Summary section
+    lines.push('# ====================================');
+    lines.push('# SUMMARY');
+    lines.push('# ====================================');
     lines.push('Metric,Value');
     lines.push(`Status,${result.status}`);
     lines.push(`Total Steps,${result.steps.length}`);
     lines.push(`Total Operations,${result.benchmarks.operationCount}`);
     lines.push(`Initial Size,${result.initialBits.length} bits`);
     lines.push(`Final Size,${result.finalBits.length} bits`);
+    lines.push(`Size Change,${result.finalBits.length - result.initialBits.length} bits`);
     lines.push(`Total Cost,${result.benchmarks.totalCost}`);
     lines.push(`Avg Step Duration,${result.benchmarks.avgStepDuration.toFixed(2)}ms`);
+    lines.push(`Peak Memory,${result.benchmarks.peakMemory} bytes`);
     lines.push('');
     
-    // Metrics Comparison
-    lines.push('## Metrics Comparison');
-    lines.push('Metric,Initial,Final,Change');
+    // Metrics Comparison section
+    lines.push('# ====================================');
+    lines.push('# METRICS COMPARISON');
+    lines.push('# ====================================');
+    lines.push('Metric,Initial,Final,Change,Change %');
     if (result.initialMetrics && result.finalMetrics) {
       Object.keys(result.initialMetrics).forEach(key => {
         const initial = result.initialMetrics[key] || 0;
         const final = result.finalMetrics[key] || initial;
         const change = final - initial;
-        lines.push(`${key},${initial.toFixed(6)},${final.toFixed(6)},${change >= 0 ? '+' : ''}${change.toFixed(6)}`);
+        const changePercent = initial !== 0 ? ((change / initial) * 100).toFixed(2) : 'N/A';
+        lines.push(`${key},${initial.toFixed(6)},${final.toFixed(6)},${change >= 0 ? '+' : ''}${change.toFixed(6)},${changePercent}%`);
       });
     }
     lines.push('');
     
-    // Transformations
-    lines.push('## All Transformations');
-    lines.push('Step,Operation,Parameters,Before Size,After Size,Duration (ms)');
-    result.steps.forEach(step => {
+    // All Transformations section
+    lines.push('# ====================================');
+    lines.push('# ALL TRANSFORMATIONS');
+    lines.push('# ====================================');
+    lines.push('Step,Operation,Parameters,Before Size,After Size,Bits Changed,Duration (ms),Cost');
+    result.steps.forEach((step, idx) => {
+      const bitsChanged = countChangedBits(step.beforeBits, step.afterBits);
+      const cost = (step as any).cost || 1;
       lines.push([
-        step.index,
+        idx + 1,
         step.operation,
-        `"${JSON.stringify(step.params || {})}"`,
+        `"${JSON.stringify(step.params || {}).replace(/"/g, '""')}"`,
         step.beforeBits.length,
         step.afterBits.length,
+        bitsChanged,
         step.duration.toFixed(2),
+        cost,
       ].join(','));
     });
     lines.push('');
     
-    // Files Used
-    lines.push('## Files Used');
+    // Operation Summary
+    lines.push('# ====================================');
+    lines.push('# OPERATION SUMMARY');
+    lines.push('# ====================================');
+    lines.push('Operation,Count,Total Cost');
+    const opCounts: Record<string, { count: number; cost: number }> = {};
+    result.steps.forEach(step => {
+      const cost = (step as any).cost || 1;
+      if (!opCounts[step.operation]) {
+        opCounts[step.operation] = { count: 0, cost: 0 };
+      }
+      opCounts[step.operation].count++;
+      opCounts[step.operation].cost += cost;
+    });
+    Object.entries(opCounts).forEach(([op, data]) => {
+      lines.push(`${op},${data.count},${data.cost}`);
+    });
+    lines.push('');
+    
+    // Files Used section
+    lines.push('# ====================================');
+    lines.push('# FILES USED');
+    lines.push('# ====================================');
     lines.push('Type,Files');
     lines.push(`Algorithm,${result.filesUsed.algorithm}`);
     lines.push(`Scoring,${result.filesUsed.scoring}`);
     lines.push(`Policy,${result.filesUsed.policy}`);
     lines.push('');
     
+    // Tags
+    if (result.tags.length > 0) {
+      lines.push('# ====================================');
+      lines.push('# TAGS');
+      lines.push('# ====================================');
+      lines.push(`Tags,"${result.tags.join(', ')}"`);
+      lines.push('');
+    }
+    
     // Notes
     if (result.notes) {
-      lines.push('## Notes');
+      lines.push('# ====================================');
+      lines.push('# NOTES');
+      lines.push('# ====================================');
       lines.push(`"${result.notes.replace(/"/g, '""')}"`);
     }
     
@@ -227,7 +303,7 @@ export const ResultsTab = ({ onSelectResult }: ResultsTabProps) => {
     a.download = `result_${result.strategyName}_${new Date(result.startTime).toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
-    toast.success('Full CSV exported');
+    toast.success('Full CSV exported with all details');
   };
 
   const handleExportJSON = (result: ExecutionResultV2) => {
@@ -266,6 +342,16 @@ export const ResultsTab = ({ onSelectResult }: ResultsTabProps) => {
     resultsManager.removeTag(id, tag);
   };
 
+  const handleToggleCompare = (id: string) => {
+    if (compareIds.includes(id)) {
+      setCompareIds(compareIds.filter(i => i !== id));
+    } else if (compareIds.length < 4) {
+      setCompareIds([...compareIds, id]);
+    } else {
+      toast.error('Maximum 4 results can be compared');
+    }
+  };
+
   const stats = resultsManager.getStatistics();
 
   const getEntropyChange = (result: ExecutionResultV2) => {
@@ -273,12 +359,15 @@ export const ResultsTab = ({ onSelectResult }: ResultsTabProps) => {
     return result.finalMetrics.entropy - result.initialMetrics.entropy;
   };
 
+  // Get results for comparison
+  const compareResults = compareIds.map(id => results.find(r => r.id === id)).filter(Boolean) as ExecutionResultV2[];
+
   return (
-    <div className="h-full flex flex-col gap-4 p-4">
+    <div className="h-full flex flex-col gap-3 p-4">
       {/* Stats Bar */}
-      <Card>
-        <CardContent className="py-3">
-          <div className="flex items-center gap-6 text-sm flex-wrap">
+      <Card className="flex-shrink-0">
+        <CardContent className="py-2">
+          <div className="flex items-center gap-4 text-sm flex-wrap">
             <div className="flex items-center gap-2">
               <FileText className="w-4 h-4 text-muted-foreground" />
               <span>{stats.totalResults} results</span>
@@ -295,12 +384,29 @@ export const ResultsTab = ({ onSelectResult }: ResultsTabProps) => {
               <CheckCircle2 className="w-4 h-4 text-muted-foreground" />
               <span>{stats.successRate.toFixed(0)}% success</span>
             </div>
+            <div className="flex-1" />
+            <Button
+              variant={compareMode ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => {
+                setCompareMode(!compareMode);
+                if (compareMode) setCompareIds([]);
+              }}
+            >
+              <GitCompare className="w-4 h-4 mr-1" />
+              {compareMode ? `Compare (${compareIds.length})` : 'Compare'}
+            </Button>
+            {compareMode && compareIds.length >= 2 && (
+              <Button size="sm" onClick={() => setShowCompareDialog(true)}>
+                View Comparison
+              </Button>
+            )}
           </div>
         </CardContent>
       </Card>
 
       {/* Search, Filter, Sort */}
-      <div className="flex items-center gap-2 flex-wrap">
+      <div className="flex items-center gap-2 flex-wrap flex-shrink-0">
         <div className="relative flex-1 min-w-[200px]">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
@@ -340,9 +446,9 @@ export const ResultsTab = ({ onSelectResult }: ResultsTabProps) => {
         </Button>
       </div>
 
-      <div className="flex-1 flex gap-4 overflow-hidden">
+      <div className="flex-1 flex gap-3 overflow-hidden">
         {/* Results List */}
-        <ScrollArea className="flex-1">
+        <ScrollArea className="w-1/2">
           <div className="space-y-2 pr-2">
             {sortedResults.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
@@ -353,38 +459,52 @@ export const ResultsTab = ({ onSelectResult }: ResultsTabProps) => {
             ) : (
               sortedResults.map((result) => {
                 const entropyChange = getEntropyChange(result);
+                const isSelected = selectedResult?.id === result.id;
+                const isInCompare = compareIds.includes(result.id);
+                
                 return (
                   <Card
                     key={result.id}
-                    className={`cursor-pointer transition-colors ${
-                      selectedResult?.id === result.id ? 'border-primary' : 'hover:bg-muted/30'
-                    }`}
+                    className={`cursor-pointer transition-all ${
+                      isSelected ? 'border-primary ring-1 ring-primary' : 'hover:bg-muted/30'
+                    } ${isInCompare ? 'bg-blue-500/10' : ''}`}
                     onClick={() => handleSelect(result)}
                   >
-                    <CardContent className="p-4">
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
+                    <CardContent className="p-3">
+                      <div className="flex items-start gap-3">
+                        {/* Compare checkbox */}
+                        {compareMode && (
+                          <Checkbox
+                            checked={isInCompare}
+                            onCheckedChange={() => handleToggleCompare(result.id)}
+                            onClick={(e) => e.stopPropagation()}
+                            className="mt-1"
+                          />
+                        )}
+                        
+                        <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <h4 className="font-medium">{result.strategyName}</h4>
-                            <Badge variant={result.status === 'completed' ? 'default' : 'destructive'}>
+                            <h4 className="font-medium truncate">{result.strategyName}</h4>
+                            <Badge variant={result.status === 'completed' ? 'default' : 'destructive'} className="text-xs">
                               {result.status}
                             </Badge>
                             {result.bookmarked && (
-                              <BookmarkCheck className="w-4 h-4 text-primary" />
+                              <BookmarkCheck className="w-4 h-4 text-primary flex-shrink-0" />
                             )}
                           </div>
-                          <div className="flex items-center gap-4 mt-1 text-sm text-muted-foreground flex-wrap">
+                          
+                          <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground flex-wrap">
                             <span className="flex items-center gap-1">
                               <Calendar className="w-3 h-3" />
-                              {new Date(result.startTime).toLocaleString()}
+                              {new Date(result.startTime).toLocaleDateString()}
                             </span>
                             <span className="flex items-center gap-1">
                               <Clock className="w-3 h-3" />
                               {result.duration.toFixed(0)}ms
                             </span>
                             <span className="flex items-center gap-1">
-                              <Activity className="w-3 h-3" />
-                              {result.benchmarks.operationCount} ops
+                              <Layers className="w-3 h-3" />
+                              {result.steps.length} steps
                             </span>
                             {entropyChange !== null && (
                               <span className={`flex items-center gap-1 ${entropyChange < 0 ? 'text-green-500' : entropyChange > 0 ? 'text-red-500' : ''}`}>
@@ -399,45 +519,56 @@ export const ResultsTab = ({ onSelectResult }: ResultsTabProps) => {
                               </span>
                             )}
                           </div>
+                          
                           {result.tags.length > 0 && (
-                            <div className="flex flex-wrap gap-1 mt-2">
+                            <div className="flex flex-wrap gap-1 mt-1.5">
                               {result.tags.map(tag => (
-                                <Badge key={tag} variant="outline" className="text-xs">
+                                <Badge key={tag} variant="outline" className="text-xs px-1">
                                   {tag}
                                 </Badge>
                               ))}
                             </div>
                           )}
                         </div>
-                        <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+                        
+                        <div className="flex items-center gap-1 flex-shrink-0" onClick={e => e.stopPropagation()}>
                           <Button
                             size="icon"
                             variant="ghost"
-                            className="h-8 w-8"
+                            className="h-7 w-7"
+                            onClick={() => handleOpenInPlayer(result)}
+                            title="Open in Player"
+                          >
+                            <Play className="w-3 h-3" />
+                          </Button>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-7 w-7"
                             onClick={() => handleToggleBookmark(result.id)}
                           >
                             {result.bookmarked ? (
-                              <BookmarkCheck className="w-4 h-4 text-primary" />
+                              <BookmarkCheck className="w-3 h-3 text-primary" />
                             ) : (
-                              <Bookmark className="w-4 h-4" />
+                              <Bookmark className="w-3 h-3" />
                             )}
                           </Button>
                           <Button
                             size="icon"
                             variant="ghost"
-                            className="h-8 w-8"
+                            className="h-7 w-7"
                             onClick={() => handleExportCSV(result)}
                             title="Export CSV"
                           >
-                            <Download className="w-4 h-4" />
+                            <Download className="w-3 h-3" />
                           </Button>
                           <Button
                             size="icon"
                             variant="ghost"
-                            className="h-8 w-8 text-destructive"
+                            className="h-7 w-7 text-destructive"
                             onClick={() => handleDelete(result.id)}
                           >
-                            <Trash2 className="w-4 h-4" />
+                            <Trash2 className="w-3 h-3" />
                           </Button>
                         </div>
                       </div>
@@ -449,167 +580,267 @@ export const ResultsTab = ({ onSelectResult }: ResultsTabProps) => {
           </div>
         </ScrollArea>
 
-        {/* Selected Result Detail */}
-        {selectedResult && (
-          <Card className="w-1/2 flex flex-col">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm flex items-center justify-between">
-                <span>Result Details</span>
-                <div className="flex gap-2">
-                  <Button size="sm" variant="outline" onClick={() => handleExportCSV(selectedResult)}>
-                    <Download className="w-4 h-4 mr-1" />
-                    Full CSV
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={() => handleExportJSON(selectedResult)}>
-                    <FileText className="w-4 h-4 mr-1" />
-                    JSON
-                  </Button>
+        {/* Selected Result Detail - Rich Card */}
+        <Card className="w-1/2 flex flex-col overflow-hidden">
+          {selectedResult ? (
+            <>
+              <CardHeader className="pb-2 flex-shrink-0">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-sm truncate">{selectedResult.strategyName}</CardTitle>
+                  <div className="flex items-center gap-1">
+                    <Button size="sm" variant="default" onClick={() => handleOpenInPlayer(selectedResult)}>
+                      <Play className="w-3 h-3 mr-1" />
+                      Open in Player
+                    </Button>
+                  </div>
                 </div>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="flex-1 overflow-auto">
-              <ScrollArea className="h-full">
-                {/* Stats Grid */}
-                <div className="grid grid-cols-2 gap-3 text-sm mb-4">
-                  <div className="p-2 bg-muted/30 rounded">
-                    <span className="text-muted-foreground text-xs">Initial Size</span>
-                    <p className="font-mono">{selectedResult.initialBits.length} bits</p>
+              </CardHeader>
+              <CardContent className="flex-1 overflow-auto space-y-4">
+                {/* Quick Stats Grid */}
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="p-2 rounded bg-muted/30 text-center">
+                    <div className="text-lg font-bold">{selectedResult.steps.length}</div>
+                    <div className="text-xs text-muted-foreground">Steps</div>
                   </div>
-                  <div className="p-2 bg-muted/30 rounded">
-                    <span className="text-muted-foreground text-xs">Final Size</span>
-                    <p className="font-mono">{selectedResult.finalBits.length} bits</p>
+                  <div className="p-2 rounded bg-muted/30 text-center">
+                    <div className="text-lg font-bold">{selectedResult.benchmarks.totalCost || 0}</div>
+                    <div className="text-xs text-muted-foreground">Cost</div>
                   </div>
-                  <div className="p-2 bg-muted/30 rounded">
-                    <span className="text-muted-foreground text-xs">Operations</span>
-                    <p className="font-mono">{selectedResult.benchmarks.operationCount}</p>
-                  </div>
-                  <div className="p-2 bg-muted/30 rounded">
-                    <span className="text-muted-foreground text-xs">Avg Step</span>
-                    <p className="font-mono">{selectedResult.benchmarks.avgStepDuration.toFixed(2)}ms</p>
-                  </div>
-                  <div className="p-2 bg-muted/30 rounded">
-                    <span className="text-muted-foreground text-xs">Total Cost</span>
-                    <p className="font-mono">{selectedResult.benchmarks.totalCost}</p>
-                  </div>
-                  <div className="p-2 bg-muted/30 rounded">
-                    <span className="text-muted-foreground text-xs">Duration</span>
-                    <p className="font-mono">{selectedResult.duration}ms</p>
+                  <div className="p-2 rounded bg-muted/30 text-center">
+                    <div className="text-lg font-bold">{selectedResult.duration.toFixed(0)}ms</div>
+                    <div className="text-xs text-muted-foreground">Duration</div>
                   </div>
                 </div>
 
                 {/* Metrics Comparison */}
-                {selectedResult.initialMetrics && Object.keys(selectedResult.initialMetrics).length > 0 && (
-                  <div className="mb-4">
-                    <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
-                      <BarChart3 className="w-4 h-4" />
-                      Metrics Change
-                    </h4>
-                    <div className="space-y-1 text-xs">
-                      {Object.keys(selectedResult.initialMetrics).slice(0, 6).map(key => {
-                        const initial = selectedResult.initialMetrics[key] || 0;
-                        const final = selectedResult.finalMetrics?.[key] || initial;
-                        const change = final - initial;
-                        return (
-                          <div key={key} className="flex justify-between items-center">
-                            <span className="text-muted-foreground">{key}</span>
-                            <span className={change < 0 ? 'text-green-500' : change > 0 ? 'text-red-500' : ''}>
-                              {initial.toFixed(4)} → {final.toFixed(4)} ({change >= 0 ? '+' : ''}{change.toFixed(4)})
-                            </span>
+                <div>
+                  <h4 className="text-xs font-medium text-muted-foreground mb-2">METRICS COMPARISON</h4>
+                  <div className="space-y-1">
+                    {selectedResult.initialMetrics && Object.entries(selectedResult.initialMetrics).slice(0, 5).map(([key, initial]) => {
+                      const final = selectedResult.finalMetrics?.[key] || initial;
+                      const change = final - initial;
+                      const isImprovement = key === 'entropy' ? change < 0 : change > 0;
+                      
+                      return (
+                        <div key={key} className="flex items-center justify-between text-xs p-1.5 rounded bg-muted/20">
+                          <span className="font-medium">{key}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-muted-foreground">{initial.toFixed(4)}</span>
+                            <span>→</span>
+                            <span>{final.toFixed(4)}</span>
+                            {change !== 0 && (
+                              <Badge variant={isImprovement ? 'default' : 'secondary'} className="text-xs px-1">
+                                {change > 0 ? '+' : ''}{change.toFixed(4)}
+                              </Badge>
+                            )}
                           </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {/* Files Used */}
-                <div className="mb-4">
-                  <h4 className="text-sm font-medium mb-2">Files Used</h4>
-                  <div className="text-xs space-y-1">
-                    <div><span className="text-muted-foreground">Algorithm:</span> {selectedResult.filesUsed.algorithm}</div>
-                    <div><span className="text-muted-foreground">Scoring:</span> {selectedResult.filesUsed.scoring}</div>
-                    <div><span className="text-muted-foreground">Policy:</span> {selectedResult.filesUsed.policy || 'None'}</div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
 
-                {/* Transformations Summary */}
-                <div className="mb-4">
-                  <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
-                    <Zap className="w-4 h-4" />
-                    Transformations ({selectedResult.steps.length})
-                  </h4>
-                  <div className="max-h-40 overflow-y-auto text-xs space-y-1">
-                    {selectedResult.steps.slice(0, 20).map((step, i) => (
-                      <div key={i} className="flex justify-between items-center py-1 border-b border-muted/30">
-                        <span className="font-mono">{step.operation}</span>
+                {/* Size Change */}
+                <div>
+                  <h4 className="text-xs font-medium text-muted-foreground mb-2">DATA SIZE</h4>
+                  <div className="flex items-center gap-2 text-sm">
+                    <span className="font-mono">{selectedResult.initialBits.length} bits</span>
+                    <span>→</span>
+                    <span className="font-mono">{selectedResult.finalBits.length} bits</span>
+                    <Badge variant="outline">
+                      {selectedResult.finalBits.length - selectedResult.initialBits.length >= 0 ? '+' : ''}
+                      {selectedResult.finalBits.length - selectedResult.initialBits.length}
+                    </Badge>
+                  </div>
+                </div>
+
+                {/* Files Used */}
+                <div>
+                  <h4 className="text-xs font-medium text-muted-foreground mb-2">FILES USED</h4>
+                  <div className="space-y-1 text-xs">
+                    <div className="flex gap-2">
+                      <span className="text-muted-foreground w-16">Algorithm:</span>
+                      <span className="font-mono truncate">{selectedResult.filesUsed.algorithm}</span>
+                    </div>
+                    <div className="flex gap-2">
+                      <span className="text-muted-foreground w-16">Scoring:</span>
+                      <span className="font-mono truncate">{selectedResult.filesUsed.scoring}</span>
+                    </div>
+                    <div className="flex gap-2">
+                      <span className="text-muted-foreground w-16">Policy:</span>
+                      <span className="font-mono truncate">{selectedResult.filesUsed.policy || 'None'}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Transformations Preview */}
+                <div>
+                  <h4 className="text-xs font-medium text-muted-foreground mb-2">TRANSFORMATIONS ({selectedResult.steps.length})</h4>
+                  <div className="space-y-1 max-h-32 overflow-auto">
+                    {selectedResult.steps.slice(0, 10).map((step, idx) => (
+                      <div key={idx} className="flex items-center justify-between text-xs p-1 rounded bg-muted/20">
+                        <div className="flex items-center gap-2">
+                          <span className="text-muted-foreground w-4">{idx + 1}.</span>
+                          <span className="font-mono">{step.operation}</span>
+                        </div>
                         <span className="text-muted-foreground">{step.duration.toFixed(1)}ms</span>
                       </div>
                     ))}
-                    {selectedResult.steps.length > 20 && (
-                      <p className="text-muted-foreground text-center py-2">
-                        ... and {selectedResult.steps.length - 20} more. Export CSV for full list.
-                      </p>
+                    {selectedResult.steps.length > 10 && (
+                      <p className="text-xs text-muted-foreground text-center">+{selectedResult.steps.length - 10} more</p>
                     )}
                   </div>
                 </div>
 
                 {/* Tags */}
-                <div className="mb-4 pt-4 border-t">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Tag className="w-4 h-4" />
-                    <span className="text-sm font-medium">Tags</span>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
+                <div>
+                  <h4 className="text-xs font-medium text-muted-foreground mb-2">TAGS</h4>
+                  <div className="flex flex-wrap gap-1 mb-2">
                     {selectedResult.tags.map(tag => (
-                      <Badge key={tag} variant="secondary">
+                      <Badge key={tag} variant="secondary" className="text-xs">
                         {tag}
                         <button
                           className="ml-1 hover:text-destructive"
                           onClick={() => handleRemoveTag(selectedResult.id, tag)}
                         >
-                          ×
+                          <X className="w-2 h-2" />
                         </button>
                       </Badge>
                     ))}
-                    <div className="flex items-center gap-1">
-                      <Input
-                        value={newTag}
-                        onChange={(e) => setNewTag(e.target.value)}
-                        placeholder="Add tag"
-                        className="h-7 w-24"
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            handleAddTag(selectedResult.id);
-                          }
-                        }}
-                      />
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="h-7 w-7"
-                        onClick={() => handleAddTag(selectedResult.id)}
-                      >
-                        <Plus className="w-3 h-3" />
-                      </Button>
-                    </div>
+                  </div>
+                  <div className="flex gap-1">
+                    <Input
+                      value={newTag}
+                      onChange={(e) => setNewTag(e.target.value)}
+                      placeholder="Add tag..."
+                      className="h-7 text-xs"
+                      onKeyDown={(e) => e.key === 'Enter' && handleAddTag(selectedResult.id)}
+                    />
+                    <Button size="sm" variant="outline" className="h-7" onClick={() => handleAddTag(selectedResult.id)}>
+                      <Plus className="w-3 h-3" />
+                    </Button>
                   </div>
                 </div>
 
                 {/* Notes */}
-                <div className="pt-4 border-t">
-                  <span className="text-sm font-medium">Notes</span>
+                <div>
+                  <h4 className="text-xs font-medium text-muted-foreground mb-2">NOTES</h4>
                   <Textarea
                     value={selectedResult.notes}
                     onChange={(e) => resultsManager.updateNotes(selectedResult.id, e.target.value)}
-                    placeholder="Add notes about this result..."
-                    className="mt-2 h-20"
+                    placeholder="Add notes..."
+                    className="text-xs min-h-[60px]"
                   />
                 </div>
-              </ScrollArea>
-            </CardContent>
-          </Card>
-        )}
+
+                {/* Export Buttons */}
+                <div className="flex gap-2">
+                  <Button size="sm" variant="outline" className="flex-1" onClick={() => handleExportCSV(selectedResult)}>
+                    <Download className="w-3 h-3 mr-1" />
+                    Export CSV
+                  </Button>
+                  <Button size="sm" variant="outline" className="flex-1" onClick={() => handleExportJSON(selectedResult)}>
+                    <Download className="w-3 h-3 mr-1" />
+                    Export JSON
+                  </Button>
+                </div>
+              </CardContent>
+            </>
+          ) : (
+            <div className="flex-1 flex items-center justify-center text-muted-foreground">
+              <div className="text-center">
+                <FileText className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                <p>Select a result to view details</p>
+              </div>
+            </div>
+          )}
+        </Card>
       </div>
+
+      {/* Comparison Dialog */}
+      <Dialog open={showCompareDialog} onOpenChange={setShowCompareDialog}>
+        <DialogContent className="max-w-4xl max-h-[80vh] overflow-auto">
+          <DialogHeader>
+            <DialogTitle>Results Comparison</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            {/* Comparison Table */}
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b">
+                    <th className="text-left p-2">Metric</th>
+                    {compareResults.map(r => (
+                      <th key={r.id} className="text-left p-2">{r.strategyName}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr className="border-b">
+                    <td className="p-2 font-medium">Duration</td>
+                    {compareResults.map(r => (
+                      <td key={r.id} className="p-2">{r.duration.toFixed(0)}ms</td>
+                    ))}
+                  </tr>
+                  <tr className="border-b">
+                    <td className="p-2 font-medium">Steps</td>
+                    {compareResults.map(r => (
+                      <td key={r.id} className="p-2">{r.steps.length}</td>
+                    ))}
+                  </tr>
+                  <tr className="border-b">
+                    <td className="p-2 font-medium">Total Cost</td>
+                    {compareResults.map(r => (
+                      <td key={r.id} className="p-2">{r.benchmarks.totalCost || 0}</td>
+                    ))}
+                  </tr>
+                  <tr className="border-b">
+                    <td className="p-2 font-medium">Initial Entropy</td>
+                    {compareResults.map(r => (
+                      <td key={r.id} className="p-2">{r.initialMetrics?.entropy?.toFixed(4) || 'N/A'}</td>
+                    ))}
+                  </tr>
+                  <tr className="border-b">
+                    <td className="p-2 font-medium">Final Entropy</td>
+                    {compareResults.map(r => (
+                      <td key={r.id} className="p-2">{r.finalMetrics?.entropy?.toFixed(4) || 'N/A'}</td>
+                    ))}
+                  </tr>
+                  <tr className="border-b">
+                    <td className="p-2 font-medium">Entropy Change</td>
+                    {compareResults.map(r => {
+                      const change = getEntropyChange(r);
+                      return (
+                        <td key={r.id} className={`p-2 ${change && change < 0 ? 'text-green-500' : change && change > 0 ? 'text-red-500' : ''}`}>
+                          {change !== null ? `${change >= 0 ? '+' : ''}${change.toFixed(4)}` : 'N/A'}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                  <tr className="border-b">
+                    <td className="p-2 font-medium">Final Size</td>
+                    {compareResults.map(r => (
+                      <td key={r.id} className="p-2">{r.finalBits.length} bits</td>
+                    ))}
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            
+            <Button onClick={() => setShowCompareDialog(false)}>Close</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
+
+// Helper function
+function countChangedBits(before: string, after: string): number {
+  let count = 0;
+  const maxLen = Math.max(before.length, after.length);
+  for (let i = 0; i < maxLen; i++) {
+    if ((before[i] || '0') !== (after[i] || '0')) count++;
+  }
+  return count;
+}
