@@ -466,8 +466,24 @@ bitwise_api.halt = halt
 sys.modules['bitwise_api'] = bitwise_api
       `);
 
+      // Capture stdout/stderr for print() support
+      await this.pyodide.runPythonAsync(`
+import sys, io
+_lov_stdout = io.StringIO()
+_lov_stderr = io.StringIO()
+_lov_prev_stdout = sys.stdout
+_lov_prev_stderr = sys.stderr
+sys.stdout = _lov_stdout
+sys.stderr = _lov_stderr
+      `);
+
       // Run user code
-      const result = await this.pyodide.runPythonAsync(pythonCode);
+      let result: any = null;
+      try {
+        result = await this.pyodide.runPythonAsync(pythonCode);
+      } finally {
+        // (do not restore yet; we still want execute() output captured)
+      }
 
       // Try to call execute() if it exists
       let executeResult = null;
@@ -480,6 +496,40 @@ _result
         `);
       } catch (e) {
         bridgeObj.bridge.log(`execute() error: ${e}`);
+      }
+
+      // Read captured stdout/stderr and restore
+      let capturedOut = '';
+      let capturedErr = '';
+      try {
+        const captured = await this.pyodide.runPythonAsync(`
+_out = _lov_stdout.getvalue()
+_err = _lov_stderr.getvalue()
+try:
+    sys.stdout = _lov_prev_stdout
+    sys.stderr = _lov_prev_stderr
+except Exception:
+    pass
+(_out, _err)
+        `);
+
+        // Pyodide returns a PyProxy for tuples
+        const asJs = (captured && typeof captured.toJs === 'function') ? captured.toJs() : captured;
+        if (Array.isArray(asJs)) {
+          capturedOut = String(asJs[0] ?? '');
+          capturedErr = String(asJs[1] ?? '');
+        } else {
+          capturedOut = String(asJs ?? '');
+        }
+      } catch {
+        // ignore
+      }
+
+      if (capturedOut.trim()) {
+        bridgeObj.bridge.log(capturedOut.trimEnd());
+      }
+      if (capturedErr.trim()) {
+        bridgeObj.bridge.log(`[STDERR]\n${capturedErr.trimEnd()}`);
       }
 
       // Get final metrics

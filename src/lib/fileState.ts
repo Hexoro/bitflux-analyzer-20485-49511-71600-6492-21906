@@ -39,6 +39,13 @@ export class FileState {
   public stats: BinaryStats | null = null;
   public savedSequences: SavedSequence[] = [];
   public selectedRanges: BitRange[] = [];
+
+  /**
+   * External highlight ranges (e.g. Player step highlights).
+   * Kept separate from selection/boundaries so the UI can overlay temporary highlights.
+   */
+  private externalHighlightRanges: Array<{ start: number; end: number; color: string }> = [];
+
   private nextSerial: number = 1;
   private listeners: Set<() => void> = new Set();
   private editDebounceTimer: NodeJS.Timeout | null = null;
@@ -48,7 +55,7 @@ export class FileState {
     this.historyManager = new HistoryManager();
     this.partitionManager = new PartitionManager();
     this.notesManager = new NotesManager();
-    
+
     // Subscribe to model changes
     this.model.subscribe(() => {
       this.updateStats();
@@ -101,11 +108,26 @@ export class FileState {
     return this.partitionManager.getBoundaries();
   }
 
+  setExternalHighlightRanges(ranges: Array<{ start: number; end: number; color?: string }>): void {
+    this.externalHighlightRanges = ranges.map(r => ({
+      start: r.start,
+      end: r.end,
+      color: r.color || 'hsl(var(--primary) / 0.25)',
+    }));
+    this.notifyListeners();
+  }
+
+  clearExternalHighlightRanges(): void {
+    if (this.externalHighlightRanges.length === 0) return;
+    this.externalHighlightRanges = [];
+    this.notifyListeners();
+  }
+
   getHighlightRanges(): Array<{ start: number; end: number; color: string }> {
     const boundaryRanges = this.partitionManager.getHighlightRanges();
     const sequenceRanges = this.getSequenceHighlightRanges();
     const selectionRanges = this.getSelectionHighlightRanges();
-    return [...sequenceRanges, ...boundaryRanges, ...selectionRanges];
+    return [...this.externalHighlightRanges, ...sequenceRanges, ...boundaryRanges, ...selectionRanges];
   }
 
   private getSelectionHighlightRanges(): Array<{ start: number; end: number; color: string }> {

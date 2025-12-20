@@ -1,7 +1,8 @@
 /**
- * Player Tab V3 - Enhanced playback with full details
- * Shows operation costs, bit ranges, highlights, metrics per step
- * Creates temp file in sidebar for viewing
+ * Player Tab V4 - Plays transformations on the currently loaded file
+ * - No temp files
+ * - Highlights changed ranges directly in the BinaryViewer
+ * - Shows operation costs, bit ranges, and metrics per step
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
@@ -101,36 +102,19 @@ export const PlayerTab = ({ result, onStepChange }: PlayerTabProps) => {
   const [currentStep, setCurrentStep] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
-  const [tempFileId, setTempFileId] = useState<string | null>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const operations = predefinedManager.getAllOperations();
   const metrics = predefinedManager.getAllMetrics();
 
-  // Create temp file when result changes
+  // Sync the Player to an existing file (prefer the already-created result file)
   useEffect(() => {
-    if (result && result.initialBits) {
-      // Create temp file in sidebar
-      const fileName = `player_${result.strategyName.replace(/\s+/g, '_')}_${Date.now()}.tmp`;
-      const tempFile = fileSystemManager.createFile(fileName, result.initialBits, 'binary');
-      fileSystemManager.setFileGroup(tempFile.id, 'Player');
-      fileSystemManager.setActiveFile(tempFile.id);
-      setTempFileId(tempFile.id);
-      setCurrentStep(0);
-      setIsPlaying(false);
-      toast.success(`Player temp file created: ${fileName}`);
-    }
-    
-    return () => {
-      // Clean up temp file on unmount or result change
-      if (tempFileId) {
-        try {
-          fileSystemManager.deleteFile(tempFileId);
-        } catch (e) {
-          // Ignore if already deleted
-        }
-      }
-    };
+    setCurrentStep(0);
+    setIsPlaying(false);
+
+    // Clear previous player highlights when switching results
+    const active = fileSystemManager.getActiveFile();
+    active?.state.clearExternalHighlightRanges();
   }, [result?.id]);
 
   // Playback logic
@@ -154,28 +138,55 @@ export const PlayerTab = ({ result, onStepChange }: PlayerTabProps) => {
     };
   }, [isPlaying, playbackSpeed, result]);
 
-  // Update temp file when step changes
+  // Apply step to the currently loaded file + highlight changed ranges
   useEffect(() => {
-    if (result && result.steps[currentStep] && tempFileId) {
-      const step = result.steps[currentStep];
-      // Update the temp file with the current step's bits
-      fileSystemManager.updateFile(tempFileId, step.afterBits);
+    if (!result) return;
+
+    const targetFileId = result.dataFileId || fileSystemManager.getActiveFile()?.id;
+    if (!targetFileId) return;
+
+    const file = fileSystemManager.getFile(targetFileId);
+    if (!file) return;
+
+    const step = result.steps[currentStep];
+    const bitsToApply = step?.afterBits ?? result.initialBits;
+
+    // Update file bits to match step
+    file.state.model.loadBits(bitsToApply);
+
+    // Highlight changed ranges
+    if (step) {
+      const ranges = step.bitRanges && step.bitRanges.length > 0
+        ? step.bitRanges
+        : computeChangedRanges(step.beforeBits, step.afterBits);
+
+      file.state.setExternalHighlightRanges(
+        ranges.map(r => ({ ...r, color: 'hsl(var(--primary) / 0.22)' }))
+      );
+
       onStepChange?.(step);
+    } else {
+      file.state.clearExternalHighlightRanges();
+      onStepChange?.(null);
     }
-  }, [currentStep, result, tempFileId, onStepChange]);
+  }, [currentStep, result, onStepChange]);
 
   const handlePlay = () => setIsPlaying(true);
   const handlePause = () => setIsPlaying(false);
   const handleStop = () => {
     setIsPlaying(false);
     setCurrentStep(0);
-    if (result && tempFileId) {
-      fileSystemManager.updateFile(tempFileId, result.initialBits);
+    if (result?.dataFileId) {
+      const file = fileSystemManager.getFile(result.dataFileId);
+      file?.state.clearExternalHighlightRanges();
+      file?.state.model.loadBits(result.initialBits);
     }
   };
   const handleReset = () => {
-    if (result && tempFileId) {
-      fileSystemManager.updateFile(tempFileId, result.initialBits);
+    if (result?.dataFileId) {
+      const file = fileSystemManager.getFile(result.dataFileId);
+      file?.state.clearExternalHighlightRanges();
+      file?.state.model.loadBits(result.initialBits);
     }
     setCurrentStep(0);
     setIsPlaying(false);
@@ -231,7 +242,7 @@ export const PlayerTab = ({ result, onStepChange }: PlayerTabProps) => {
             <div className="flex-1 min-w-0">
               <span className="text-sm font-medium truncate">{result.strategyName}</span>
               <p className="text-xs text-muted-foreground">
-                Playback Mode - Binary data displayed in temp file in sidebar
+                Playback Mode - changes are highlighted on the loaded file
               </p>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
@@ -241,22 +252,8 @@ export const PlayerTab = ({ result, onStepChange }: PlayerTabProps) => {
                 <DollarSign className="w-3 h-3" />
                 {cumulativeCost}/{totalCost} cost
               </Badge>
-              {tempFileId && (
-                <Button 
-                  size="sm" 
-                  variant="outline"
-                  onClick={() => {
-                    if (tempFileId) {
-                      fileSystemManager.setActiveFile(tempFileId);
-                    }
-                  }}
-                >
-                  <ExternalLink className="w-3 h-3 mr-1" />
-                  View File
-                </Button>
-              )}
-              <Button 
-                size="sm" 
+              <Button
+                size="sm"
                 variant="ghost"
                 onClick={handleCleanupTempFiles}
                 title="Cleanup all temp files"
@@ -435,20 +432,6 @@ export const PlayerTab = ({ result, onStepChange }: PlayerTabProps) => {
                   <span className="font-mono text-sm">{step.duration?.toFixed(4) || 0} ms</span>
                 </div>
 
-                {/* Before/After Preview */}
-                <div>
-                  <h5 className="text-xs font-medium text-muted-foreground mb-1">Data Preview (first 64 bits)</h5>
-                  <div className="space-y-1 font-mono text-xs">
-                    <div className="bg-red-500/10 p-1 rounded overflow-hidden">
-                      <span className="text-red-500">Before: </span>
-                      <span className="break-all">{step.beforeBits.slice(0, 64)}{step.beforeBits.length > 64 ? '...' : ''}</span>
-                    </div>
-                    <div className="bg-green-500/10 p-1 rounded overflow-hidden">
-                      <span className="text-green-500">After: </span>
-                      <span className="break-all">{step.afterBits.slice(0, 64)}{step.afterBits.length > 64 ? '...' : ''}</span>
-                    </div>
-                  </div>
-                </div>
               </div>
             ) : (
               <p className="text-muted-foreground text-sm">No step selected</p>
@@ -566,4 +549,31 @@ function countChangedBits(before: string, after: string): number {
     if ((before[i] || '0') !== (after[i] || '0')) count++;
   }
   return count;
+}
+
+function computeChangedRanges(before: string, after: string): Array<{ start: number; end: number }> {
+  const maxLen = Math.max(before.length, after.length);
+  const ranges: Array<{ start: number; end: number }> = [];
+
+  let inRange = false;
+  let rangeStart = 0;
+
+  for (let i = 0; i < maxLen; i++) {
+    const a = before[i] || '0';
+    const b = after[i] || '0';
+    const changed = a !== b;
+
+    if (changed && !inRange) {
+      inRange = true;
+      rangeStart = i;
+    } else if (!changed && inRange) {
+      inRange = false;
+      ranges.push({ start: rangeStart, end: i - 1 });
+    }
+  }
+
+  if (inRange) ranges.push({ start: rangeStart, end: maxLen - 1 });
+
+  // Avoid overwhelming the viewer: cap ranges to the first 200.
+  return ranges.slice(0, 200);
 }

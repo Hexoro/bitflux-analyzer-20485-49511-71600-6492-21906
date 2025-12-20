@@ -139,47 +139,65 @@ export const ResultsTab = ({ onSelectResult }: ResultsTabProps) => {
   };
 
   const handleOpenInPlayer = (result: ExecutionResultV2) => {
-    // Create temp file in sidebar for viewing
-    const fileName = `result_${result.strategyName.replace(/\s+/g, '_')}_${Date.now()}.tmp`;
-    const tempFile = fileSystemManager.createFile(fileName, result.finalBits, 'binary');
-    fileSystemManager.setFileGroup(tempFile.id, 'Results');
-    fileSystemManager.setActiveFile(tempFile.id);
-    
-    // Convert to ExecutionResult format for player with bit ranges
+    // Prefer using the already-created result file (no extra temp files)
+    const existingResultFileId = result.resultFileId && fileSystemManager.getFile(result.resultFileId)
+      ? result.resultFileId
+      : null;
+
+    let targetFileId = existingResultFileId;
+    let targetFileName = existingResultFileId ? (fileSystemManager.getFile(existingResultFileId)?.name || 'result') : '';
+
+    // Fallback (only if we have no stored result file)
+    if (!targetFileId) {
+      const fileName = `result_${result.strategyName.replace(/\s+/g, '_')}_${Date.now()}.tmp`;
+      const tempFile = fileSystemManager.createFile(fileName, result.finalBits, 'binary');
+      fileSystemManager.setFileGroup(tempFile.id, 'Results');
+      targetFileId = tempFile.id;
+      targetFileName = fileName;
+    }
+
+    fileSystemManager.setActiveFile(targetFileId);
+
+    // Convert to ExecutionResult format for Player
     const executionResult: ExecutionResult = {
       id: result.id,
       strategyId: result.strategyId,
       strategyName: result.strategyName,
-      dataFileId: tempFile.id,
-      dataFileName: fileName,
+      dataFileId: targetFileId,
+      dataFileName: targetFileName,
       initialBits: result.initialBits,
       finalBits: result.finalBits,
-      steps: result.steps.map((s, i) => ({ 
-        ...s, 
-        params: s.params || {}, 
-        stepIndex: i, 
-        timestamp: new Date(),
-        bitRanges: (s as any).bitRanges || [],
-        cost: (s as any).cost || 1,
+      steps: result.steps.map((s, i) => ({
+        stepIndex: i,
+        operation: s.operation,
+        params: s.params || {},
+        beforeBits: s.beforeBits,
+        afterBits: s.afterBits,
+        metrics: s.metrics || {},
+        duration: s.duration,
+        timestamp: new Date(s.timestamp),
+        bitRanges: s.bitRanges || [],
+        cost: s.cost || 1,
       })),
       totalDuration: result.duration,
       startTime: new Date(result.startTime),
       endTime: new Date(result.endTime),
       metricsHistory: {},
       success: result.status === 'completed',
-      resourceUsage: { 
-        peakMemory: result.benchmarks.peakMemory, 
-        cpuTime: result.duration, 
-        operationsCount: result.steps.length 
+      resourceUsage: {
+        peakMemory: result.benchmarks.peakMemory,
+        cpuTime: result.duration,
+        operationsCount: result.steps.length,
       },
       budgetConfig: {
         initial: 1000,
         used: result.benchmarks.totalCost || 0,
         remaining: 1000 - (result.benchmarks.totalCost || 0),
-      }
+      },
     };
+
     onSelectResult?.(executionResult);
-    toast.success('Result loaded in Player - check Player tab');
+    toast.success('Opened in Player (highlights shown on the loaded file)');
   };
 
   const handleExportCSV = (result: ExecutionResultV2) => {
