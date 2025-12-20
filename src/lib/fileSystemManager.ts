@@ -1,5 +1,6 @@
 /**
  * File System Manager - Manages multiple binary files
+ * Includes temp file management and cleanup
  */
 
 import { FileState } from './fileState';
@@ -12,11 +13,14 @@ export interface BinaryFile {
   type: 'binary' | 'text';
   state: FileState;
   group?: string; // Optional grouping
+  isTemp?: boolean; // Temporary file flag
 }
 
 const FILES_STORAGE_KEY = 'bitwise_files';
 const GROUPS_STORAGE_KEY = 'bitwise_groups';
 const ACTIVE_FILE_KEY = 'bitwise_active_file';
+const TEMP_FILE_MAX_AGE = 60 * 60 * 1000; // 1 hour
+const TEMP_FILE_MAX_COUNT = 10;
 
 export class FileSystemManager {
   private files: Map<string, BinaryFile> = new Map();
@@ -30,6 +34,8 @@ export class FileSystemManager {
     if (this.files.size === 0) {
       this.createFile('untitled.txt', '', 'binary');
     }
+    // Auto-cleanup temp files on startup
+    this.cleanupTempFiles();
   }
 
   // Load from localStorage
@@ -48,6 +54,7 @@ export class FileSystemManager {
             type: fileData.type,
             state,
             group: fileData.group,
+            isTemp: fileData.isTemp || false,
           };
           this.files.set(file.id, file);
         });
@@ -80,6 +87,7 @@ export class FileSystemManager {
         modified: file.modified,
         type: file.type,
         group: file.group,
+        isTemp: file.isTemp,
         bits: file.state.model.getBits(),
       }));
       localStorage.setItem(FILES_STORAGE_KEY, JSON.stringify(filesData));
@@ -99,6 +107,7 @@ export class FileSystemManager {
   createFile(name: string, bits: string = '', type: 'binary' | 'text' = 'binary'): BinaryFile {
     const id = `file_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     const state = new FileState(bits);
+    const isTemp = name.endsWith('.tmp') || name.startsWith('player_') || name.startsWith('result_');
     
     const file: BinaryFile = {
       id,
@@ -107,6 +116,7 @@ export class FileSystemManager {
       modified: new Date(),
       type,
       state,
+      isTemp,
     };
     
     this.files.set(id, file);
@@ -121,6 +131,16 @@ export class FileSystemManager {
     return Array.from(this.files.values()).sort((a, b) => 
       a.created.getTime() - b.created.getTime()
     );
+  }
+
+  // Get non-temp files only
+  getPermanentFiles(): BinaryFile[] {
+    return this.getFiles().filter(f => !f.isTemp);
+  }
+
+  // Get temp files only
+  getTempFiles(): BinaryFile[] {
+    return this.getFiles().filter(f => f.isTemp);
   }
 
   // Get active file
@@ -172,6 +192,72 @@ export class FileSystemManager {
     
     this.saveToStorage();
     this.notifyListeners();
+  }
+
+  // Cleanup old temp files
+  cleanupTempFiles(): { deleted: number; remaining: number } {
+    const now = Date.now();
+    const tempFiles = this.getTempFiles();
+    let deletedCount = 0;
+
+    // Delete files older than max age
+    tempFiles.forEach(file => {
+      const age = now - file.created.getTime();
+      if (age > TEMP_FILE_MAX_AGE) {
+        this.files.delete(file.id);
+        deletedCount++;
+      }
+    });
+
+    // If still too many, delete oldest ones
+    const remainingTemp = this.getTempFiles();
+    if (remainingTemp.length > TEMP_FILE_MAX_COUNT) {
+      const toDelete = remainingTemp
+        .sort((a, b) => a.created.getTime() - b.created.getTime())
+        .slice(0, remainingTemp.length - TEMP_FILE_MAX_COUNT);
+      
+      toDelete.forEach(file => {
+        this.files.delete(file.id);
+        deletedCount++;
+      });
+    }
+
+    if (deletedCount > 0) {
+      // Update active file if needed
+      if (this.activeFileId && !this.files.has(this.activeFileId)) {
+        const files = this.getFiles();
+        this.activeFileId = files.length > 0 ? files[0].id : null;
+      }
+      this.saveToStorage();
+      this.notifyListeners();
+    }
+
+    return {
+      deleted: deletedCount,
+      remaining: this.getTempFiles().length,
+    };
+  }
+
+  // Delete all temp files
+  clearAllTempFiles(): number {
+    const tempFiles = this.getTempFiles();
+    let deletedCount = 0;
+
+    tempFiles.forEach(file => {
+      this.files.delete(file.id);
+      deletedCount++;
+    });
+
+    if (deletedCount > 0) {
+      if (this.activeFileId && !this.files.has(this.activeFileId)) {
+        const files = this.getFiles();
+        this.activeFileId = files.length > 0 ? files[0].id : null;
+      }
+      this.saveToStorage();
+      this.notifyListeners();
+    }
+
+    return deletedCount;
   }
 
   // Convert text to binary

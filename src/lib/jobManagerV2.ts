@@ -1,11 +1,11 @@
 /**
  * Job Manager V2 - Reworked with real strategy execution
- * Uses the strategyExecutor for actual transformation execution
+ * Uses the strategyExecutionEngine for actual transformation execution
  */
 
 import { fileSystemManager, BinaryFile } from './fileSystemManager';
 import { pythonModuleSystem, StrategyConfig } from './pythonModuleSystem';
-import { strategyExecutor, ExecutionResult } from './strategyExecutor';
+import { strategyExecutionEngine, ExecutionPipelineResult } from './strategyExecutionEngine';
 
 export type JobStatus = 'pending' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled';
 
@@ -13,6 +13,23 @@ export interface JobPreset {
   strategyId: string;
   strategyName: string;
   iterations: number;
+}
+
+export interface JobExecutionResult {
+  id: string;
+  strategyId: string;
+  strategyName: string;
+  dataFileId: string;
+  dataFileName: string;
+  initialBits: string;
+  finalBits: string;
+  totalDuration: number;
+  startTime: Date;
+  endTime: Date;
+  success: boolean;
+  error?: string;
+  totalScore?: number;
+  totalOperations?: number;
 }
 
 export interface Job {
@@ -28,7 +45,7 @@ export interface Job {
   startTime?: Date;
   endTime?: Date;
   error?: string;
-  results: ExecutionResult[];
+  results: JobExecutionResult[];
 }
 
 const JOBS_KEY = 'bitwise_jobs_v2';
@@ -219,6 +236,9 @@ class JobManagerV2 {
       if (signal.aborted) throw new Error('Job cancelled');
 
       const preset = job.presets[presetIdx];
+      const strategy = pythonModuleSystem.getStrategy(preset.strategyId);
+      if (!strategy) throw new Error(`Strategy ${preset.strategyName} not found`);
+
       job.currentPresetIndex = presetIdx;
 
       for (let iteration = 0; iteration < preset.iterations; iteration++) {
@@ -228,12 +248,33 @@ class JobManagerV2 {
         this.notifyListeners();
 
         try {
-          // Real strategy execution
-          const result = await strategyExecutor.executeStrategy(preset.strategyId);
+          // Real strategy execution using strategyExecutionEngine
+          const pipelineResult = await strategyExecutionEngine.executeStrategy(
+            strategy,
+            job.dataFileId
+          );
+
+          // Convert to JobExecutionResult
+          const result: JobExecutionResult = {
+            id: pipelineResult.resultId,
+            strategyId: preset.strategyId,
+            strategyName: preset.strategyName,
+            dataFileId: job.dataFileId,
+            dataFileName: job.dataFileName,
+            initialBits: pipelineResult.initialBits,
+            finalBits: pipelineResult.finalBits,
+            totalDuration: pipelineResult.totalDuration,
+            startTime: pipelineResult.startTime,
+            endTime: pipelineResult.endTime,
+            success: pipelineResult.success,
+            error: pipelineResult.error,
+            totalScore: pipelineResult.totalScore,
+            totalOperations: pipelineResult.totalOperations,
+          };
           job.results.push(result);
         } catch (error) {
           // Create failed result
-          const failedResult: ExecutionResult = {
+          const failedResult: JobExecutionResult = {
             id: `exec_failed_${Date.now()}`,
             strategyId: preset.strategyId,
             strategyName: preset.strategyName,
@@ -241,14 +282,11 @@ class JobManagerV2 {
             dataFileName: job.dataFileName,
             initialBits: '',
             finalBits: '',
-            steps: [],
             totalDuration: 0,
             startTime: new Date(),
             endTime: new Date(),
-            metricsHistory: {},
             success: false,
             error: (error as Error).message,
-            resourceUsage: { peakMemory: 0, cpuTime: 0, operationsCount: 0 }
           };
           job.results.push(failedResult);
         }
@@ -268,7 +306,6 @@ class JobManagerV2 {
     const controller = this.abortControllers.get(jobId);
     if (controller) {
       controller.abort();
-      strategyExecutor.stop();
     }
 
     const job = this.jobs.get(jobId);

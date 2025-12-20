@@ -1,7 +1,7 @@
 /**
- * Player Tab V2 - Playback controls only
- * When a result is selected, it creates a temp file in the sidebar
- * The BinaryViewer shows that temp file with highlights
+ * Player Tab V3 - Enhanced playback with full details
+ * Shows operation costs, bit ranges, highlights, metrics per step
+ * Creates temp file in sidebar for viewing
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Progress } from '@/components/ui/progress';
 import {
   Select,
   SelectContent,
@@ -32,9 +33,14 @@ import {
   FileCode,
   RotateCcw,
   ExternalLink,
+  DollarSign,
+  TrendingDown,
+  TrendingUp,
+  Trash2,
 } from 'lucide-react';
 import { fileSystemManager } from '@/lib/fileSystemManager';
 import { predefinedManager } from '@/lib/predefinedManager';
+import { toast } from 'sonner';
 
 export interface TransformationStep {
   stepIndex: number;
@@ -46,6 +52,7 @@ export interface TransformationStep {
   duration: number;
   timestamp?: Date;
   bitRanges?: { start: number; end: number }[];
+  cost?: number;
 }
 
 export interface ExecutionResult {
@@ -68,12 +75,27 @@ export interface ExecutionResult {
     cpuTime: number;
     operationsCount: number;
   };
+  budgetConfig?: {
+    initial: number;
+    used: number;
+    remaining: number;
+  };
 }
 
 interface PlayerTabProps {
   result: ExecutionResult | null;
   onStepChange?: (step: TransformationStep | null) => void;
 }
+
+// Operation costs mapping
+const OPERATION_COSTS: Record<string, number> = {
+  'NOT': 1, 'AND': 2, 'OR': 2, 'XOR': 2,
+  'NAND': 3, 'NOR': 3, 'XNOR': 3,
+  'left_shift': 1, 'right_shift': 1,
+  'rotate_left': 2, 'rotate_right': 2,
+  'reverse': 1, 'invert': 1,
+  'swap_pairs': 2, 'swap_nibbles': 2, 'mirror': 1,
+};
 
 export const PlayerTab = ({ result, onStepChange }: PlayerTabProps) => {
   const [currentStep, setCurrentStep] = useState(0);
@@ -91,11 +113,12 @@ export const PlayerTab = ({ result, onStepChange }: PlayerTabProps) => {
       // Create temp file in sidebar
       const fileName = `player_${result.strategyName.replace(/\s+/g, '_')}_${Date.now()}.tmp`;
       const tempFile = fileSystemManager.createFile(fileName, result.initialBits, 'binary');
-      tempFile.group = 'Player';
+      fileSystemManager.setFileGroup(tempFile.id, 'Player');
       fileSystemManager.setActiveFile(tempFile.id);
       setTempFileId(tempFile.id);
       setCurrentStep(0);
       setIsPlaying(false);
+      toast.success(`Player temp file created: ${fileName}`);
     }
     
     return () => {
@@ -163,6 +186,11 @@ export const PlayerTab = ({ result, onStepChange }: PlayerTabProps) => {
   );
   const handleSliderChange = (value: number[]) => setCurrentStep(value[0]);
 
+  const handleCleanupTempFiles = () => {
+    const count = fileSystemManager.clearAllTempFiles();
+    toast.success(`Cleaned up ${count} temp files`);
+  };
+
   if (!result) {
     return (
       <div className="flex items-center justify-center h-full text-muted-foreground">
@@ -170,6 +198,15 @@ export const PlayerTab = ({ result, onStepChange }: PlayerTabProps) => {
           <Activity className="w-12 h-12 mx-auto mb-4 opacity-50" />
           <p>No execution result selected</p>
           <p className="text-sm mt-2">Run a strategy or select a result from the Results tab</p>
+          <Button 
+            variant="outline" 
+            size="sm" 
+            className="mt-4"
+            onClick={handleCleanupTempFiles}
+          >
+            <Trash2 className="w-4 h-4 mr-2" />
+            Cleanup Temp Files
+          </Button>
         </div>
       </div>
     );
@@ -177,84 +214,109 @@ export const PlayerTab = ({ result, onStepChange }: PlayerTabProps) => {
 
   const step = result.steps[currentStep];
   const currentBits = step?.afterBits || result.initialBits;
+  const progress = result.steps.length > 0 ? ((currentStep + 1) / result.steps.length) * 100 : 0;
+  
+  // Calculate totals
+  const totalCost = result.steps.reduce((sum, s) => sum + (s.cost || OPERATION_COSTS[s.operation] || 1), 0);
+  const totalBitsChanged = result.steps.reduce((sum, s) => sum + countChangedBits(s.beforeBits, s.afterBits), 0);
+  const cumulativeCost = result.steps.slice(0, currentStep + 1).reduce((sum, s) => sum + (s.cost || OPERATION_COSTS[s.operation] || 1), 0);
 
   return (
-    <div className="h-full flex flex-col gap-4 p-4">
-      {/* Temp File Info */}
-      <Card className="bg-purple-500/10 border-purple-500/30">
+    <div className="h-full flex flex-col gap-3 p-4 overflow-hidden">
+      {/* Header with Strategy Info */}
+      <Card className="bg-purple-500/10 border-purple-500/30 flex-shrink-0">
         <CardContent className="py-3">
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4 flex-wrap">
             <FileCode className="w-5 h-5 text-purple-500" />
-            <div className="flex-1">
-              <span className="text-sm font-medium">Playback Mode</span>
+            <div className="flex-1 min-w-0">
+              <span className="text-sm font-medium truncate">{result.strategyName}</span>
               <p className="text-xs text-muted-foreground">
-                Binary data is displayed in the temp file in the sidebar. Use controls below to step through transformations.
+                Playback Mode - Binary data displayed in temp file in sidebar
               </p>
             </div>
-            <Badge variant="outline" className="border-purple-500/50">
-              {result.strategyName}
-            </Badge>
-            <Badge variant="secondary">
-              {currentBits.length} bits
-            </Badge>
-            {tempFileId && (
+            <div className="flex items-center gap-2 flex-wrap">
+              <Badge variant="secondary">{currentBits.length} bits</Badge>
+              <Badge variant="outline">{result.steps.length} steps</Badge>
+              <Badge variant="outline" className="flex items-center gap-1">
+                <DollarSign className="w-3 h-3" />
+                {cumulativeCost}/{totalCost} cost
+              </Badge>
+              {tempFileId && (
+                <Button 
+                  size="sm" 
+                  variant="outline"
+                  onClick={() => {
+                    if (tempFileId) {
+                      fileSystemManager.setActiveFile(tempFileId);
+                    }
+                  }}
+                >
+                  <ExternalLink className="w-3 h-3 mr-1" />
+                  View File
+                </Button>
+              )}
               <Button 
                 size="sm" 
-                variant="outline"
-                onClick={() => {
-                  if (tempFileId) {
-                    fileSystemManager.setActiveFile(tempFileId);
-                  }
-                }}
+                variant="ghost"
+                onClick={handleCleanupTempFiles}
+                title="Cleanup all temp files"
               >
-                <ExternalLink className="w-3 h-3 mr-1" />
-                View File
+                <Trash2 className="w-3 h-3" />
               </Button>
-            )}
+            </div>
           </div>
         </CardContent>
       </Card>
 
+      {/* Progress Bar */}
+      <div className="flex-shrink-0">
+        <Progress value={progress} className="h-2" />
+        <div className="flex justify-between text-xs text-muted-foreground mt-1">
+          <span>Step {currentStep + 1} of {result.steps.length || 1}</span>
+          <span>{progress.toFixed(0)}% complete</span>
+        </div>
+      </div>
+
       {/* Playback Controls */}
-      <Card>
-        <CardContent className="py-4">
-          <div className="flex items-center gap-4">
+      <Card className="flex-shrink-0">
+        <CardContent className="py-3">
+          <div className="flex items-center gap-3 flex-wrap">
             {/* Control Buttons */}
-            <div className="flex items-center gap-2">
-              <Button size="icon" variant="outline" onClick={handleReset} title="Reset to initial">
+            <div className="flex items-center gap-1">
+              <Button size="icon" variant="outline" onClick={handleReset} title="Reset to initial" className="h-8 w-8">
                 <RotateCcw className="w-4 h-4" />
               </Button>
-              <Button size="icon" variant="outline" onClick={handleStop} disabled={currentStep === 0 && !isPlaying}>
+              <Button size="icon" variant="outline" onClick={handleStop} disabled={currentStep === 0 && !isPlaying} className="h-8 w-8">
                 <Square className="w-4 h-4" />
               </Button>
-              <Button size="icon" variant="outline" onClick={handlePrevious} disabled={currentStep === 0}>
+              <Button size="icon" variant="outline" onClick={handlePrevious} disabled={currentStep === 0} className="h-8 w-8">
                 <SkipBack className="w-4 h-4" />
               </Button>
-              <Button size="icon" variant="outline" onClick={() => setCurrentStep(prev => Math.max(0, prev - 1))} disabled={currentStep === 0}>
+              <Button size="icon" variant="outline" onClick={() => setCurrentStep(prev => Math.max(0, prev - 1))} disabled={currentStep === 0} className="h-8 w-8">
                 <ChevronLeft className="w-4 h-4" />
               </Button>
               {isPlaying ? (
-                <Button size="icon" onClick={handlePause}>
+                <Button size="icon" onClick={handlePause} className="h-8 w-8">
                   <Pause className="w-4 h-4" />
                 </Button>
               ) : (
-                <Button size="icon" onClick={handlePlay} disabled={!result.steps.length || currentStep >= result.steps.length - 1}>
+                <Button size="icon" onClick={handlePlay} disabled={!result.steps.length || currentStep >= result.steps.length - 1} className="h-8 w-8">
                   <Play className="w-4 h-4" />
                 </Button>
               )}
-              <Button size="icon" variant="outline" onClick={() => setCurrentStep(prev => Math.min(result.steps.length - 1, prev + 1))} disabled={currentStep >= result.steps.length - 1}>
+              <Button size="icon" variant="outline" onClick={() => setCurrentStep(prev => Math.min(result.steps.length - 1, prev + 1))} disabled={currentStep >= result.steps.length - 1} className="h-8 w-8">
                 <ChevronRight className="w-4 h-4" />
               </Button>
-              <Button size="icon" variant="outline" onClick={handleNext} disabled={currentStep >= result.steps.length - 1}>
+              <Button size="icon" variant="outline" onClick={handleNext} disabled={currentStep >= result.steps.length - 1} className="h-8 w-8">
                 <SkipForward className="w-4 h-4" />
               </Button>
             </div>
 
             {/* Speed Control */}
             <div className="flex items-center gap-2">
-              <span className="text-sm text-muted-foreground">Speed:</span>
+              <span className="text-xs text-muted-foreground">Speed:</span>
               <Select value={playbackSpeed.toString()} onValueChange={(v) => setPlaybackSpeed(parseFloat(v))}>
-                <SelectTrigger className="w-20 h-8">
+                <SelectTrigger className="w-16 h-8 text-xs">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -263,103 +325,129 @@ export const PlayerTab = ({ result, onStepChange }: PlayerTabProps) => {
                   <SelectItem value="1">1x</SelectItem>
                   <SelectItem value="2">2x</SelectItem>
                   <SelectItem value="4">4x</SelectItem>
-                  <SelectItem value="8">8x</SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
-            {/* Step Counter */}
-            <div className="flex-1 text-center">
-              <span className="text-lg font-mono">
-                Step {currentStep + 1} / {result.steps.length || 1}
-              </span>
+            {/* Timeline Slider */}
+            <div className="flex-1 min-w-[100px]">
+              <Slider
+                value={[currentStep]}
+                min={0}
+                max={Math.max(0, result.steps.length - 1)}
+                step={1}
+                onValueChange={handleSliderChange}
+              />
             </div>
 
             {/* Duration */}
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Clock className="w-4 h-4" />
-              {step?.duration?.toFixed(2) || 0}ms
+            <div className="flex items-center gap-1 text-xs text-muted-foreground">
+              <Clock className="w-3 h-3" />
+              {step?.duration?.toFixed(1) || 0}ms
             </div>
-          </div>
-
-          {/* Timeline Slider */}
-          <div className="mt-4">
-            <Slider
-              value={[currentStep]}
-              min={0}
-              max={Math.max(0, result.steps.length - 1)}
-              step={1}
-              onValueChange={handleSliderChange}
-              className="w-full"
-            />
           </div>
         </CardContent>
       </Card>
 
-      {/* Current Step Details */}
-      <div className="flex-1 grid grid-cols-2 gap-4 min-h-0">
+      {/* Main Content - 2 Column Layout */}
+      <div className="flex-1 grid grid-cols-2 gap-3 min-h-0 overflow-hidden">
         {/* Left: Operation Details */}
-        <Card className="flex flex-col min-h-0">
-          <CardHeader className="pb-2">
+        <Card className="flex flex-col min-h-0 overflow-hidden">
+          <CardHeader className="pb-2 flex-shrink-0">
             <CardTitle className="text-sm flex items-center gap-2">
               <Zap className="w-4 h-4" />
-              Current Operation
+              Step {currentStep + 1} Details
             </CardTitle>
           </CardHeader>
           <CardContent className="flex-1 overflow-auto">
             {step ? (
-              <div className="space-y-4">
-                <div>
-                  <h4 className="font-mono text-lg text-primary">{step.operation}</h4>
-                  {step.params && Object.keys(step.params).length > 0 && (
-                    <div className="mt-2 space-y-1">
+              <div className="space-y-3">
+                {/* Operation Name & Cost */}
+                <div className="p-3 rounded-lg bg-primary/10 border border-primary/30">
+                  <div className="flex items-center justify-between">
+                    <h4 className="font-mono text-lg text-primary">{step.operation}</h4>
+                    <Badge className="flex items-center gap-1">
+                      <DollarSign className="w-3 h-3" />
+                      {step.cost || OPERATION_COSTS[step.operation] || 1}
+                    </Badge>
+                  </div>
+                </div>
+
+                {/* Parameters */}
+                {step.params && Object.keys(step.params).length > 0 && (
+                  <div>
+                    <h5 className="text-xs font-medium text-muted-foreground mb-1">Parameters</h5>
+                    <div className="space-y-1">
                       {Object.entries(step.params).map(([key, value]) => (
-                        <div key={key} className="flex justify-between text-sm">
+                        <div key={key} className="flex justify-between text-sm bg-muted/30 px-2 py-1 rounded">
                           <span className="text-muted-foreground">{key}:</span>
                           <span className="font-mono">{JSON.stringify(value)}</span>
                         </div>
                       ))}
                     </div>
-                  )}
-                </div>
+                  </div>
+                )}
 
                 {/* Bit Ranges */}
                 {step.bitRanges && step.bitRanges.length > 0 && (
-                  <div className="border-t pt-4">
-                    <h5 className="text-sm font-medium mb-2">Bit Ranges Changed</h5>
-                    <div className="flex flex-wrap gap-2">
+                  <div>
+                    <h5 className="text-xs font-medium text-muted-foreground mb-1">Bit Ranges Changed</h5>
+                    <div className="flex flex-wrap gap-1">
                       {step.bitRanges.map((range, i) => (
-                        <Badge key={i} variant="outline">
-                          [{range.start}:{range.end}]
+                        <Badge key={i} variant="outline" className="font-mono text-xs">
+                          [{range.start}:{range.end}] ({range.end - range.start} bits)
                         </Badge>
                       ))}
                     </div>
                   </div>
                 )}
 
-                <div className="border-t pt-4">
-                  <h5 className="text-sm font-medium mb-2">Size Change</h5>
-                  <div className="flex items-center gap-2">
+                {/* Size Change */}
+                <div>
+                  <h5 className="text-xs font-medium text-muted-foreground mb-1">Size Change</h5>
+                  <div className="flex items-center gap-2 text-sm">
                     <span className="font-mono">{step.beforeBits.length}</span>
                     <span className="text-muted-foreground">→</span>
                     <span className="font-mono">{step.afterBits.length}</span>
-                    <Badge variant={step.afterBits.length !== step.beforeBits.length ? 'default' : 'secondary'}>
-                      {step.afterBits.length - step.beforeBits.length >= 0 ? '+' : ''}
-                      {step.afterBits.length - step.beforeBits.length}
-                    </Badge>
+                    {step.afterBits.length !== step.beforeBits.length && (
+                      <Badge variant={step.afterBits.length < step.beforeBits.length ? 'default' : 'secondary'}>
+                        {step.afterBits.length - step.beforeBits.length >= 0 ? '+' : ''}
+                        {step.afterBits.length - step.beforeBits.length}
+                      </Badge>
+                    )}
                   </div>
                 </div>
 
-                <div className="border-t pt-4">
-                  <h5 className="text-sm font-medium mb-2">Bits Changed</h5>
-                  <p className="font-mono text-sm">
-                    {countChangedBits(step.beforeBits, step.afterBits)} bits modified
-                  </p>
+                {/* Bits Changed */}
+                <div>
+                  <h5 className="text-xs font-medium text-muted-foreground mb-1">Bits Modified</h5>
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-sm">{countChangedBits(step.beforeBits, step.afterBits)}</span>
+                    <span className="text-xs text-muted-foreground">
+                      ({((countChangedBits(step.beforeBits, step.afterBits) / step.beforeBits.length) * 100).toFixed(1)}%)
+                    </span>
+                  </div>
                 </div>
 
-                <div className="border-t pt-4">
-                  <h5 className="text-sm font-medium mb-2">Execution Time</h5>
-                  <p className="font-mono text-sm">{step.duration?.toFixed(4) || 0} ms</p>
+                {/* Execution Time */}
+                <div>
+                  <h5 className="text-xs font-medium text-muted-foreground mb-1">Execution Time</h5>
+                  <span className="font-mono text-sm">{step.duration?.toFixed(4) || 0} ms</span>
+                </div>
+
+                {/* Before/After Preview */}
+                <div>
+                  <h5 className="text-xs font-medium text-muted-foreground mb-1">Data Preview (first 64 bits)</h5>
+                  <div className="space-y-1 font-mono text-xs">
+                    <div className="bg-red-500/10 p-1 rounded overflow-hidden">
+                      <span className="text-red-500">Before: </span>
+                      <span className="break-all">{step.beforeBits.slice(0, 64)}{step.beforeBits.length > 64 ? '...' : ''}</span>
+                    </div>
+                    <div className="bg-green-500/10 p-1 rounded overflow-hidden">
+                      <span className="text-green-500">After: </span>
+                      <span className="break-all">{step.afterBits.slice(0, 64)}{step.afterBits.length > 64 ? '...' : ''}</span>
+                    </div>
+                  </div>
                 </div>
               </div>
             ) : (
@@ -369,11 +457,11 @@ export const PlayerTab = ({ result, onStepChange }: PlayerTabProps) => {
         </Card>
 
         {/* Right: Metrics */}
-        <Card className="flex flex-col min-h-0">
-          <CardHeader className="pb-2">
+        <Card className="flex flex-col min-h-0 overflow-hidden">
+          <CardHeader className="pb-2 flex-shrink-0">
             <CardTitle className="text-sm flex items-center gap-2">
               <Activity className="w-4 h-4" />
-              Metrics at Step
+              Metrics at Step {currentStep + 1}
             </CardTitle>
           </CardHeader>
           <CardContent className="flex-1 overflow-auto">
@@ -385,22 +473,29 @@ export const PlayerTab = ({ result, onStepChange }: PlayerTabProps) => {
                     const prevStep = currentStep > 0 ? result.steps[currentStep - 1] : null;
                     const prevValue = prevStep?.metrics?.[key] ?? value;
                     const change = Number(value) - Number(prevValue);
+                    const isImprovement = key === 'entropy' ? change < 0 : change > 0;
                     
                     return (
-                      <div key={key} className="flex items-center justify-between p-2 rounded bg-muted/30">
-                        <div>
-                          <span className="font-medium">{metricDef?.name || key}</span>
-                          {metricDef?.unit && (
-                            <span className="text-xs text-muted-foreground ml-1">({metricDef.unit})</span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono">{typeof value === 'number' ? value.toFixed(4) : value}</span>
-                          {change !== 0 && (
-                            <Badge variant={change < 0 ? 'default' : 'secondary'} className="text-xs">
-                              {change > 0 ? '+' : ''}{change.toFixed(4)}
-                            </Badge>
-                          )}
+                      <div key={key} className="p-2 rounded bg-muted/30 border">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <span className="font-medium text-sm">{metricDef?.name || key}</span>
+                            {metricDef?.unit && (
+                              <span className="text-xs text-muted-foreground ml-1">({metricDef.unit})</span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-sm">{typeof value === 'number' ? value.toFixed(4) : value}</span>
+                            {change !== 0 && (
+                              <Badge 
+                                variant={isImprovement ? 'default' : 'secondary'} 
+                                className="text-xs flex items-center gap-0.5"
+                              >
+                                {isImprovement ? <TrendingDown className="w-3 h-3" /> : <TrendingUp className="w-3 h-3" />}
+                                {change > 0 ? '+' : ''}{change.toFixed(4)}
+                              </Badge>
+                            )}
+                          </div>
                         </div>
                       </div>
                     );
@@ -417,25 +512,45 @@ export const PlayerTab = ({ result, onStepChange }: PlayerTabProps) => {
         </Card>
       </div>
 
-      {/* Operations Reference */}
+      {/* Summary Stats */}
       <Card className="flex-shrink-0">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm flex items-center gap-2">
-            <Layers className="w-4 h-4" />
-            Available Operations ({operations.length})
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-wrap gap-2">
-            {operations.map(op => (
-              <Badge
-                key={op.id}
-                variant={step?.operation === op.id ? 'default' : 'outline'}
-                className="cursor-default"
-              >
-                {op.id}
-              </Badge>
-            ))}
+        <CardContent className="py-2">
+          <div className="flex items-center justify-between text-xs flex-wrap gap-2">
+            <div className="flex items-center gap-4">
+              <span className="flex items-center gap-1">
+                <Layers className="w-3 h-3 text-muted-foreground" />
+                {result.steps.length} total steps
+              </span>
+              <span className="flex items-center gap-1">
+                <Activity className="w-3 h-3 text-muted-foreground" />
+                {totalBitsChanged} bits changed
+              </span>
+              <span className="flex items-center gap-1">
+                <DollarSign className="w-3 h-3 text-muted-foreground" />
+                {totalCost} total cost
+              </span>
+              <span className="flex items-center gap-1">
+                <Clock className="w-3 h-3 text-muted-foreground" />
+                {result.totalDuration.toFixed(0)}ms total
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-muted-foreground">Available Operations:</span>
+              <div className="flex flex-wrap gap-1">
+                {operations.slice(0, 8).map(op => (
+                  <Badge
+                    key={op.id}
+                    variant={step?.operation === op.id ? 'default' : 'outline'}
+                    className="text-xs px-1"
+                  >
+                    {op.id}
+                  </Badge>
+                ))}
+                {operations.length > 8 && (
+                  <Badge variant="outline" className="text-xs">+{operations.length - 8}</Badge>
+                )}
+              </div>
+            </div>
           </div>
         </CardContent>
       </Card>
