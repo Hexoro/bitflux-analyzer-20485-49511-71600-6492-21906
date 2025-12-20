@@ -39,7 +39,13 @@ import {
   Plus,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { pythonModuleSystem, PythonFile, EXAMPLE_STRATEGIES } from '@/lib/pythonModuleSystem';
+import { pythonModuleSystem, PythonFile } from '@/lib/pythonModuleSystem';
+import { 
+  EXAMPLE_SCHEDULER, 
+  EXAMPLE_ALGORITHM, 
+  EXAMPLE_SCORING, 
+  EXAMPLE_POLICY 
+} from '@/lib/exampleAlgorithmFiles';
 
 interface FilesTabProps {
   onFileSelect?: (file: PythonFile | null) => void;
@@ -152,9 +158,12 @@ export const FilesTab = ({ onFileSelect }: FilesTabProps) => {
     setIsEditing(false);
   };
 
-  const handleAddExample = (type: keyof typeof EXAMPLE_STRATEGIES) => {
-    pythonModuleSystem.addExampleStrategy(type);
-    toast.success(`${type} example strategy added`);
+  const handleAddExampleFiles = () => {
+    pythonModuleSystem.addFile('MasterScheduler.py', EXAMPLE_SCHEDULER, 'scheduler');
+    pythonModuleSystem.addFile('EntropyReduction.py', EXAMPLE_ALGORITHM, 'algorithm');
+    pythonModuleSystem.addFile('PerformanceScoring.py', EXAMPLE_SCORING, 'scoring');
+    pythonModuleSystem.addFile('ExecutionPolicy.py', EXAMPLE_POLICY, 'policies');
+    toast.success('Example strategy files added');
   };
 
   const getGroupIcon = (group: PythonFile['group']) => {
@@ -288,20 +297,12 @@ export const FilesTab = ({ onFileSelect }: FilesTabProps) => {
               </Select>
             </div>
 
-            {/* Example Strategies */}
+            {/* Example Strategy */}
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-xs text-muted-foreground">Add examples:</span>
-              <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => handleAddExample('greedy')}>
+              <Button size="sm" variant="outline" className="h-7 text-xs" onClick={handleAddExampleFiles}>
                 <Plus className="w-3 h-3 mr-1" />
-                Greedy
-              </Button>
-              <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => handleAddExample('hillClimbing')}>
-                <Plus className="w-3 h-3 mr-1" />
-                Hill Climbing
-              </Button>
-              <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => handleAddExample('geneticAlgorithm')}>
-                <Plus className="w-3 h-3 mr-1" />
-                Genetic
+                Complete Strategy
               </Button>
             </div>
           </CardContent>
