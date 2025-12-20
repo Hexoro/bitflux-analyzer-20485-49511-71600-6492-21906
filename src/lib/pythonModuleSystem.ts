@@ -1,7 +1,6 @@
 /**
- * Python Module System - Auto-injects all uploaded scripts as modules
- * Supports: auto-inject, standard imports, API-based loading
- * V2 - Added scheduler group and multiple file selection
+ * Python Module System - Manages Python files and strategies
+ * Supports: file management, strategy creation/validation, player state
  */
 
 export interface PythonFile {
@@ -18,8 +17,8 @@ export interface StrategyConfig {
   name: string;
   schedulerFile: string;    // Required - 1 file
   algorithmFiles: string[]; // Multiple allowed
-  scoringFiles: string[];   // Multiple allowed
-  policyFiles: string[];    // Multiple allowed
+  scoringFiles: string[];   // Multiple allowed - defines budget
+  policyFiles: string[];    // Multiple allowed - optional
   created: Date;
 }
 
@@ -39,238 +38,6 @@ export interface PlayerState {
 
 const STORAGE_KEY = 'bitwise_python_files_v2';
 const STRATEGY_KEY = 'bitwise_strategies_v3';
-
-// Example strategy Python templates
-export const EXAMPLE_STRATEGIES = {
-  greedy: {
-    scheduler: `# Greedy Scheduler - Runs algorithm once with full data
-from bitwise_api import get_bits, set_bits, log
-
-def schedule():
-    """Simple greedy scheduler - process all bits at once"""
-    log("Greedy scheduler: Processing full bitstream")
-    # Return single batch with all bits
-    return [{"start": 0, "end": len(get_bits())}]
-`,
-    algorithm: `# Greedy Algorithm - Finds and applies best operation
-from bitwise_api import get_bits, apply_operation, get_metric, log, OPERATIONS
-
-def run_greedy():
-    """Apply operations greedily to minimize entropy"""
-    bits = get_bits()
-    best_entropy = get_metric("entropy")
-    
-    for op in OPERATIONS[:5]:  # Try first 5 operations
-        log(f"Trying operation: {op}")
-        apply_operation(op)
-        new_entropy = get_metric("entropy")
-        if new_entropy < best_entropy:
-            best_entropy = new_entropy
-            log(f"Improved entropy to {new_entropy}")
-    
-    return get_bits()
-`,
-    scoring: `# Entropy Scoring - Evaluates compression quality
-from bitwise_api import get_metric, log
-
-def score():
-    """Score based on entropy reduction"""
-    entropy = get_metric("entropy")
-    compression = get_metric("compression_ratio")
-    
-    # Lower entropy = better compression potential
-    score = (1.0 - entropy) * 100 + compression * 50
-    log(f"Score: {score:.2f}")
-    return score
-`,
-    policies: `# Basic Policies - Constraints for algorithm
-from bitwise_api import get_bits, log
-
-def check_policies():
-    """Check if current state meets policies"""
-    bits = get_bits()
-    
-    # Policy 1: Don't let data grow too much
-    if len(bits) > 10000000:
-        log("Policy violation: Data too large")
-        return False
-    
-    # Policy 2: Maintain some structure
-    if len(set(bits)) < 2:
-        log("Policy violation: Data became uniform")
-        return False
-    
-    return True
-`
-  },
-  hillClimbing: {
-    scheduler: `# Hill Climbing Scheduler - Iterative improvement
-from bitwise_api import get_bits, log
-
-def schedule():
-    """Schedule multiple iterations for hill climbing"""
-    bits = get_bits()
-    chunk_size = len(bits) // 4
-    
-    batches = []
-    for i in range(4):
-        batches.append({
-            "start": i * chunk_size,
-            "end": min((i + 1) * chunk_size, len(bits)),
-            "iterations": 10
-        })
-    
-    log(f"Hill climbing: {len(batches)} batches")
-    return batches
-`,
-    algorithm: `# Hill Climbing Algorithm - Local search optimization
-from bitwise_api import get_bits, set_bits, apply_operation, get_metric, log, OPERATIONS
-import random
-
-def climb():
-    """Perform hill climbing optimization"""
-    current_score = get_metric("entropy")
-    improved = True
-    iterations = 0
-    
-    while improved and iterations < 100:
-        improved = False
-        iterations += 1
-        
-        # Try random neighbor
-        op = random.choice(OPERATIONS)
-        apply_operation(op)
-        new_score = get_metric("entropy")
-        
-        if new_score < current_score:
-            current_score = new_score
-            improved = True
-            log(f"Iteration {iterations}: Improved to {new_score:.4f}")
-    
-    return get_bits()
-`,
-    scoring: `# Multi-objective Scoring
-from bitwise_api import get_metric, log
-
-def score():
-    """Multi-objective evaluation"""
-    entropy = get_metric("entropy")
-    balance = get_metric("bit_balance")
-    runs = get_metric("longest_run")
-    
-    # Weighted combination
-    score = (
-        (1.0 - entropy) * 40 +
-        abs(0.5 - balance) * 30 +
-        (1.0 / (runs + 1)) * 30
-    )
-    
-    log(f"Entropy: {entropy:.4f}, Balance: {balance:.4f}")
-    return score
-`,
-    policies: `# Strict Policies - More constraints
-from bitwise_api import get_bits, get_metric, log
-
-def check_policies():
-    """Stricter policy enforcement"""
-    bits = get_bits()
-    entropy = get_metric("entropy")
-    
-    # Size constraint
-    if len(bits) > len(bits) * 1.5:
-        return False
-    
-    # Entropy shouldn't increase too much
-    if entropy > 0.99:
-        log("Warning: Maximum entropy reached")
-    
-    # Minimum data integrity
-    if len(bits) < 8:
-        return False
-    
-    return True
-`
-  },
-  geneticAlgorithm: {
-    scheduler: `# Genetic Algorithm Scheduler - Population management
-from bitwise_api import get_bits, log
-
-def schedule():
-    """Schedule for genetic algorithm generations"""
-    population_size = 10
-    generations = 5
-    
-    batches = []
-    for gen in range(generations):
-        for ind in range(population_size):
-            batches.append({
-                "generation": gen,
-                "individual": ind,
-                "type": "evaluate"
-            })
-        batches.append({
-            "generation": gen,
-            "type": "selection"
-        })
-    
-    log(f"GA: {generations} generations, pop size {population_size}")
-    return batches
-`,
-    algorithm: `# Genetic Algorithm - Evolution-based optimization
-from bitwise_api import get_bits, set_bits, apply_operation, log, OPERATIONS
-import random
-
-def evolve():
-    """Apply genetic operations"""
-    bits = get_bits()
-    
-    # Crossover: swap bit segments
-    if len(bits) > 16:
-        point = random.randint(4, len(bits) - 4)
-        bits = bits[point:] + bits[:point]
-        set_bits(bits)
-    
-    # Mutation: apply random operation
-    if random.random() < 0.3:
-        op = random.choice(OPERATIONS)
-        apply_operation(op)
-        log(f"Mutation applied: {op}")
-    
-    return get_bits()
-`,
-    scoring: `# Fitness Function for GA
-from bitwise_api import get_metric, log
-
-def fitness():
-    """Calculate fitness for genetic algorithm"""
-    entropy = get_metric("entropy")
-    pattern_count = get_metric("pattern_count")
-    
-    # Fitness: lower entropy, more patterns
-    fit = (1.0 - entropy) * 60 + pattern_count * 0.5
-    
-    log(f"Fitness: {fit:.2f}")
-    return fit
-`,
-    policies: `# GA Policies - Evolution constraints
-from bitwise_api import get_bits, log
-
-def check():
-    """Ensure valid individuals"""
-    bits = get_bits()
-    
-    # Must have valid binary data
-    if not all(b in '01' for b in bits):
-        return False
-    
-    # Minimum viable size
-    if len(bits) < 4:
-        return False
-    
-    return True
-`
-  }
-};
 
 class PythonModuleSystem {
   private files: Map<string, PythonFile> = new Map();
@@ -329,6 +96,17 @@ class PythonModuleSystem {
   addFile(name: string, content: string, group: PythonFile['group']): PythonFile {
     if (!name.endsWith('.py')) {
       throw new Error('Only Python (.py) files are allowed');
+    }
+
+    // Check if file with same name exists
+    const existing = this.getFileByName(name);
+    if (existing) {
+      // Update existing file instead
+      existing.content = content;
+      existing.modified = new Date();
+      this.saveToStorage();
+      this.notifyListeners();
+      return existing;
     }
 
     const id = `py_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -396,12 +174,18 @@ class PythonModuleSystem {
       throw new Error(`Scheduler file "${schedulerFile}" not found`);
     }
     
-    // Validate at least one of each type
+    // Validate at least one of each required type
     if (algorithmFiles.length === 0) {
       throw new Error('At least one algorithm file is required');
     }
     if (scoringFiles.length === 0) {
-      throw new Error('At least one scoring file is required');
+      throw new Error('At least one scoring file is required (defines budget)');
+    }
+
+    // Check if strategy with same name exists
+    const existingStrategy = Array.from(this.strategies.values()).find(s => s.name === name);
+    if (existingStrategy) {
+      throw new Error(`Strategy "${name}" already exists`);
     }
 
     const id = `strat_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -455,7 +239,7 @@ class PythonModuleSystem {
       }
     });
     
-    // Check scoring
+    // Check scoring (required - defines budget)
     strategy.scoringFiles.forEach(f => {
       if (!this.getFileByName(f)) {
         errors.push(`Scoring file "${f}" not found`);
@@ -472,95 +256,32 @@ class PythonModuleSystem {
     return { valid: errors.length === 0, errors };
   }
 
-  // Add example strategies
-  addExampleStrategy(type: keyof typeof EXAMPLE_STRATEGIES): void {
-    const example = EXAMPLE_STRATEGIES[type];
-    const prefix = type.charAt(0).toUpperCase() + type.slice(1);
-    
-    // Add files
-    this.addFile(`${prefix}_scheduler.py`, example.scheduler, 'scheduler');
-    this.addFile(`${prefix}_algorithm.py`, example.algorithm, 'algorithm');
-    this.addFile(`${prefix}_scoring.py`, example.scoring, 'scoring');
-    this.addFile(`${prefix}_policies.py`, example.policies, 'policies');
-    
-    // Create strategy
-    this.createStrategy(
-      `${prefix} Strategy`,
-      `${prefix}_scheduler.py`,
-      [`${prefix}_algorithm.py`],
-      [`${prefix}_scoring.py`],
-      [`${prefix}_policies.py`]
-    );
-  }
-
   /**
    * Generate Python code that auto-injects all files as modules
    */
   generateModuleInjectionCode(context: ExecutionContext): string {
     const modules: string[] = [];
-
+    
     context.allFiles.forEach(file => {
       const moduleName = file.name.replace('.py', '');
+      // Escape the content for embedding
       const escapedContent = file.content
         .replace(/\\/g, '\\\\')
-        .replace(/'/g, "\\'")
+        .replace(/"""/g, '\\"\\"\\"')
         .replace(/\n/g, '\\n');
       
       modules.push(`
-# Auto-inject: ${file.name}
-${moduleName}_code = '''${escapedContent}'''
+# Auto-injected module: ${moduleName}
+import sys
+from types import ModuleType
 ${moduleName}_module = ModuleType('${moduleName}')
-exec(${moduleName}_code, ${moduleName}_module.__dict__)
+${moduleName}_module.__dict__['__name__'] = '${moduleName}'
+exec("""${escapedContent}""", ${moduleName}_module.__dict__)
 sys.modules['${moduleName}'] = ${moduleName}_module
 `);
     });
-
-    return `
-import sys
-from types import ModuleType
-
-# === Bitwise API ===
-bitwise_api = ModuleType('bitwise_api')
-bitwise_api.bits = '${context.bits}'
-bitwise_api.OPERATIONS = ${JSON.stringify(context.operations)}
-bitwise_api.METRICS = ${JSON.stringify(context.metrics)}
-
-_current_bits = '${context.bits}'
-_operation_log = []
-
-def get_bits():
-    return _current_bits
-
-def set_bits(new_bits):
-    global _current_bits
-    _current_bits = new_bits
-
-def apply_operation(op_name, params=None):
-    global _current_bits
-    _operation_log.append({'operation': op_name, 'params': params, 'before': _current_bits})
-    return _current_bits
-
-def get_metric(metric_name):
-    return bitwise_api.METRICS.get(metric_name, 0.0)
-
-def log(msg):
-    print(f"[LOG] {msg}")
-
-def get_operation_log():
-    return _operation_log
-
-bitwise_api.get_bits = get_bits
-bitwise_api.set_bits = set_bits
-bitwise_api.apply_operation = apply_operation
-bitwise_api.get_metric = get_metric
-bitwise_api.log = log
-bitwise_api.get_operation_log = get_operation_log
-
-sys.modules['bitwise_api'] = bitwise_api
-
-# === Auto-injected modules ===
-${modules.join('\n')}
-`;
+    
+    return modules.join('\n');
   }
 
   // Player state management
@@ -568,12 +289,12 @@ ${modules.join('\n')}
     return { ...this.playerState };
   }
 
-  setPlayerState(state: Partial<PlayerState>): void {
-    this.playerState = { ...this.playerState, ...state };
+  setPlayerState(updates: Partial<PlayerState>): void {
+    this.playerState = { ...this.playerState, ...updates };
     this.notifyListeners();
   }
 
-  // Subscribe to changes
+  // Subscription
   subscribe(listener: () => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
@@ -581,6 +302,14 @@ ${modules.join('\n')}
 
   private notifyListeners(): void {
     this.listeners.forEach(l => l());
+  }
+
+  // Clear all data (for testing)
+  clearAll(): void {
+    this.files.clear();
+    this.strategies.clear();
+    this.saveToStorage();
+    this.notifyListeners();
   }
 }
 
