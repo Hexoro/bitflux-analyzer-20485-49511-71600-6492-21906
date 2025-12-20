@@ -63,7 +63,9 @@ import {
 import { pythonExecutor, PythonExecutionResult } from '@/lib/pythonExecutor';
 import { pythonModuleSystem, PythonFile } from '@/lib/pythonModuleSystem';
 import { strategyRunner, REAL_TEST_STRATEGY, StrategyRunResult } from '@/lib/strategyRunner';
+import { strategyExecutionEngine, ExecutionPipelineResult } from '@/lib/strategyExecutionEngine';
 import { fileSystemManager, BinaryFile } from '@/lib/fileSystemManager';
+import { loadExampleAlgorithmFiles } from '@/lib/exampleAlgorithmFiles';
 import { toast } from 'sonner';
 import { Highlight, themes } from 'prism-react-renderer';
 
@@ -124,6 +126,15 @@ for name, value in sorted(metrics.items()):
     code: REAL_TEST_STRATEGY,
   },
 ];
+
+// Load example files on first render
+let examplesLoaded = false;
+const ensureExamplesLoaded = () => {
+  if (!examplesLoaded) {
+    loadExampleAlgorithmFiles(pythonModuleSystem);
+    examplesLoaded = true;
+  }
+};
 
 const KEYBOARD_SHORTCUTS = [
   { keys: 'Ctrl+Enter', description: 'Run code' },
@@ -365,6 +376,11 @@ export const PythonConsoleTab = () => {
     URL.revokeObjectURL(url);
     toast.success('CSV exported');
   }, [activeTab?.lastResult]);
+
+  // Load examples on mount
+  useEffect(() => {
+    ensureExamplesLoaded();
+  }, []);
 
   const addTab = useCallback(() => {
     const newTab: TerminalTab = {

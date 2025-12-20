@@ -1,6 +1,6 @@
 /**
  * Strategy Tab - Create and manage strategies (presets)
- * V2 - Scheduler required, multiple files per group supported
+ * V3 - Integrated with StrategyExecutionEngine for full pipeline
  */
 
 import { useState, useEffect } from 'react';
@@ -31,10 +31,15 @@ import {
   Shield,
   Clock,
   Loader2,
+  Download,
+  FileText,
+  Activity,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { pythonModuleSystem, PythonFile, StrategyConfig } from '@/lib/pythonModuleSystem';
-import { fileSystemManager } from '@/lib/fileSystemManager';
+import { fileSystemManager, BinaryFile } from '@/lib/fileSystemManager';
+import { strategyExecutionEngine, ExecutionPipelineResult, ScoringConfig } from '@/lib/strategyExecutionEngine';
+import { loadExampleAlgorithmFiles } from '@/lib/exampleAlgorithmFiles';
 
 interface StrategyTabProps {
   onRunStrategy?: (strategy: StrategyConfig) => void;
@@ -44,7 +49,12 @@ interface StrategyTabProps {
 export const StrategyTab = ({ onRunStrategy, isExecuting = false }: StrategyTabProps) => {
   const [strategies, setStrategies] = useState<StrategyConfig[]>([]);
   const [files, setFiles] = useState<PythonFile[]>([]);
+  const [binaryFiles, setBinaryFiles] = useState<BinaryFile[]>([]);
   const [selectedStrategy, setSelectedStrategy] = useState<StrategyConfig | null>(null);
+  const [selectedDataFile, setSelectedDataFile] = useState<string>('');
+  const [budget, setBudget] = useState(1000);
+  const [isRunning, setIsRunning] = useState(false);
+  const [lastResult, setLastResult] = useState<ExecutionPipelineResult | null>(null);
 
   // Form state for new strategy
   const [strategyName, setStrategyName] = useState('');
@@ -54,13 +64,24 @@ export const StrategyTab = ({ onRunStrategy, isExecuting = false }: StrategyTabP
   const [selectedPolicies, setSelectedPolicies] = useState<string[]>([]);
 
   useEffect(() => {
+    // Load example files
+    loadExampleAlgorithmFiles(pythonModuleSystem);
+    
     setStrategies(pythonModuleSystem.getAllStrategies());
     setFiles(pythonModuleSystem.getAllFiles());
-    const unsubscribe = pythonModuleSystem.subscribe(() => {
+    setBinaryFiles(fileSystemManager.getFiles());
+    
+    const activeFile = fileSystemManager.getActiveFile();
+    if (activeFile) setSelectedDataFile(activeFile.id);
+    
+    const unsubscribe1 = pythonModuleSystem.subscribe(() => {
       setStrategies(pythonModuleSystem.getAllStrategies());
       setFiles(pythonModuleSystem.getAllFiles());
     });
-    return unsubscribe;
+    const unsubscribe2 = fileSystemManager.subscribe(() => {
+      setBinaryFiles(fileSystemManager.getFiles());
+    });
+    return () => { unsubscribe1(); unsubscribe2(); };
   }, []);
 
   const schedulerFiles = files.filter(f => f.group === 'scheduler');
@@ -124,15 +145,14 @@ export const StrategyTab = ({ onRunStrategy, isExecuting = false }: StrategyTabP
     toast.success('Strategy deleted');
   };
 
-  const handleRunStrategy = () => {
+  const handleRunStrategy = async () => {
     if (!selectedStrategy) {
       toast.error('Select a strategy first');
       return;
     }
 
-    const activeFile = fileSystemManager.getActiveFile();
-    if (!activeFile) {
-      toast.error('No data file selected. Load or generate binary data first.');
+    if (!selectedDataFile) {
+      toast.error('Select a data file first');
       return;
     }
 
@@ -142,7 +162,56 @@ export const StrategyTab = ({ onRunStrategy, isExecuting = false }: StrategyTabP
       return;
     }
 
-    onRunStrategy?.(selectedStrategy);
+    setIsRunning(true);
+    toast.info('Starting strategy execution...');
+
+    try {
+      const scoringConfig: ScoringConfig = {
+        initialBudget: budget,
+        operationCosts: {
+          'NOT': 1, 'AND': 2, 'OR': 2, 'XOR': 2,
+          'NAND': 3, 'NOR': 3, 'XNOR': 3,
+          'left_shift': 1, 'right_shift': 1,
+          'rotate_left': 2, 'rotate_right': 2,
+          'reverse': 1, 'invert': 1,
+        },
+        combos: [],
+      };
+
+      const result = await strategyExecutionEngine.executeStrategy(
+        selectedStrategy,
+        selectedDataFile,
+        scoringConfig
+      );
+
+      setLastResult(result);
+
+      if (result.success) {
+        toast.success(`Strategy completed! Score: ${result.totalScore.toFixed(2)}`);
+      } else {
+        toast.error(`Strategy failed: ${result.error}`);
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Execution failed');
+    } finally {
+      setIsRunning(false);
+    }
+  };
+
+  const handleExportCSV = () => {
+    if (!lastResult) {
+      toast.error('No results to export. Run a strategy first.');
+      return;
+    }
+    const csv = strategyExecutionEngine.exportFullCSV(lastResult);
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `strategy_${lastResult.strategyName}_${Date.now()}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success('Full CSV report exported');
   };
 
   const getValidationStatus = (strategy: StrategyConfig) => {
@@ -182,7 +251,43 @@ export const StrategyTab = ({ onRunStrategy, isExecuting = false }: StrategyTabP
   );
 
   return (
-    <div className="h-full flex gap-4 p-4">
+    <div className="h-full flex flex-col gap-4 p-4">
+      {/* Data File & Budget Selection */}
+      <div className="flex items-center gap-4 p-3 bg-muted/30 rounded-lg flex-shrink-0">
+        <div className="flex items-center gap-2 flex-1">
+          <Label className="text-sm whitespace-nowrap">Data File:</Label>
+          <Select value={selectedDataFile} onValueChange={setSelectedDataFile}>
+            <SelectTrigger className="flex-1">
+              <SelectValue placeholder="Select data file..." />
+            </SelectTrigger>
+            <SelectContent>
+              {binaryFiles.map(file => (
+                <SelectItem key={file.id} value={file.id}>
+                  {file.name} ({file.state.model.getBits().length} bits)
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="flex items-center gap-2">
+          <Label className="text-sm">Budget:</Label>
+          <Input
+            type="number"
+            value={budget}
+            onChange={(e) => setBudget(Number(e.target.value))}
+            className="w-24 h-8"
+            min={1}
+          />
+        </div>
+        {lastResult && (
+          <Button variant="outline" size="sm" onClick={handleExportCSV}>
+            <Download className="w-4 h-4 mr-1" />
+            Export CSV
+          </Button>
+        )}
+      </div>
+
+      <div className="flex-1 flex gap-4 overflow-hidden">
       {/* Left: Strategy List */}
       <div className="w-1/2 flex flex-col gap-4">
         {/* Create New Strategy */}
@@ -474,6 +579,7 @@ export const StrategyTab = ({ onRunStrategy, isExecuting = false }: StrategyTabP
           )}
         </CardContent>
       </Card>
+      </div>
     </div>
   );
 };
