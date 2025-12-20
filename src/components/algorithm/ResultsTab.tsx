@@ -40,8 +40,8 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { resultsManager, ExecutionResultV2 } from '@/lib/resultsManager';
-import { strategyExecutionEngine } from '@/lib/strategyExecutionEngine';
-import { ExecutionResult } from '@/lib/strategyExecutor';
+import { fileSystemManager } from '@/lib/fileSystemManager';
+import { ExecutionResult } from '@/components/algorithm/PlayerTab';
 
 interface ResultsTabProps {
   onSelectResult?: (result: ExecutionResult | null) => void;
@@ -120,24 +120,38 @@ export const ResultsTab = ({ onSelectResult }: ResultsTabProps) => {
 
   const handleSelect = (result: ExecutionResultV2) => {
     setSelectedResult(result);
-    // Convert to ExecutionResult format for player
+    
+    // Create temp file in sidebar for viewing
+    const fileName = `result_${result.strategyName.replace(/\s+/g, '_')}_${Date.now()}.tmp`;
+    const tempFile = fileSystemManager.createFile(fileName, result.finalBits, 'binary');
+    tempFile.group = 'Results';
+    fileSystemManager.setActiveFile(tempFile.id);
+    
+    // Convert to ExecutionResult format for player with bit ranges
     const executionResult: ExecutionResult = {
       id: result.id,
       strategyId: result.strategyId,
       strategyName: result.strategyName,
-      dataFileId: result.id,
-      dataFileName: result.strategyName,
+      dataFileId: tempFile.id,
+      dataFileName: fileName,
       initialBits: result.initialBits,
       finalBits: result.finalBits,
-      steps: result.steps.map((s, i) => ({ ...s, params: s.params || {}, stepIndex: i, timestamp: new Date() })),
+      steps: result.steps.map((s, i) => ({ 
+        ...s, 
+        params: s.params || {}, 
+        stepIndex: i, 
+        timestamp: new Date(),
+        bitRanges: (s as any).bitRanges || []
+      })),
       totalDuration: result.duration,
-      startTime: new Date(),
-      endTime: new Date(),
+      startTime: new Date(result.startTime),
+      endTime: new Date(result.endTime),
       metricsHistory: {},
-      success: true,
+      success: result.status === 'completed',
       resourceUsage: { peakMemory: 0, cpuTime: result.duration, operationsCount: result.steps.length }
     };
     onSelectResult?.(executionResult);
+    toast.success('Result loaded - temp file created in sidebar');
   };
 
   const handleExportCSV = (result: ExecutionResultV2) => {

@@ -21,8 +21,7 @@ import {
   Terminal,
 } from 'lucide-react';
 import { predefinedManager } from '@/lib/predefinedManager';
-import { strategyExecutor, ExecutionResult, TransformationStep } from '@/lib/strategyExecutor';
-import { PlayerTab } from './algorithm/PlayerTab';
+import { PlayerTab, ExecutionResult, TransformationStep } from './algorithm/PlayerTab';
 import { ResultsTab } from './algorithm/ResultsTab';
 import { FilesTab } from './algorithm/FilesTab';
 import { StrategyTab } from './algorithm/StrategyTab';
@@ -43,20 +42,6 @@ export const AlgorithmPanel = () => {
     return unsubscribe;
   }, []);
 
-  // Subscribe to executor status
-  useEffect(() => {
-    const unsubscribe = strategyExecutor.subscribe(() => {
-      const status = strategyExecutor.getStatus();
-      setIsExecuting(status === 'running' || status === 'validating');
-      
-      const execution = strategyExecutor.getCurrentExecution();
-      if (execution) {
-        setCurrentResult(execution);
-      }
-    });
-    return unsubscribe;
-  }, []);
-
   const metrics = predefinedManager.getAllMetrics();
   const operations = predefinedManager.getAllOperations();
   const metricCategories = predefinedManager.getMetricCategories();
@@ -70,16 +55,11 @@ export const AlgorithmPanel = () => {
   }, []);
 
   const handleRunStrategy = useCallback(async (strategy: any) => {
+    // Strategy execution is now handled directly in StrategyTab
+    // This callback is kept for compatibility
     setIsExecuting(true);
-    try {
-      const result = await strategyExecutor.executeStrategy(strategy.id);
-      setCurrentResult(result);
-      setActiveTab('player');
-    } catch (error) {
-      console.error('Strategy execution failed:', error);
-    } finally {
-      setIsExecuting(false);
-    }
+    setActiveTab('results');
+    setTimeout(() => setIsExecuting(false), 500);
   }, []);
 
   const handleStepChange = useCallback((step: TransformationStep | null) => {

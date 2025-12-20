@@ -1,6 +1,7 @@
 /**
- * Player Tab V2 - Real binary data viewer with transformation playback
- * Creates temporary player file, syncs with metrics, highlights changes
+ * Player Tab V2 - Playback controls only
+ * When a result is selected, it creates a temp file in the sidebar
+ * The BinaryViewer shows that temp file with highlights
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
@@ -28,12 +29,46 @@ import {
   Clock,
   Zap,
   Layers,
-  Binary,
   FileCode,
   RotateCcw,
+  ExternalLink,
 } from 'lucide-react';
-import { strategyExecutor, ExecutionResult, TransformationStep } from '@/lib/strategyExecutor';
+import { fileSystemManager } from '@/lib/fileSystemManager';
 import { predefinedManager } from '@/lib/predefinedManager';
+
+export interface TransformationStep {
+  stepIndex: number;
+  operation: string;
+  params: Record<string, any>;
+  beforeBits: string;
+  afterBits: string;
+  metrics: Record<string, number>;
+  duration: number;
+  timestamp?: Date;
+  bitRanges?: { start: number; end: number }[];
+}
+
+export interface ExecutionResult {
+  id: string;
+  strategyId: string;
+  strategyName: string;
+  dataFileId: string;
+  dataFileName: string;
+  initialBits: string;
+  finalBits: string;
+  steps: TransformationStep[];
+  totalDuration: number;
+  startTime: Date;
+  endTime: Date;
+  metricsHistory: Record<string, number[]>;
+  success: boolean;
+  error?: string;
+  resourceUsage: {
+    peakMemory: number;
+    cpuTime: number;
+    operationsCount: number;
+  };
+}
 
 interface PlayerTabProps {
   result: ExecutionResult | null;
@@ -44,28 +79,35 @@ export const PlayerTab = ({ result, onStepChange }: PlayerTabProps) => {
   const [currentStep, setCurrentStep] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
-  const [showDiff, setShowDiff] = useState(true);
-  const [playerFile, setPlayerFile] = useState(strategyExecutor.getPlayerFile());
+  const [tempFileId, setTempFileId] = useState<string | null>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const operations = predefinedManager.getAllOperations();
   const metrics = predefinedManager.getAllMetrics();
 
-  // Subscribe to executor updates
-  useEffect(() => {
-    const unsubscribe = strategyExecutor.subscribe(() => {
-      setPlayerFile(strategyExecutor.getPlayerFile());
-    });
-    return unsubscribe;
-  }, []);
-
-  // Create player file when result changes
+  // Create temp file when result changes
   useEffect(() => {
     if (result && result.initialBits) {
-      strategyExecutor.createPlayerFile(result.initialBits);
+      // Create temp file in sidebar
+      const fileName = `player_${result.strategyName.replace(/\s+/g, '_')}_${Date.now()}.tmp`;
+      const tempFile = fileSystemManager.createFile(fileName, result.initialBits, 'binary');
+      tempFile.group = 'Player';
+      fileSystemManager.setActiveFile(tempFile.id);
+      setTempFileId(tempFile.id);
       setCurrentStep(0);
       setIsPlaying(false);
     }
+    
+    return () => {
+      // Clean up temp file on unmount or result change
+      if (tempFileId) {
+        try {
+          fileSystemManager.deleteFile(tempFileId);
+        } catch (e) {
+          // Ignore if already deleted
+        }
+      }
+    };
   }, [result?.id]);
 
   // Playback logic
@@ -89,53 +131,29 @@ export const PlayerTab = ({ result, onStepChange }: PlayerTabProps) => {
     };
   }, [isPlaying, playbackSpeed, result]);
 
-  // Update player file when step changes
+  // Update temp file when step changes
   useEffect(() => {
-    if (result && result.steps[currentStep]) {
+    if (result && result.steps[currentStep] && tempFileId) {
       const step = result.steps[currentStep];
-      const highlights = calculateDiffHighlights(step.beforeBits, step.afterBits);
-      strategyExecutor.updatePlayerFile(currentStep, step.afterBits, highlights);
+      // Update the temp file with the current step's bits
+      fileSystemManager.updateFile(tempFileId, step.afterBits);
       onStepChange?.(step);
     }
-  }, [currentStep, result, onStepChange]);
-
-  const calculateDiffHighlights = (before: string, after: string) => {
-    const highlights: { start: number; end: number; color: string }[] = [];
-    let changeStart = -1;
-
-    for (let i = 0; i < Math.max(before.length, after.length); i++) {
-      const different = i >= before.length || i >= after.length || before[i] !== after[i];
-      
-      if (different && changeStart === -1) {
-        changeStart = i;
-      } else if (!different && changeStart !== -1) {
-        highlights.push({ start: changeStart, end: i - 1, color: 'hsl(var(--primary))' });
-        changeStart = -1;
-      }
-    }
-    
-    if (changeStart !== -1) {
-      highlights.push({ 
-        start: changeStart, 
-        end: Math.max(before.length, after.length) - 1, 
-        color: 'hsl(var(--primary))' 
-      });
-    }
-
-    return highlights;
-  };
+  }, [currentStep, result, tempFileId, onStepChange]);
 
   const handlePlay = () => setIsPlaying(true);
   const handlePause = () => setIsPlaying(false);
   const handleStop = () => {
     setIsPlaying(false);
     setCurrentStep(0);
-    if (result) {
-      strategyExecutor.createPlayerFile(result.initialBits);
+    if (result && tempFileId) {
+      fileSystemManager.updateFile(tempFileId, result.initialBits);
     }
   };
   const handleReset = () => {
-    strategyExecutor.resetPlayerFile();
+    if (result && tempFileId) {
+      fileSystemManager.updateFile(tempFileId, result.initialBits);
+    }
     setCurrentStep(0);
     setIsPlaying(false);
   };
@@ -158,46 +176,19 @@ export const PlayerTab = ({ result, onStepChange }: PlayerTabProps) => {
   }
 
   const step = result.steps[currentStep];
-  const currentBits = playerFile?.currentBits || result.initialBits;
-
-  // Generate binary display with highlights
-  const renderBinaryView = () => {
-    if (!currentBits) return null;
-    
-    const highlights = playerFile?.highlights || [];
-    const displayBits = currentBits.slice(0, 512);
-    
-    return (
-      <div className="font-mono text-xs leading-relaxed">
-        {displayBits.split('').map((bit, i) => {
-          const isHighlighted = highlights.some(h => i >= h.start && i <= h.end);
-          return (
-            <span 
-              key={i} 
-              className={`${isHighlighted ? 'bg-primary text-primary-foreground' : ''} ${i % 8 === 7 ? 'mr-1' : ''}`}
-            >
-              {bit}
-            </span>
-          );
-        })}
-        {currentBits.length > 512 && (
-          <span className="text-muted-foreground ml-2">...({currentBits.length - 512} more bits)</span>
-        )}
-      </div>
-    );
-  };
+  const currentBits = step?.afterBits || result.initialBits;
 
   return (
     <div className="h-full flex flex-col gap-4 p-4">
-      {/* Temporary Player File Banner */}
+      {/* Temp File Info */}
       <Card className="bg-purple-500/10 border-purple-500/30">
         <CardContent className="py-3">
           <div className="flex items-center gap-4">
             <FileCode className="w-5 h-5 text-purple-500" />
             <div className="flex-1">
-              <span className="text-sm font-medium">Temporary Player File</span>
+              <span className="text-sm font-medium">Playback Mode</span>
               <p className="text-xs text-muted-foreground">
-                This view is temporary and resets on program restart. Does not affect results.
+                Binary data is displayed in the temp file in the sidebar. Use controls below to step through transformations.
               </p>
             </div>
             <Badge variant="outline" className="border-purple-500/50">
@@ -206,27 +197,21 @@ export const PlayerTab = ({ result, onStepChange }: PlayerTabProps) => {
             <Badge variant="secondary">
               {currentBits.length} bits
             </Badge>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Binary Data Viewer */}
-      <Card className="flex-shrink-0">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm flex items-center gap-2">
-            <Binary className="w-4 h-4" />
-            Live Binary View
-            {playerFile?.highlights && playerFile.highlights.length > 0 && (
-              <Badge variant="default" className="ml-2">
-                {playerFile.highlights.length} changed region(s)
-              </Badge>
+            {tempFileId && (
+              <Button 
+                size="sm" 
+                variant="outline"
+                onClick={() => {
+                  if (tempFileId) {
+                    fileSystemManager.setActiveFile(tempFileId);
+                  }
+                }}
+              >
+                <ExternalLink className="w-3 h-3 mr-1" />
+                View File
+              </Button>
             )}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <ScrollArea className="h-32 rounded border bg-muted/30 p-2">
-            {renderBinaryView()}
-          </ScrollArea>
+          </div>
         </CardContent>
       </Card>
 
@@ -283,23 +268,17 @@ export const PlayerTab = ({ result, onStepChange }: PlayerTabProps) => {
               </Select>
             </div>
 
-            {/* Diff Toggle */}
-            <Button size="sm" variant={showDiff ? "default" : "outline"} onClick={() => setShowDiff(!showDiff)}>
-              <Binary className="w-4 h-4 mr-1" />
-              Highlight Changes
-            </Button>
-
             {/* Step Counter */}
             <div className="flex-1 text-center">
               <span className="text-lg font-mono">
-                Step {currentStep + 1} / {result.steps.length}
+                Step {currentStep + 1} / {result.steps.length || 1}
               </span>
             </div>
 
             {/* Duration */}
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Clock className="w-4 h-4" />
-              {step?.duration.toFixed(2)}ms
+              {step?.duration?.toFixed(2) || 0}ms
             </div>
           </div>
 
@@ -344,6 +323,20 @@ export const PlayerTab = ({ result, onStepChange }: PlayerTabProps) => {
                   )}
                 </div>
 
+                {/* Bit Ranges */}
+                {step.bitRanges && step.bitRanges.length > 0 && (
+                  <div className="border-t pt-4">
+                    <h5 className="text-sm font-medium mb-2">Bit Ranges Changed</h5>
+                    <div className="flex flex-wrap gap-2">
+                      {step.bitRanges.map((range, i) => (
+                        <Badge key={i} variant="outline">
+                          [{range.start}:{range.end}]
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 <div className="border-t pt-4">
                   <h5 className="text-sm font-medium mb-2">Size Change</h5>
                   <div className="flex items-center gap-2">
@@ -358,8 +351,15 @@ export const PlayerTab = ({ result, onStepChange }: PlayerTabProps) => {
                 </div>
 
                 <div className="border-t pt-4">
+                  <h5 className="text-sm font-medium mb-2">Bits Changed</h5>
+                  <p className="font-mono text-sm">
+                    {countChangedBits(step.beforeBits, step.afterBits)} bits modified
+                  </p>
+                </div>
+
+                <div className="border-t pt-4">
                   <h5 className="text-sm font-medium mb-2">Execution Time</h5>
-                  <p className="font-mono text-sm">{step.duration.toFixed(4)} ms</p>
+                  <p className="font-mono text-sm">{step.duration?.toFixed(4) || 0} ms</p>
                 </div>
               </div>
             ) : (
@@ -380,11 +380,11 @@ export const PlayerTab = ({ result, onStepChange }: PlayerTabProps) => {
             {step ? (
               <ScrollArea className="h-full">
                 <div className="space-y-2">
-                  {Object.entries(step.metrics).map(([key, value]) => {
+                  {Object.entries(step.metrics || {}).map(([key, value]) => {
                     const metricDef = metrics.find(m => m.id === key);
                     const prevStep = currentStep > 0 ? result.steps[currentStep - 1] : null;
-                    const prevValue = prevStep?.metrics[key] ?? value;
-                    const change = value - prevValue;
+                    const prevValue = prevStep?.metrics?.[key] ?? value;
+                    const change = Number(value) - Number(prevValue);
                     
                     return (
                       <div key={key} className="flex items-center justify-between p-2 rounded bg-muted/30">
@@ -405,6 +405,9 @@ export const PlayerTab = ({ result, onStepChange }: PlayerTabProps) => {
                       </div>
                     );
                   })}
+                  {(!step.metrics || Object.keys(step.metrics).length === 0) && (
+                    <p className="text-muted-foreground text-sm">No metrics recorded for this step</p>
+                  )}
                 </div>
               </ScrollArea>
             ) : (
@@ -439,3 +442,13 @@ export const PlayerTab = ({ result, onStepChange }: PlayerTabProps) => {
     </div>
   );
 };
+
+// Helper function
+function countChangedBits(before: string, after: string): number {
+  let count = 0;
+  const maxLen = Math.max(before.length, after.length);
+  for (let i = 0; i < maxLen; i++) {
+    if ((before[i] || '0') !== (after[i] || '0')) count++;
+  }
+  return count;
+}
