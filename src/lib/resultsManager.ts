@@ -11,6 +11,10 @@ export interface TransformationStep {
   metrics: Record<string, number>;
   timestamp: number;
   duration: number;
+
+  // Optional richer info (for Player/highlights)
+  bitRanges?: { start: number; end: number }[];
+  cost?: number;
 }
 
 export interface ExecutionResultV2 {
@@ -20,16 +24,21 @@ export interface ExecutionResultV2 {
   startTime: number;
   endTime: number;
   duration: number;
-  
+
+  // Optional file linkage (backwards compatible with old stored results)
+  sourceFileId?: string;
+  sourceFileName?: string;
+  resultFileId?: string;
+
   // Data snapshots
   initialBits: string;
   finalBits: string;
   initialMetrics: Record<string, number>;
   finalMetrics: Record<string, number>;
-  
+
   // Transformations
   steps: TransformationStep[];
-  
+
   // Benchmarks
   benchmarks: {
     cpuTime: number;
@@ -38,18 +47,18 @@ export interface ExecutionResultV2 {
     avgStepDuration: number;
     totalCost: number;
   };
-  
+
   // Files used
   filesUsed: {
     algorithm: string;
     scoring: string;
     policy: string;
   };
-  
+
   // Status
   status: 'completed' | 'failed' | 'cancelled';
   error?: string;
-  
+
   // Bookmarking
   bookmarked: boolean;
   tags: string[];

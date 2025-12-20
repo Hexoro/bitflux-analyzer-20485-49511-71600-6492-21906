@@ -449,17 +449,27 @@ class StrategyExecutionEngine {
     budgetUsed: number,
     budgetRemaining: number
   ): ExecutionResultV2 {
-    // Convert transformations to TransformationStep format
-    const transformationSteps: TransformationStep[] = allTransformations.map((t, i) => ({
-      index: i,
-      operation: t.operation,
-      params: t.params,
-      beforeBits: t.beforeBits,
-      afterBits: t.afterBits,
-      metrics: {},
-      timestamp: Date.now(),
-      duration: t.duration,
-    }));
+    // Convert transformations to TransformationStep format (and include bit ranges, costs, lightweight metrics)
+    const METRIC_IDS = ['entropy', 'balance', 'compression_ratio', 'transition_rate'];
+
+    const transformationSteps: TransformationStep[] = allTransformations.map((t, i) => {
+      const metrics = calculateAllMetrics(t.afterBits).metrics;
+      const cost = DEFAULT_SCORING_CONFIG.operationCosts[t.operation as keyof typeof DEFAULT_SCORING_CONFIG.operationCosts] || 1;
+      return {
+        index: i,
+        operation: t.operation,
+        params: t.params,
+        beforeBits: t.beforeBits,
+        afterBits: t.afterBits,
+        metrics: Object.fromEntries(
+          Object.entries(metrics).filter(([k]) => METRIC_IDS.includes(k))
+        ),
+        timestamp: Date.now(),
+        duration: t.duration,
+        bitRanges: t.bitRanges,
+        cost,
+      };
+    });
 
     const avgDuration = transformationSteps.length > 0 
       ? transformationSteps.reduce((sum, s) => sum + s.duration, 0) / transformationSteps.length
@@ -471,6 +481,8 @@ class StrategyExecutionEngine {
       startTime: startTime.getTime(),
       endTime: endTime.getTime(),
       duration: endTime.getTime() - startTime.getTime(),
+      sourceFileId: sourceFile.id,
+      sourceFileName: sourceFile.name,
       initialBits,
       finalBits,
       initialMetrics,
