@@ -346,12 +346,17 @@ export const PythonConsoleTab = () => {
         await pythonExecutor.loadPyodide();
       }
 
-      // Run simple Python code
-      const result = await pythonExecutor.execute(code);
+      // Run simple Python code with default context
+      const result = await pythonExecutor.sandboxTest(code, {
+        bits: '01010101',
+        budget: 1000,
+        metrics: {},
+        operations: ['NOT', 'AND', 'OR', 'XOR']
+      });
 
       // Add output
-      if (result.output) {
-        addEntry('output', result.output);
+      if (result.output !== null && result.output !== undefined) {
+        addEntry('output', String(result.output));
       }
 
       // Add logs
@@ -366,7 +371,7 @@ export const PythonConsoleTab = () => {
       if (result.error) {
         addEntry('error', result.error);
       } else {
-        addEntry('info', `✓ Completed in ${result.executionTime.toFixed(0)}ms`);
+        addEntry('info', `✓ Completed in ${result.duration.toFixed(0)}ms`);
       }
     } catch (error) {
       addEntry('error', error instanceof Error ? error.message : String(error));
