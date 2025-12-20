@@ -236,7 +236,7 @@ export const JobsDialog = ({ open, onOpenChange }: JobsDialogProps) => {
                           <span>{result.strategyName}</span>
                         </div>
                         <div className="flex items-center gap-2 text-muted-foreground">
-                          <span>{result.steps.length} ops</span>
+                          <span>{result.totalOperations || 0} ops</span>
                           <span>{result.totalDuration.toFixed(0)}ms</span>
                         </div>
                       </div>
