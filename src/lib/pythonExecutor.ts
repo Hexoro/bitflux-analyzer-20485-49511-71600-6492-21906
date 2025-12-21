@@ -250,31 +250,45 @@ except SyntaxError as e:
           const startTime = performance.now();
           const fullBeforeBits = currentBits;
           const targetBits = bits || currentBits;
+          const isFullOperation = !bits || bits === currentBits || bits.length === currentBits.length;
+          
           try {
             const result = executeOperation(opName, targetBits, params || {});
             if (result.success) {
-              // If operating on full bits, update currentBits directly
-              if (!bits || bits === currentBits) {
+              let fullAfterBits = currentBits;
+              let bitsChanged = 0;
+              
+              // If operating on full bits or no bits provided, update currentBits
+              if (isFullOperation) {
                 currentBits = result.bits;
+                fullAfterBits = result.bits;
+                bitsChanged = this.countChangedBits(fullBeforeBits, fullAfterBits);
+              } else {
+                // Operating on a segment - count changes in that segment
+                bitsChanged = this.countChangedBits(targetBits, result.bits);
               }
               
-              const fullAfterBits = currentBits;
-              const bitsChanged = this.countChangedBits(fullBeforeBits, fullAfterBits);
               const opCost = getOperationCost(opName);
               
-              // Get metrics snapshot after operation
+              // Get metrics snapshot after operation (using current full bits)
               const metricsResult = calculateAllMetrics(currentBits);
+              
+              // Store the actual mask used for XOR/AND/OR operations
+              const actualParams = { ...params };
+              if (['XOR', 'AND', 'OR', 'NAND', 'NOR', 'XNOR'].includes(opName) && !params?.mask) {
+                actualParams.mask = `[auto-generated ${targetBits.length}-bit mask]`;
+              }
               
               transformations.push({
                 operation: opName,
-                params: params || {},
+                params: actualParams,
                 fullBeforeBits,
-                fullAfterBits,
+                fullAfterBits: isFullOperation ? fullAfterBits : currentBits,
                 beforeBits: targetBits,
                 afterBits: result.bits,
                 bitRanges: rangeStart !== undefined && rangeEnd !== undefined 
                   ? [{ start: rangeStart, end: rangeEnd }]
-                  : [{ start: 0, end: result.bits.length }],
+                  : [{ start: 0, end: targetBits.length }],
                 bitsChanged,
                 cost: opCost,
                 duration: performance.now() - startTime,

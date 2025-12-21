@@ -36,16 +36,26 @@ export interface OperationResult {
   params: OperationParams;
 }
 
+// Generate random mask for operations that need meaningful changes
+function generateRandomMask(length: number): string {
+  let mask = '';
+  for (let i = 0; i < length; i++) {
+    mask += Math.random() > 0.5 ? '1' : '0';
+  }
+  return mask;
+}
+
 // Map operation IDs to their implementations
 const OPERATION_IMPLEMENTATIONS: Record<string, (bits: string, params: OperationParams) => string> = {
   // Logic Gates
   'NOT': (bits) => LogicGates.NOT(bits),
   'AND': (bits, p) => LogicGates.AND(bits, p.mask || '1'.repeat(bits.length)),
   'OR': (bits, p) => LogicGates.OR(bits, p.mask || '0'.repeat(bits.length)),
-  'XOR': (bits, p) => LogicGates.XOR(bits, p.mask || '0'.repeat(bits.length)),
+  // XOR: Use random mask if not provided (XOR with zeros does nothing!)
+  'XOR': (bits, p) => LogicGates.XOR(bits, p.mask || generateRandomMask(bits.length)),
   'NAND': (bits, p) => LogicGates.NAND(bits, p.mask || '1'.repeat(bits.length)),
   'NOR': (bits, p) => LogicGates.NOR(bits, p.mask || '0'.repeat(bits.length)),
-  'XNOR': (bits, p) => LogicGates.XNOR(bits, p.mask || '0'.repeat(bits.length)),
+  'XNOR': (bits, p) => LogicGates.XNOR(bits, p.mask || generateRandomMask(bits.length)),
   
   // Shifts
   'SHL': (bits, p) => ShiftOperations.logicalShiftLeft(bits, p.count || 1),

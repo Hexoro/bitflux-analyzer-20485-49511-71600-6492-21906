@@ -197,34 +197,197 @@ class ResultsManager {
   exportToCSV(result: ExecutionResultV2): string {
     const lines: string[] = [];
     
-    // Header
-    lines.push('Step,Operation,Parameters,Before Size,After Size,Duration (ms),Metrics');
+    // ============= HEADER SECTION =============
+    lines.push('═══════════════════════════════════════════════════════════════');
+    lines.push('BITWISE STRATEGY EXECUTION REPORT');
+    lines.push('═══════════════════════════════════════════════════════════════');
+    lines.push('');
     
-    // Steps
+    // ============= EXECUTION METADATA =============
+    lines.push('EXECUTION METADATA');
+    lines.push('─────────────────────────────────────────────────────────────────');
+    lines.push(`Result ID,${result.id}`);
+    lines.push(`Strategy Name,${result.strategyName}`);
+    lines.push(`Strategy ID,${result.strategyId}`);
+    lines.push(`Source File,${result.sourceFileName || 'N/A'}`);
+    lines.push(`Source File ID,${result.sourceFileId || 'N/A'}`);
+    lines.push(`Status,${result.status}`);
+    lines.push(`Start Time,${new Date(result.startTime).toISOString()}`);
+    lines.push(`End Time,${new Date(result.endTime).toISOString()}`);
+    lines.push(`Total Duration,${result.duration}ms`);
+    lines.push(`Export Generated,${new Date().toISOString()}`);
+    lines.push('');
+    
+    // ============= DATA SIZE ANALYSIS =============
+    lines.push('DATA SIZE ANALYSIS');
+    lines.push('─────────────────────────────────────────────────────────────────');
+    lines.push(`Initial Size,${result.initialBits.length} bits,${(result.initialBits.length / 8).toFixed(0)} bytes`);
+    lines.push(`Final Size,${result.finalBits.length} bits,${(result.finalBits.length / 8).toFixed(0)} bytes`);
+    lines.push(`Size Change,${result.finalBits.length - result.initialBits.length} bits`);
+    const compressionRatio = result.initialBits.length > 0 
+      ? (result.finalBits.length / result.initialBits.length).toFixed(4)
+      : '1.0000';
+    lines.push(`Compression Ratio,${compressionRatio}x`);
+    lines.push('');
+    
+    // ============= INITIAL AND FINAL DATA =============
+    lines.push('BINARY DATA');
+    lines.push('─────────────────────────────────────────────────────────────────');
+    lines.push('Initial Bits (first 256)');
+    lines.push(`"${result.initialBits.slice(0, 256)}${result.initialBits.length > 256 ? '...' : ''}"`);
+    lines.push('');
+    lines.push('Final Bits (first 256)');
+    lines.push(`"${result.finalBits.slice(0, 256)}${result.finalBits.length > 256 ? '...' : ''}"`);
+    lines.push('');
+    
+    // Full data in separate rows for research
+    lines.push('Initial Bits (full - may be truncated in some viewers)');
+    lines.push(`"${result.initialBits}"`);
+    lines.push('');
+    lines.push('Final Bits (full - may be truncated in some viewers)');
+    lines.push(`"${result.finalBits}"`);
+    lines.push('');
+    
+    // ============= BIT STATISTICS =============
+    lines.push('BIT STATISTICS');
+    lines.push('─────────────────────────────────────────────────────────────────');
+    const initialOnes = (result.initialBits.match(/1/g) || []).length;
+    const initialZeros = result.initialBits.length - initialOnes;
+    const finalOnes = (result.finalBits.match(/1/g) || []).length;
+    const finalZeros = result.finalBits.length - finalOnes;
+    lines.push(`Initial Ones,${initialOnes},${(initialOnes/result.initialBits.length*100).toFixed(2)}%`);
+    lines.push(`Initial Zeros,${initialZeros},${(initialZeros/result.initialBits.length*100).toFixed(2)}%`);
+    lines.push(`Final Ones,${finalOnes},${(finalOnes/result.finalBits.length*100).toFixed(2)}%`);
+    lines.push(`Final Zeros,${finalZeros},${(finalZeros/result.finalBits.length*100).toFixed(2)}%`);
+    
+    // Count total bits changed
+    let totalBitsChanged = 0;
+    for (let i = 0; i < Math.min(result.initialBits.length, result.finalBits.length); i++) {
+      if (result.initialBits[i] !== result.finalBits[i]) totalBitsChanged++;
+    }
+    totalBitsChanged += Math.abs(result.initialBits.length - result.finalBits.length);
+    lines.push(`Total Bits Changed,${totalBitsChanged},${(totalBitsChanged/Math.max(result.initialBits.length,result.finalBits.length)*100).toFixed(2)}%`);
+    lines.push('');
+    
+    // ============= METRICS COMPARISON =============
+    lines.push('METRICS COMPARISON');
+    lines.push('─────────────────────────────────────────────────────────────────');
+    lines.push('Metric,Initial Value,Final Value,Change,% Change');
+    const allMetrics = new Set([
+      ...Object.keys(result.initialMetrics || {}),
+      ...Object.keys(result.finalMetrics || {})
+    ]);
+    allMetrics.forEach(metric => {
+      const initial = result.initialMetrics?.[metric] ?? 0;
+      const final = result.finalMetrics?.[metric] ?? 0;
+      const change = final - initial;
+      const pctChange = initial !== 0 ? ((change / Math.abs(initial)) * 100).toFixed(2) : 'N/A';
+      lines.push(`${metric},${initial.toFixed(6)},${final.toFixed(6)},${change.toFixed(6)},${pctChange}%`);
+    });
+    lines.push('');
+    
+    // ============= BENCHMARKS =============
+    lines.push('PERFORMANCE BENCHMARKS');
+    lines.push('─────────────────────────────────────────────────────────────────');
+    lines.push(`CPU Time,${result.benchmarks?.cpuTime || result.duration}ms`);
+    lines.push(`Peak Memory,${result.benchmarks?.peakMemory || 0}MB`);
+    lines.push(`Operation Count,${result.benchmarks?.operationCount || result.steps.length}`);
+    lines.push(`Avg Step Duration,${(result.benchmarks?.avgStepDuration || 0).toFixed(2)}ms`);
+    lines.push(`Total Cost,${result.benchmarks?.totalCost || 0}`);
+    lines.push(`Operations Per Second,${result.duration > 0 ? ((result.steps.length / result.duration) * 1000).toFixed(2) : 'N/A'}`);
+    lines.push('');
+    
+    // ============= OPERATION STATISTICS =============
+    lines.push('OPERATION BREAKDOWN');
+    lines.push('─────────────────────────────────────────────────────────────────');
+    const opCounts: Record<string, { count: number; totalCost: number; totalBitsChanged: number }> = {};
     result.steps.forEach(step => {
-      const metricsStr = Object.entries(step.metrics)
+      if (!opCounts[step.operation]) {
+        opCounts[step.operation] = { count: 0, totalCost: 0, totalBitsChanged: 0 };
+      }
+      opCounts[step.operation].count++;
+      opCounts[step.operation].totalCost += step.cost || 0;
+      // Count bits changed for this operation
+      const before = step.fullBeforeBits || step.beforeBits;
+      const after = step.fullAfterBits || step.afterBits;
+      let changed = 0;
+      for (let i = 0; i < Math.min(before.length, after.length); i++) {
+        if (before[i] !== after[i]) changed++;
+      }
+      opCounts[step.operation].totalBitsChanged += changed;
+    });
+    lines.push('Operation,Count,Total Cost,Avg Cost,Bits Changed');
+    Object.entries(opCounts).sort((a, b) => b[1].count - a[1].count).forEach(([op, data]) => {
+      lines.push(`${op},${data.count},${data.totalCost},${(data.totalCost/data.count).toFixed(2)},${data.totalBitsChanged}`);
+    });
+    lines.push('');
+    
+    // ============= TRANSFORMATION STEPS =============
+    lines.push('TRANSFORMATION STEPS');
+    lines.push('─────────────────────────────────────────────────────────────────');
+    lines.push('Step,Operation,Parameters,Before Size,After Size,Bits Changed,Duration (ms),Cost,Bit Ranges,Metrics');
+    
+    result.steps.forEach(step => {
+      const before = step.fullBeforeBits || step.beforeBits;
+      const after = step.fullAfterBits || step.afterBits;
+      let bitsChanged = 0;
+      for (let i = 0; i < Math.min(before.length, after.length); i++) {
+        if (before[i] !== after[i]) bitsChanged++;
+      }
+      
+      const metricsStr = Object.entries(step.metrics || {})
         .map(([k, v]) => `${k}=${v.toFixed(4)}`)
         .join('; ');
+      const rangesStr = step.bitRanges?.map(r => `[${r.start}:${r.end}]`).join(' ') || 'full';
+      const paramsStr = JSON.stringify(step.params || {}).replace(/"/g, "'");
+      
       lines.push([
         step.index,
         step.operation,
-        JSON.stringify(step.params || {}),
-        step.beforeBits.length,
-        step.afterBits.length,
+        `"${paramsStr}"`,
+        before.length,
+        after.length,
+        bitsChanged,
         step.duration.toFixed(2),
+        step.cost || 0,
+        `"${rangesStr}"`,
         `"${metricsStr}"`,
       ].join(','));
     });
-    
-    // Summary
     lines.push('');
-    lines.push('Summary');
-    lines.push(`Strategy,${result.strategyName}`);
-    lines.push(`Duration,${result.duration}ms`);
-    lines.push(`Operations,${result.benchmarks.operationCount}`);
-    lines.push(`Initial Size,${result.initialBits.length} bits`);
-    lines.push(`Final Size,${result.finalBits.length} bits`);
-    lines.push(`Status,${result.status}`);
+    
+    // ============= FILES USED =============
+    lines.push('FILES CONFIGURATION');
+    lines.push('─────────────────────────────────────────────────────────────────');
+    lines.push(`Algorithm File,${result.filesUsed?.algorithm || 'N/A'}`);
+    lines.push(`Scoring File,${result.filesUsed?.scoring || 'N/A'}`);
+    lines.push(`Policy File,${result.filesUsed?.policy || 'N/A'}`);
+    lines.push('');
+    
+    // ============= SYSTEM INFO =============
+    lines.push('SYSTEM INFORMATION');
+    lines.push('─────────────────────────────────────────────────────────────────');
+    lines.push(`User Agent,${navigator.userAgent}`);
+    lines.push(`Platform,${navigator.platform}`);
+    lines.push(`CPU Cores,${navigator.hardwareConcurrency || 'Unknown'}`);
+    // @ts-ignore
+    lines.push(`Device Memory,${navigator.deviceMemory ? navigator.deviceMemory + ' GB' : 'Unknown'}`);
+    lines.push(`Timezone,${Intl.DateTimeFormat().resolvedOptions().timeZone}`);
+    lines.push('');
+    
+    // ============= NOTES & TAGS =============
+    if (result.notes || result.tags.length > 0) {
+      lines.push('USER ANNOTATIONS');
+      lines.push('─────────────────────────────────────────────────────────────────');
+      lines.push(`Bookmarked,${result.bookmarked ? 'Yes' : 'No'}`);
+      lines.push(`Tags,"${result.tags.join(', ')}"`);
+      lines.push(`Notes,"${result.notes.replace(/"/g, "'').replace(/\n/g, ' ')}"`);
+      lines.push('');
+    }
+    
+    lines.push('═══════════════════════════════════════════════════════════════');
+    lines.push('END OF REPORT');
+    lines.push('═══════════════════════════════════════════════════════════════');
     
     return lines.join('\n');
   }
