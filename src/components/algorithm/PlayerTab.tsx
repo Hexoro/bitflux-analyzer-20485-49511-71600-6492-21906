@@ -47,6 +47,10 @@ export interface TransformationStep {
   stepIndex: number;
   operation: string;
   params: Record<string, any>;
+  // Full file state
+  fullBeforeBits?: string;
+  fullAfterBits?: string;
+  // Segment-level
   beforeBits: string;
   afterBits: string;
   metrics: Record<string, number>;
@@ -54,6 +58,8 @@ export interface TransformationStep {
   timestamp?: Date;
   bitRanges?: { start: number; end: number }[];
   cost?: number;
+  // Cumulative state for accurate playback
+  cumulativeBits?: string;
 }
 
 export interface ExecutionResult {
@@ -149,7 +155,9 @@ export const PlayerTab = ({ result, onStepChange }: PlayerTabProps) => {
     if (!file) return;
 
     const step = result.steps[currentStep];
-    const bitsToApply = step?.afterBits ?? result.initialBits;
+    
+    // Use cumulativeBits (full file state) for accurate playback, fallback to afterBits
+    const bitsToApply = step?.cumulativeBits || step?.fullAfterBits || step?.afterBits || result.initialBits;
 
     // Update file bits to match step
     file.state.model.loadBits(bitsToApply);
@@ -158,7 +166,10 @@ export const PlayerTab = ({ result, onStepChange }: PlayerTabProps) => {
     if (step) {
       const ranges = step.bitRanges && step.bitRanges.length > 0
         ? step.bitRanges
-        : computeChangedRanges(step.beforeBits, step.afterBits);
+        : computeChangedRanges(
+            step.fullBeforeBits || step.beforeBits, 
+            step.fullAfterBits || step.afterBits
+          );
 
       file.state.setExternalHighlightRanges(
         ranges.map(r => ({ ...r, color: 'hsl(var(--primary) / 0.22)' }))
@@ -224,12 +235,17 @@ export const PlayerTab = ({ result, onStepChange }: PlayerTabProps) => {
   }
 
   const step = result.steps[currentStep];
-  const currentBits = step?.afterBits || result.initialBits;
+  // Use cumulative/full bits for accurate display
+  const currentBits = step?.cumulativeBits || step?.fullAfterBits || step?.afterBits || result.initialBits;
   const progress = result.steps.length > 0 ? ((currentStep + 1) / result.steps.length) * 100 : 0;
   
-  // Calculate totals
+  // Calculate totals using full file context
   const totalCost = result.steps.reduce((sum, s) => sum + (s.cost || OPERATION_COSTS[s.operation] || 1), 0);
-  const totalBitsChanged = result.steps.reduce((sum, s) => sum + countChangedBits(s.beforeBits, s.afterBits), 0);
+  const totalBitsChanged = result.steps.reduce((sum, s) => {
+    const before = s.fullBeforeBits || s.beforeBits;
+    const after = s.fullAfterBits || s.afterBits;
+    return sum + countChangedBits(before, after);
+  }, 0);
   const cumulativeCost = result.steps.slice(0, currentStep + 1).reduce((sum, s) => sum + (s.cost || OPERATION_COSTS[s.operation] || 1), 0);
 
   return (
@@ -399,29 +415,33 @@ export const PlayerTab = ({ result, onStepChange }: PlayerTabProps) => {
                   </div>
                 )}
 
-                {/* Size Change */}
+                {/* File Size Info */}
                 <div>
-                  <h5 className="text-xs font-medium text-muted-foreground mb-1">Size Change</h5>
+                  <h5 className="text-xs font-medium text-muted-foreground mb-1">File Size</h5>
                   <div className="flex items-center gap-2 text-sm">
-                    <span className="font-mono">{step.beforeBits.length}</span>
+                    <span className="font-mono">{(step.fullBeforeBits || step.beforeBits).length} bits</span>
                     <span className="text-muted-foreground">→</span>
-                    <span className="font-mono">{step.afterBits.length}</span>
-                    {step.afterBits.length !== step.beforeBits.length && (
-                      <Badge variant={step.afterBits.length < step.beforeBits.length ? 'default' : 'secondary'}>
-                        {step.afterBits.length - step.beforeBits.length >= 0 ? '+' : ''}
-                        {step.afterBits.length - step.beforeBits.length}
-                      </Badge>
-                    )}
+                    <span className="font-mono">{(step.fullAfterBits || step.afterBits).length} bits</span>
                   </div>
+                  {step.bitRanges && step.bitRanges.length > 0 && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Segment modified: {step.beforeBits.length} bits
+                    </p>
+                  )}
                 </div>
 
-                {/* Bits Changed */}
+                {/* Bits Changed (using full file context) */}
                 <div>
                   <h5 className="text-xs font-medium text-muted-foreground mb-1">Bits Modified</h5>
                   <div className="flex items-center gap-2">
-                    <span className="font-mono text-sm">{countChangedBits(step.beforeBits, step.afterBits)}</span>
+                    <span className="font-mono text-sm">
+                      {countChangedBits(step.fullBeforeBits || step.beforeBits, step.fullAfterBits || step.afterBits)}
+                    </span>
                     <span className="text-xs text-muted-foreground">
-                      ({((countChangedBits(step.beforeBits, step.afterBits) / step.beforeBits.length) * 100).toFixed(1)}%)
+                      ({(
+                        (countChangedBits(step.fullBeforeBits || step.beforeBits, step.fullAfterBits || step.afterBits) / 
+                        (step.fullBeforeBits || step.beforeBits).length) * 100
+                      ).toFixed(1)}% of file)
                     </span>
                   </div>
                 </div>

@@ -453,12 +453,15 @@ class StrategyExecutionEngine {
     const METRIC_IDS = ['entropy', 'balance', 'compression_ratio', 'transition_rate'];
 
     const transformationSteps: TransformationStep[] = allTransformations.map((t, i) => {
-      const metrics = calculateAllMetrics(t.afterBits).metrics;
-      const cost = DEFAULT_SCORING_CONFIG.operationCosts[t.operation as keyof typeof DEFAULT_SCORING_CONFIG.operationCosts] || 1;
+      // Use metricsSnapshot if available, otherwise calculate
+      const metrics = t.metricsSnapshot || calculateAllMetrics(t.fullAfterBits || t.afterBits).metrics;
+      const cost = t.cost || DEFAULT_SCORING_CONFIG.operationCosts[t.operation as keyof typeof DEFAULT_SCORING_CONFIG.operationCosts] || 1;
       return {
         index: i,
         operation: t.operation,
         params: t.params,
+        fullBeforeBits: t.fullBeforeBits || t.beforeBits,
+        fullAfterBits: t.fullAfterBits || t.afterBits,
         beforeBits: t.beforeBits,
         afterBits: t.afterBits,
         metrics: Object.fromEntries(
@@ -468,6 +471,7 @@ class StrategyExecutionEngine {
         duration: t.duration,
         bitRanges: t.bitRanges,
         cost,
+        cumulativeBits: t.cumulativeBits || t.fullAfterBits || t.afterBits,
       };
     });
 

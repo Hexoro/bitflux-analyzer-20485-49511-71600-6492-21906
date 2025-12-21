@@ -25,11 +25,20 @@ interface PythonValidationResult {
 export interface TransformationRecord {
   operation: string;
   params: Record<string, any>;
+  // Full file context
+  fullBeforeBits: string;
+  fullAfterBits: string;
+  // Segment-level (what was actually operated on)
   beforeBits: string;
   afterBits: string;
   bitRanges: { start: number; end: number }[];
   bitsChanged: number;
+  cost: number;
   duration: number;
+  // Cumulative state for Player reconstruction
+  cumulativeBits: string;
+  // Metrics snapshot after this operation
+  metricsSnapshot: Record<string, number>;
 }
 
 export interface PythonExecutionResult {
@@ -56,23 +65,50 @@ class PythonExecutor {
   private loadProgress = 0;
   private listeners: Set<(progress: number) => void> = new Set();
   private executionCounter = 0;
+  private loadFailed = false;
+  private fallbackMode = false;
 
   async loadPyodide(): Promise<void> {
     if (this.isLoaded) return;
+    if (this.loadFailed && this.fallbackMode) return; // Already in fallback mode
     if (this.loadPromise) return this.loadPromise;
 
     this.loadPromise = (async () => {
       try {
         this.notifyProgress(10);
         
-        const script = document.createElement('script');
-        script.src = 'https://cdn.jsdelivr.net/pyodide/v0.24.1/full/pyodide.js';
+        // Try multiple CDN sources for Pyodide
+        const cdnSources = [
+          'https://cdn.jsdelivr.net/pyodide/v0.24.1/full/pyodide.js',
+          'https://pyodide-cdn2.iodide.io/v0.24.1/full/pyodide.js',
+        ];
         
-        await new Promise<void>((resolve, reject) => {
-          script.onload = () => resolve();
-          script.onerror = () => reject(new Error('Failed to load Pyodide script'));
-          document.head.appendChild(script);
-        });
+        let loaded = false;
+        for (const src of cdnSources) {
+          try {
+            const script = document.createElement('script');
+            script.src = src;
+            
+            await new Promise<void>((resolve, reject) => {
+              script.onload = () => resolve();
+              script.onerror = () => reject(new Error(`Failed to load from ${src}`));
+              const timeoutId = setTimeout(() => reject(new Error('Timeout')), 15000);
+              script.onload = () => { clearTimeout(timeoutId); resolve(); };
+              document.head.appendChild(script);
+            });
+            
+            loaded = true;
+            console.log(`Pyodide script loaded from ${src}`);
+            break;
+          } catch (e) {
+            console.warn(`Failed to load Pyodide from ${src}:`, e);
+            continue;
+          }
+        }
+        
+        if (!loaded) {
+          throw new Error('All Pyodide CDN sources failed');
+        }
 
         this.notifyProgress(30);
 
@@ -82,18 +118,35 @@ class PythonExecutor {
         });
 
         this.notifyProgress(70);
-        await this.pyodide.loadPackage(['numpy']);
+        
+        // Try to load numpy, but don't fail if it doesn't work
+        try {
+          await this.pyodide.loadPackage(['numpy']);
+        } catch (e) {
+          console.warn('Failed to load numpy, continuing without it:', e);
+        }
         
         this.notifyProgress(100);
         this.isLoaded = true;
+        this.loadFailed = false;
         console.log('Pyodide Python loaded successfully');
       } catch (error) {
-        console.error('Failed to load Pyodide:', error);
-        throw new Error('Failed to load Python runtime');
+        console.error('Failed to load Pyodide, enabling fallback mode:', error);
+        this.loadFailed = true;
+        this.fallbackMode = true;
+        this.notifyProgress(100); // Mark as "complete" even in fallback
+        // Don't throw - allow fallback execution
       }
     })();
 
     return this.loadPromise;
+  }
+
+  /**
+   * Check if we're in fallback mode (no Pyodide available)
+   */
+  isFallbackMode(): boolean {
+    return this.fallbackMode;
   }
 
   private notifyProgress(progress: number): void {
@@ -195,59 +248,81 @@ except SyntaxError as e:
       bridge: {
         apply_operation: (opName: string, bits: string, params?: any, rangeStart?: number, rangeEnd?: number) => {
           const startTime = performance.now();
-          const beforeBits = bits || currentBits;
+          const fullBeforeBits = currentBits;
+          const targetBits = bits || currentBits;
           try {
-            const result = executeOperation(opName, beforeBits, params || {});
+            const result = executeOperation(opName, targetBits, params || {});
             if (result.success) {
-              // Track transformation
-              const bitsChanged = this.countChangedBits(beforeBits, result.bits);
+              // If operating on full bits, update currentBits directly
+              if (!bits || bits === currentBits) {
+                currentBits = result.bits;
+              }
+              
+              const fullAfterBits = currentBits;
+              const bitsChanged = this.countChangedBits(fullBeforeBits, fullAfterBits);
+              const opCost = getOperationCost(opName);
+              
+              // Get metrics snapshot after operation
+              const metricsResult = calculateAllMetrics(currentBits);
+              
               transformations.push({
                 operation: opName,
                 params: params || {},
-                beforeBits,
+                fullBeforeBits,
+                fullAfterBits,
+                beforeBits: targetBits,
                 afterBits: result.bits,
                 bitRanges: rangeStart !== undefined && rangeEnd !== undefined 
                   ? [{ start: rangeStart, end: rangeEnd }]
                   : [{ start: 0, end: result.bits.length }],
                 bitsChanged,
+                cost: opCost,
                 duration: performance.now() - startTime,
+                cumulativeBits: currentBits,
+                metricsSnapshot: metricsResult.metrics,
               });
               
-              // Update current bits if operating on default
-              if (!bits) {
-                currentBits = result.bits;
-              }
               return result.bits;
             }
             logs.push(`[ERROR] Operation ${opName} failed: ${result.error}`);
-            return beforeBits;
+            return targetBits;
           } catch (e) {
             logs.push(`[ERROR] Operation ${opName} exception: ${e}`);
-            return beforeBits;
+            return targetBits;
           }
         },
 
         apply_operation_range: (opName: string, start: number, end: number, params?: any) => {
           const startTime = performance.now();
-          const beforeBits = currentBits;
+          const fullBeforeBits = currentBits;
           try {
             const targetBits = currentBits.slice(start, end);
             const result = executeOperation(opName, targetBits, params || {});
             if (result.success) {
               const newBits = currentBits.slice(0, start) + result.bits + currentBits.slice(end);
               const bitsChanged = this.countChangedBits(targetBits, result.bits);
+              const opCost = getOperationCost(opName);
+              
+              currentBits = newBits;
+              
+              // Get metrics snapshot after operation
+              const metricsResult = calculateAllMetrics(currentBits);
               
               transformations.push({
                 operation: opName,
                 params: { ...params, range: { start, end } },
-                beforeBits,
-                afterBits: newBits,
+                fullBeforeBits,
+                fullAfterBits: newBits,
+                beforeBits: targetBits,
+                afterBits: result.bits,
                 bitRanges: [{ start, end }],
                 bitsChanged,
+                cost: opCost,
                 duration: performance.now() - startTime,
+                cumulativeBits: currentBits,
+                metricsSnapshot: metricsResult.metrics,
               });
               
-              currentBits = newBits;
               return result.bits;
             }
             logs.push(`[ERROR] Operation ${opName} on range [${start}:${end}] failed: ${result.error}`);
@@ -332,15 +407,101 @@ except SyntaxError as e:
     return count;
   }
 
+  /**
+   * Fallback execution when Pyodide is unavailable
+   * Parses simple Python-like commands and executes them via the bridge
+   */
+  private fallbackExecution(pythonCode: string, context: PythonContext, startTime: number): PythonExecutionResult {
+    const bridgeObj = this.createBitwiseApiBridge(context);
+    const logs: string[] = ['[FALLBACK MODE] Pyodide unavailable, using limited JS execution'];
+    
+    try {
+      // Parse simple commands from the Python code
+      const lines = pythonCode.split('\n').filter(l => l.trim() && !l.trim().startsWith('#'));
+      
+      for (const line of lines) {
+        const trimmed = line.trim();
+        
+        // Handle print statements
+        if (trimmed.startsWith('print(')) {
+          const match = trimmed.match(/print\(["'](.*)["']\)/);
+          if (match) {
+            logs.push(match[1]);
+          } else if (trimmed.includes('get_bits()')) {
+            logs.push(`Bits: ${bridgeObj.bridge.get_bits().slice(0, 64)}...`);
+          }
+          continue;
+        }
+        
+        // Handle apply_operation calls
+        const opMatch = trimmed.match(/apply_operation\s*\(\s*["'](\w+)["']/);
+        if (opMatch) {
+          const opName = opMatch[1];
+          bridgeObj.bridge.apply_operation(opName, '', {});
+          logs.push(`Applied: ${opName}`);
+          continue;
+        }
+        
+        // Handle apply_operation_range calls
+        const rangeMatch = trimmed.match(/apply_operation_range\s*\(\s*["'](\w+)["']\s*,\s*(\d+)\s*,\s*(\d+)/);
+        if (rangeMatch) {
+          const [, opName, startStr, endStr] = rangeMatch;
+          bridgeObj.bridge.apply_operation_range(opName, parseInt(startStr), parseInt(endStr));
+          logs.push(`Applied: ${opName} on [${startStr}:${endStr}]`);
+          continue;
+        }
+        
+        // Handle log calls
+        const logMatch = trimmed.match(/log\s*\(\s*["'](.*)["']\s*\)/);
+        if (logMatch) {
+          logs.push(logMatch[1]);
+          continue;
+        }
+      }
+      
+      logs.push(`[FALLBACK] Completed with ${bridgeObj.getTransformations().length} operations`);
+      
+      return {
+        success: true,
+        output: 'Fallback execution completed',
+        logs,
+        duration: performance.now() - startTime,
+        transformations: bridgeObj.getTransformations(),
+        finalBits: bridgeObj.getCurrentBits(),
+        metrics: bridgeObj.bridge.get_all_metrics() as Record<string, number>,
+        stats: bridgeObj.getStats(),
+      };
+    } catch (error) {
+      return {
+        success: false,
+        output: null,
+        logs,
+        error: `Fallback execution error: ${error}`,
+        duration: performance.now() - startTime,
+        transformations: bridgeObj.getTransformations(),
+        finalBits: bridgeObj.getCurrentBits(),
+        metrics: {},
+        stats: bridgeObj.getStats(),
+      };
+    }
+  }
+
   async sandboxTest(pythonCode: string, context: PythonContext): Promise<PythonExecutionResult> {
     const startTime = performance.now();
     this.executionCounter++;
     const execId = this.executionCounter;
 
-    try {
-      if (!this.isLoaded) {
-        await this.loadPyodide();
+    // Check if we need to use fallback mode
+    if (this.fallbackMode || !this.isLoaded) {
+      await this.loadPyodide();
+      
+      // If still in fallback mode after attempting to load, use JS-based execution
+      if (this.fallbackMode) {
+        return this.fallbackExecution(pythonCode, context, startTime);
       }
+    }
+
+    try {
 
       const bridgeObj = this.createBitwiseApiBridge(context);
       

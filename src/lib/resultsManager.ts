@@ -6,15 +6,20 @@ export interface TransformationStep {
   index: number;
   operation: string;
   params?: Record<string, any>;
+  // Full file state (for accurate Player playback)
+  fullBeforeBits: string;
+  fullAfterBits: string;
+  // Segment-level (actual bits operated on)
   beforeBits: string;
   afterBits: string;
   metrics: Record<string, number>;
   timestamp: number;
   duration: number;
-
-  // Optional richer info (for Player/highlights)
+  // Rich info for Player
   bitRanges?: { start: number; end: number }[];
   cost?: number;
+  // Cumulative state (full file after this step)
+  cumulativeBits?: string;
 }
 
 export interface ExecutionResultV2 {

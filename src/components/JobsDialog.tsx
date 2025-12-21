@@ -32,6 +32,7 @@ import {
   ChevronDown,
   ChevronRight,
 } from 'lucide-react';
+import { Terminal } from 'lucide-react';
 import { toast } from 'sonner';
 import { jobManagerV2, Job, JobPreset } from '@/lib/jobManagerV2';
 import { fileSystemManager } from '@/lib/fileSystemManager';
@@ -372,6 +373,24 @@ export const JobsDialog = ({ open, onOpenChange }: JobsDialogProps) => {
           <TabsContent value="create" className="flex-1 overflow-hidden m-0 mt-4">
             <ScrollArea className="h-[450px]">
               <div className="space-y-4 pr-4">
+                {/* CLI Info Card */}
+                <Card className="bg-blue-500/10 border-blue-500/30">
+                  <CardContent className="py-3">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Terminal className="w-4 h-4 text-blue-500" />
+                      <span className="font-medium text-sm">CLI Alternatives</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mb-2">
+                      You can also run strategies from the Python Console:
+                    </p>
+                    <div className="space-y-1 text-xs font-mono bg-muted/30 p-2 rounded">
+                      <div><span className="text-blue-400">run_strategy</span>("<span className="text-green-400">name</span>")</div>
+                      <div><span className="text-blue-400">list_strategies</span>()</div>
+                      <div><span className="text-blue-400">list_files</span>()</div>
+                    </div>
+                  </CardContent>
+                </Card>
+
                 <Card>
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm">Create New Job</CardTitle>
@@ -426,18 +445,23 @@ export const JobsDialog = ({ open, onOpenChange }: JobsDialogProps) => {
                           <SelectTrigger className="flex-1">
                             <SelectValue placeholder="Select a strategy" />
                           </SelectTrigger>
-                          <SelectContent className="bg-popover border border-border z-50">
+                          <SelectContent className="bg-popover border border-border z-50 max-w-md">
                             {strategies.length === 0 ? (
                               <div className="p-2 text-center text-muted-foreground text-sm">
-                                No strategies available. Create one first.
+                                No strategies available. Create one in the Strategy tab.
                               </div>
                             ) : (
                               strategies.map(strategy => (
                                 <SelectItem key={strategy.id} value={strategy.id}>
-                                  <div className="flex items-center gap-2">
-                                    <Settings2 className="w-3 h-3" />
-                                    <span>{strategy.name}</span>
-                                    {strategy.schedulerFile && <Badge variant="secondary" className="ml-2 text-xs">Ready</Badge>}
+                                  <div className="flex flex-col gap-0.5">
+                                    <div className="flex items-center gap-2">
+                                      <Settings2 className="w-3 h-3" />
+                                      <span className="font-medium">{strategy.name}</span>
+                                      {strategy.schedulerFile && <Badge variant="secondary" className="text-xs">Ready</Badge>}
+                                    </div>
+                                    <div className="text-xs text-muted-foreground">
+                                      {strategy.algorithmFiles.length} algorithm(s), {strategy.scoringFiles.length} scoring, {strategy.policyFiles.length} policy
+                                    </div>
                                   </div>
                                 </SelectItem>
                               ))
