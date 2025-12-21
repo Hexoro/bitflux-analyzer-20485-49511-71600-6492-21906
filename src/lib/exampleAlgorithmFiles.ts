@@ -96,7 +96,7 @@ def analyze_segment(start, end):
     }
 
 def find_best_operation(start, end):
-    """Find the operation that best reduces entropy"""
+    """Find the operation that best reduces entropy using apply_operation_range for proper tracking"""
     bits = get_bits()
     segment = bits[start:end]
     current_entropy = get_metric("entropy", segment)
@@ -104,7 +104,7 @@ def find_best_operation(start, end):
     best_op = None
     best_improvement = 0
     
-    # Test each operation
+    # Test each operation on a copy (don't modify actual data during search)
     ops = get_available_operations()
     test_ops = ['XOR', 'NOT', 'AND', 'OR', 'left_shift', 'right_shift', 'reverse']
     
@@ -117,7 +117,7 @@ def find_best_operation(start, end):
             break
         
         try:
-            # Test operation
+            # Test operation on segment copy (doesn't record transformation)
             result = apply_operation(op, segment)
             new_entropy = get_metric("entropy", result)
             improvement = current_entropy - new_entropy

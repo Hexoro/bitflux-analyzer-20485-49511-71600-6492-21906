@@ -8,6 +8,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Slider } from '@/components/ui/slider';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -42,6 +43,8 @@ import {
 import { fileSystemManager } from '@/lib/fileSystemManager';
 import { predefinedManager } from '@/lib/predefinedManager';
 import { toast } from 'sonner';
+import { BitDiffView } from './BitDiffView';
+import { MetricsTimelineChart } from './MetricsTimelineChart';
 
 export interface TransformationStep {
   stepIndex: number;
@@ -362,8 +365,17 @@ export const PlayerTab = ({ result, onStepChange }: PlayerTabProps) => {
         </CardContent>
       </Card>
 
-      {/* Main Content - 2 Column Layout */}
-      <div className="flex-1 grid grid-cols-2 gap-3 min-h-0 overflow-hidden">
+      {/* Tabbed View: Details + Diff + Timeline */}
+      <Tabs defaultValue="details" className="flex-1 flex flex-col min-h-0 overflow-hidden">
+        <TabsList className="w-full justify-start flex-shrink-0">
+          <TabsTrigger value="details">Step Details</TabsTrigger>
+          <TabsTrigger value="diff">Visual Diff</TabsTrigger>
+          <TabsTrigger value="timeline">Metrics Timeline</TabsTrigger>
+        </TabsList>
+        
+        {/* Details Tab - 2 Column Layout */}
+        <TabsContent value="details" className="flex-1 m-0 mt-2 overflow-hidden">
+          <div className="h-full grid grid-cols-2 gap-3 overflow-hidden">
         {/* Left: Operation Details */}
         <Card className="flex flex-col min-h-0 overflow-hidden">
           <CardHeader className="pb-2 flex-shrink-0">
@@ -513,7 +525,33 @@ export const PlayerTab = ({ result, onStepChange }: PlayerTabProps) => {
             )}
           </CardContent>
         </Card>
-      </div>
+          </div>
+        </TabsContent>
+        
+        {/* Visual Diff Tab */}
+        <TabsContent value="diff" className="flex-1 m-0 mt-2 overflow-auto">
+          {step && (
+            <BitDiffView
+              beforeBits={step.fullBeforeBits || step.beforeBits}
+              afterBits={step.fullAfterBits || step.afterBits}
+              highlightRanges={step.bitRanges}
+            />
+          )}
+        </TabsContent>
+        
+        {/* Metrics Timeline Tab */}
+        <TabsContent value="timeline" className="flex-1 m-0 mt-2 overflow-auto">
+          <MetricsTimelineChart
+            steps={result.steps.map(s => ({
+              operation: s.operation,
+              metrics: s.metrics,
+              cost: s.cost,
+            }))}
+            initialMetrics={result.metricsHistory ? undefined : undefined}
+            currentStepIndex={currentStep}
+          />
+        </TabsContent>
+      </Tabs>
 
       {/* Summary Stats */}
       <Card className="flex-shrink-0">
