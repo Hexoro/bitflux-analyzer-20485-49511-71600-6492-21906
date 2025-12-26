@@ -412,15 +412,21 @@ const Index = () => {
   return (
     <div className="h-screen flex flex-col bg-background text-foreground">
       {/* Header */}
-      <div className="bg-gradient-to-r from-primary/10 via-accent/5 to-primary/10 border-b border-border px-4 py-3">
-        <div className="flex items-center justify-center">
-          <div className="text-center">
-            <h1 className="text-2xl font-black text-primary tracking-tight">
-              BSEE
-            </h1>
-            <p className="text-xs text-muted-foreground font-medium tracking-widest uppercase">
-              Binary Structural Exploration Engine
-            </p>
+      <div className="border-b border-border bg-card/50 backdrop-blur-sm">
+        <div className="flex items-center justify-center py-2">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded bg-primary/20 border border-primary/40 flex items-center justify-center">
+              <span className="text-primary font-black text-sm">B</span>
+            </div>
+            <div>
+              <h1 className="text-lg font-bold tracking-tight">
+                <span className="text-primary">B</span>
+                <span className="text-foreground">SEE</span>
+              </h1>
+              <p className="text-[10px] text-muted-foreground tracking-widest uppercase -mt-0.5">
+                Binary Structural Exploration Engine
+              </p>
+            </div>
           </div>
         </div>
       </div>
@@ -470,7 +476,12 @@ const Index = () => {
         <ResizableHandle />
 
         <ResizablePanel defaultSize={40} minSize={20}>
-          {appMode === 'analysis' ? (
+          {isPlayerMode ? (
+            <PlayerModePanel 
+              onExitPlayer={handleExitPlayerMode} 
+              selectedResultId={playerResultId}
+            />
+          ) : appMode === 'analysis' ? (
             <Tabs value={activeTab} onValueChange={setActiveTab} className="h-full flex flex-col">
               <TabsList className="w-full justify-start rounded-none border-b">
                 <TabsTrigger value="analysis">Analysis</TabsTrigger>

@@ -57,15 +57,26 @@ export const AudioVisualizerDialog = ({ open, onOpenChange, binaryData }: AudioV
     };
   }, [open]);
 
-  // Generate audio buffer when data or mode changes
+  // Generate audio buffer when data or mode changes - auto refresh on data change
   useEffect(() => {
     if (!generatorRef.current || !open || !binaryData || binaryData.length === 0) {
       audioBufferRef.current = null;
       return;
     }
+    
+    // Stop current playback if data changes
+    if (isPlaying) {
+      generatorRef.current.stop();
+      setIsPlaying(false);
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+      }
+    }
+    
     try {
       const buffer = generatorRef.current.generateFromBinary(binaryData.slice(0, 50000), audioMode);
       audioBufferRef.current = buffer;
+      setProgress(0);
     } catch (error) {
       console.error('Failed to generate audio buffer:', error);
       audioBufferRef.current = null;
