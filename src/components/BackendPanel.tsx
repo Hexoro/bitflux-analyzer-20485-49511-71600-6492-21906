@@ -46,8 +46,10 @@ import {
 import { MetricsCodeEditor } from './MetricsCodeEditor';
 import { OperationsCodeEditor } from './OperationsCodeEditor';
 import { CodeFileEditor } from './CodeFileEditor';
+import { GuidesTab } from './backend/GuidesTab';
+import { AnomaliesTab } from './backend/AnomaliesTab';
 
-type BackendTab = 'metrics' | 'operations' | 'metrics-code' | 'operations-code' | 'metrics-json' | 'operations-json' | 'info';
+type BackendTab = 'metrics' | 'operations' | 'anomalies' | 'guides' | 'metrics-code' | 'operations-code' | 'metrics-json' | 'operations-json' | 'info';
 
 export const BackendPanel = () => {
   const [activeTab, setActiveTab] = useState<BackendTab>('metrics');
@@ -182,21 +184,21 @@ export const BackendPanel = () => {
           <Cog className="w-4 h-4 mr-1" />
           Operations
         </TabsTrigger>
+        <TabsTrigger value="anomalies">
+          <Activity className="w-4 h-4 mr-1" />
+          Anomalies
+        </TabsTrigger>
+        <TabsTrigger value="guides">
+          <BookOpen className="w-4 h-4 mr-1" />
+          Guides
+        </TabsTrigger>
         <TabsTrigger value="metrics-code">
           <Code className="w-4 h-4 mr-1" />
-          Metrics Code
+          M-Code
         </TabsTrigger>
         <TabsTrigger value="operations-code">
           <Code className="w-4 h-4 mr-1" />
-          Ops Code
-        </TabsTrigger>
-        <TabsTrigger value="metrics-json">
-          <FileCode className="w-4 h-4 mr-1" />
-          Metrics JSON
-        </TabsTrigger>
-        <TabsTrigger value="operations-json">
-          <FileCode className="w-4 h-4 mr-1" />
-          Ops JSON
+          O-Code
         </TabsTrigger>
         <TabsTrigger value="info">
           <Info className="w-4 h-4 mr-1" />
@@ -383,6 +385,16 @@ export const BackendPanel = () => {
           </ScrollArea>
         </TabsContent>
 
+        {/* Anomalies Tab */}
+        <TabsContent value="anomalies" className="h-full m-0">
+          <AnomaliesTab />
+        </TabsContent>
+
+        {/* Guides Tab */}
+        <TabsContent value="guides" className="h-full m-0">
+          <GuidesTab />
+        </TabsContent>
+
         {/* Metrics Code Editor Tab */}
         <TabsContent value="metrics-code" className="h-full m-0 p-4">
           <MetricsCodeEditor />
@@ -391,16 +403,6 @@ export const BackendPanel = () => {
         {/* Operations Code Editor Tab */}
         <TabsContent value="operations-code" className="h-full m-0 p-4">
           <OperationsCodeEditor />
-        </TabsContent>
-
-        {/* Metrics JSON Editor Tab */}
-        <TabsContent value="metrics-json" className="h-full m-0 p-4">
-          <CodeFileEditor mode="metrics" />
-        </TabsContent>
-
-        {/* Operations JSON Editor Tab */}
-        <TabsContent value="operations-json" className="h-full m-0 p-4">
-          <CodeFileEditor mode="operations" />
         </TabsContent>
 
         {/* Info Tab - Rewritten */}

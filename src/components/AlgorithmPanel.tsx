@@ -1,6 +1,6 @@
 /**
- * Algorithm Panel V4 - With Neural Network mode
- * Tabs: Files, Strategy, Player, Results, Neural Network, Metrics, Operations, Python
+ * Algorithm Panel V5 - With Comparison tab (Neural Network moved to ML mode)
+ * Tabs: Files, Strategy, Player, Results, Compare, Metrics, Operations, Python
  */
 
 import { useState, useEffect, useCallback } from 'react';
@@ -18,7 +18,7 @@ import {
   ChevronRight,
   ChevronDown,
   Terminal,
-  Brain,
+  GitCompare,
 } from 'lucide-react';
 import { predefinedManager } from '@/lib/predefinedManager';
 import { PlayerTab, ExecutionResult, TransformationStep } from './algorithm/PlayerTab';
@@ -26,9 +26,9 @@ import { ResultsTab } from './algorithm/ResultsTab';
 import { FilesTab } from './algorithm/FilesTab';
 import { StrategyTab } from './algorithm/StrategyTab';
 import { PythonConsoleTab } from './algorithm/PythonConsoleTab';
-import { NeuralNetworkTab } from './algorithm/NeuralNetworkTab';
+import { ComparisonTab } from './algorithm/ComparisonTab';
 
-type AlgorithmTab = 'files' | 'strategy' | 'player' | 'results' | 'neural' | 'metrics' | 'operations' | 'python';
+type AlgorithmTab = 'files' | 'strategy' | 'player' | 'results' | 'compare' | 'metrics' | 'operations' | 'python';
 
 export const AlgorithmPanel = () => {
   const [activeTab, setActiveTab] = useState<AlgorithmTab>('files');
@@ -56,15 +56,13 @@ export const AlgorithmPanel = () => {
   }, []);
 
   const handleRunStrategy = useCallback(async (strategy: any) => {
-    // Strategy execution is now handled directly in StrategyTab
-    // This callback is kept for compatibility
     setIsExecuting(true);
     setActiveTab('results');
     setTimeout(() => setIsExecuting(false), 500);
   }, []);
 
   const handleStepChange = useCallback((step: TransformationStep | null) => {
-    // Step change handling - can be used for external sync
+    // Step change handling
   }, []);
 
   return (
@@ -86,9 +84,9 @@ export const AlgorithmPanel = () => {
           <FileText className="w-4 h-4 mr-1" />
           Results
         </TabsTrigger>
-        <TabsTrigger value="neural">
-          <Brain className="w-4 h-4 mr-1" />
-          Neural Net
+        <TabsTrigger value="compare">
+          <GitCompare className="w-4 h-4 mr-1" />
+          Compare
         </TabsTrigger>
         <TabsTrigger value="metrics">
           <Activity className="w-4 h-4 mr-1" />
@@ -121,9 +119,9 @@ export const AlgorithmPanel = () => {
           <ResultsTab onSelectResult={handleResultSelect} />
         </TabsContent>
 
-        {/* Neural Network Tab */}
-        <TabsContent value="neural" className="h-full m-0">
-          <NeuralNetworkTab />
+        {/* Comparison Tab */}
+        <TabsContent value="compare" className="h-full m-0">
+          <ComparisonTab />
         </TabsContent>
 
         {/* Metrics Tab - Display only */}
