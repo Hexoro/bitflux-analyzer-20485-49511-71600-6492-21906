@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from './ui/dialog';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -8,9 +8,18 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible';
 import { BinaryModel } from '@/lib/binaryModel';
-import { GENERATION_PRESETS, PRESET_DESCRIPTIONS, QUICK_SIZES } from '@/lib/generationPresets';
+import { GENERATION_PRESETS, PRESET_DESCRIPTIONS, QUICK_SIZES, GenerationConfig } from '@/lib/generationPresets';
 import { toast } from 'sonner';
 import { ChevronDown } from 'lucide-react';
+
+const CUSTOM_PRESETS_KEY = 'bsee_custom_generation_presets';
+
+interface CustomPreset {
+  id: string;
+  name: string;
+  description: string;
+  config: GenerationConfig;
+}
 
 interface GenerateDialogProps {
   open: boolean;
@@ -21,6 +30,7 @@ interface GenerateDialogProps {
 export const GenerateDialog = ({ open, onOpenChange, onGenerate }: GenerateDialogProps) => {
   const [mode, setMode] = useState<'random' | 'pattern' | 'structured' | 'file-format'>('random');
   const [length, setLength] = useState(1024);
+  const [customPresets, setCustomPresets] = useState<CustomPreset[]>([]);
   
   // Random mode
   const [probability, setProbability] = useState(0.5);
@@ -40,6 +50,18 @@ export const GenerateDialog = ({ open, onOpenChange, onGenerate }: GenerateDialo
   
   // Advanced options
   const [showAdvanced, setShowAdvanced] = useState(false);
+
+  // Load custom presets from localStorage
+  useEffect(() => {
+    try {
+      const data = localStorage.getItem(CUSTOM_PRESETS_KEY);
+      if (data) {
+        setCustomPresets(JSON.parse(data));
+      }
+    } catch (e) {
+      console.error('Failed to load custom presets:', e);
+    }
+  }, [open]);
 
   const calculateExpectedMetrics = () => {
     const p = probability;
@@ -99,20 +121,35 @@ export const GenerateDialog = ({ open, onOpenChange, onGenerate }: GenerateDialo
   };
 
   const applyPreset = (presetKey: string) => {
+    // Check built-in presets first
     const preset = GENERATION_PRESETS[presetKey];
-    if (!preset) return;
+    if (preset) {
+      setLength(preset.length);
+      setMode(preset.mode);
+      if (preset.probability !== undefined) setProbability(preset.probability);
+      if (preset.pattern) setPattern(preset.pattern);
+      if (preset.noise !== undefined) setNoise(preset.noise);
+      if (preset.template) setTemplate(preset.template);
+      if (preset.blockSize) setBlockSize(preset.blockSize);
+      if (preset.headerPattern) setHeaderPattern(preset.headerPattern);
+      toast.success(`Applied preset: ${presetKey.replace(/-/g, ' ')}`);
+      return;
+    }
     
-    setLength(preset.length);
-    setMode(preset.mode);
-    
-    if (preset.probability !== undefined) setProbability(preset.probability);
-    if (preset.pattern) setPattern(preset.pattern);
-    if (preset.noise !== undefined) setNoise(preset.noise);
-    if (preset.template) setTemplate(preset.template);
-    if (preset.blockSize) setBlockSize(preset.blockSize);
-    if (preset.headerPattern) setHeaderPattern(preset.headerPattern);
-    
-    toast.success(`Applied preset: ${presetKey.replace(/-/g, ' ')}`);
+    // Check custom presets
+    const customPreset = customPresets.find(p => p.id === presetKey);
+    if (customPreset) {
+      const cfg = customPreset.config;
+      setLength(cfg.length);
+      setMode(cfg.mode);
+      if (cfg.probability !== undefined) setProbability(cfg.probability);
+      if (cfg.pattern) setPattern(cfg.pattern);
+      if (cfg.noise !== undefined) setNoise(cfg.noise);
+      if (cfg.template) setTemplate(cfg.template);
+      if (cfg.blockSize) setBlockSize(cfg.blockSize);
+      if (cfg.headerPattern) setHeaderPattern(cfg.headerPattern);
+      toast.success(`Applied custom preset: ${customPreset.name}`);
+    }
   };
 
   const applyQuickSize = (size: number) => {
@@ -138,7 +175,8 @@ export const GenerateDialog = ({ open, onOpenChange, onGenerate }: GenerateDialo
             <SelectTrigger className="bg-input border-border">
               <SelectValue placeholder="Choose a preset..." />
             </SelectTrigger>
-            <SelectContent className="bg-popover border-border z-50">
+            <SelectContent className="bg-popover border-border z-50 max-h-60">
+              {/* Built-in Presets */}
               {Object.keys(GENERATION_PRESETS).map(key => (
                 <SelectItem key={key} value={key} className="hover:bg-secondary">
                   <div className="flex flex-col">
@@ -147,6 +185,22 @@ export const GenerateDialog = ({ open, onOpenChange, onGenerate }: GenerateDialo
                   </div>
                 </SelectItem>
               ))}
+              {/* Custom Presets */}
+              {customPresets.length > 0 && (
+                <>
+                  <div className="px-2 py-1 text-xs font-medium text-muted-foreground uppercase border-t mt-1 pt-1">
+                    Custom Presets
+                  </div>
+                  {customPresets.map(preset => (
+                    <SelectItem key={preset.id} value={preset.id} className="hover:bg-secondary">
+                      <div className="flex flex-col">
+                        <span className="font-medium text-primary">{preset.name}</span>
+                        <span className="text-xs text-muted-foreground">{preset.description}</span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </>
+              )}
             </SelectContent>
           </Select>
         </div>
