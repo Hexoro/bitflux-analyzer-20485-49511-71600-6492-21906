@@ -1,0 +1,494 @@
+/**
+ * Player Mode Panel - Full-screen player mode for analyzing execution results
+ * - Locks file switching while in player mode
+ * - Provides comprehensive step-by-step analysis
+ * - Exit button to unlock and cleanup
+ */
+
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Slider } from '@/components/ui/slider';
+import { Progress } from '@/components/ui/progress';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+  Play,
+  Pause,
+  SkipBack,
+  SkipForward,
+  Square,
+  ChevronLeft,
+  ChevronRight,
+  LogOut,
+  FileCode,
+  DollarSign,
+  Clock,
+  Activity,
+  Zap,
+  Layers,
+  RotateCcw,
+  TrendingUp,
+  TrendingDown,
+  AlertCircle,
+} from 'lucide-react';
+import { fileSystemManager } from '@/lib/fileSystemManager';
+import { resultsManager, ExecutionResultV2 } from '@/lib/resultsManager';
+import { executeOperation, getOperationCost } from '@/lib/operationsRouter';
+import { calculateAllMetrics } from '@/lib/metricsCalculator';
+import { toast } from 'sonner';
+import { BitDiffView } from './algorithm/BitDiffView';
+import { MetricsTimelineChart } from './algorithm/MetricsTimelineChart';
+
+interface PlayerModePanelProps {
+  onExitPlayer: () => void;
+  selectedResultId?: string | null;
+}
+
+export const PlayerModePanel = ({ onExitPlayer, selectedResultId }: PlayerModePanelProps) => {
+  const [results, setResults] = useState<ExecutionResultV2[]>([]);
+  const [selectedResult, setSelectedResult] = useState<ExecutionResultV2 | null>(null);
+  const [currentStep, setCurrentStep] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [playbackSpeed, setPlaybackSpeed] = useState(1);
+  const [reconstructedBits, setReconstructedBits] = useState<string>('');
+  const [reconstructedSteps, setReconstructedSteps] = useState<any[]>([]);
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Load results
+  useEffect(() => {
+    setResults(resultsManager.getAllResults());
+    const unsubscribe = resultsManager.subscribe(() => {
+      setResults(resultsManager.getAllResults());
+    });
+    return unsubscribe;
+  }, []);
+
+  // Auto-select result if provided
+  useEffect(() => {
+    if (selectedResultId) {
+      const result = results.find(r => r.id === selectedResultId);
+      if (result) {
+        setSelectedResult(result);
+      }
+    }
+  }, [selectedResultId, results]);
+
+  // Reconstruct steps when result changes
+  useEffect(() => {
+    if (!selectedResult) {
+      setReconstructedBits('');
+      setReconstructedSteps([]);
+      return;
+    }
+
+    setCurrentStep(0);
+    setIsPlaying(false);
+
+    let currentBits = selectedResult.initialBits;
+    const steps: any[] = [];
+
+    for (let i = 0; i < selectedResult.steps.length; i++) {
+      const originalStep = selectedResult.steps[i];
+      const beforeBits = currentBits;
+
+      let afterBits = currentBits;
+      try {
+        const opResult = executeOperation(
+          originalStep.operation,
+          currentBits,
+          originalStep.params || {}
+        );
+        if (opResult.success) {
+          afterBits = opResult.bits;
+        }
+      } catch (e) {
+        afterBits = originalStep.afterBits || currentBits;
+      }
+
+      const metricsResult = calculateAllMetrics(afterBits);
+
+      steps.push({
+        ...originalStep,
+        stepIndex: i,
+        fullBeforeBits: beforeBits,
+        fullAfterBits: afterBits,
+        metrics: metricsResult.metrics,
+        cost: originalStep.cost || getOperationCost(originalStep.operation),
+        cumulativeBits: afterBits,
+      });
+
+      currentBits = afterBits;
+    }
+
+    setReconstructedSteps(steps);
+    setReconstructedBits(selectedResult.initialBits);
+  }, [selectedResult?.id]);
+
+  // Playback logic
+  useEffect(() => {
+    if (isPlaying && reconstructedSteps.length > 0) {
+      intervalRef.current = setInterval(() => {
+        setCurrentStep(prev => {
+          if (prev >= reconstructedSteps.length - 1) {
+            setIsPlaying(false);
+            return prev;
+          }
+          return prev + 1;
+        });
+      }, 1000 / playbackSpeed);
+    }
+
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, [isPlaying, playbackSpeed, reconstructedSteps.length]);
+
+  // Update bits on step change
+  useEffect(() => {
+    if (!selectedResult || reconstructedSteps.length === 0) return;
+
+    if (currentStep === 0) {
+      setReconstructedBits(selectedResult.initialBits);
+    } else if (currentStep <= reconstructedSteps.length) {
+      const step = reconstructedSteps[currentStep - 1] || reconstructedSteps[currentStep];
+      setReconstructedBits(step?.cumulativeBits || selectedResult.initialBits);
+    }
+  }, [currentStep, reconstructedSteps, selectedResult]);
+
+  const handleExitPlayer = () => {
+    // Cleanup temp files
+    const count = fileSystemManager.clearAllTempFiles();
+    if (count > 0) {
+      toast.info(`Cleaned up ${count} temp files`);
+    }
+    onExitPlayer();
+  };
+
+  const handleSelectResult = (resultId: string) => {
+    const result = results.find(r => r.id === resultId);
+    if (result) {
+      setSelectedResult(result);
+    }
+  };
+
+  const handlePlay = () => setIsPlaying(true);
+  const handlePause = () => setIsPlaying(false);
+  const handleStop = () => {
+    setIsPlaying(false);
+    setCurrentStep(0);
+    if (selectedResult) {
+      setReconstructedBits(selectedResult.initialBits);
+    }
+  };
+
+  const step = reconstructedSteps[currentStep];
+  const progress = reconstructedSteps.length > 0 ? ((currentStep + 1) / reconstructedSteps.length) * 100 : 0;
+  const totalCost = reconstructedSteps.reduce((sum, s) => sum + (s.cost || 0), 0);
+  const cumulativeCost = reconstructedSteps.slice(0, currentStep + 1).reduce((sum, s) => sum + (s.cost || 0), 0);
+  const budgetInitial = 1000;
+  const budgetRemaining = budgetInitial - cumulativeCost;
+
+  return (
+    <div className="h-full flex flex-col gap-4 p-4 bg-background">
+      {/* Header with Exit Button */}
+      <Card className="bg-gradient-to-r from-purple-500/20 to-primary/20 border-primary/30">
+        <CardContent className="py-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Play className="w-6 h-6 text-primary" />
+              <div>
+                <h1 className="text-lg font-bold">Player Mode</h1>
+                <p className="text-xs text-muted-foreground">
+                  Step-by-step execution playback
+                </p>
+              </div>
+            </div>
+            <Button variant="destructive" onClick={handleExitPlayer}>
+              <LogOut className="w-4 h-4 mr-2" />
+              Exit Player Mode
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Result Selector */}
+      {!selectedResult && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm">Select a Result to Play</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Select onValueChange={handleSelectResult}>
+              <SelectTrigger>
+                <SelectValue placeholder="Choose an execution result..." />
+              </SelectTrigger>
+              <SelectContent>
+                {results.map(r => (
+                  <SelectItem key={r.id} value={r.id}>
+                    {r.strategyName} - {new Date(r.startTime).toLocaleString()}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {results.length === 0 && (
+              <div className="text-center py-8 text-muted-foreground">
+                <AlertCircle className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                <p>No results available</p>
+                <p className="text-sm mt-1">Run a strategy in Algorithm mode first</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Main Player UI */}
+      {selectedResult && (
+        <>
+          {/* Strategy Info */}
+          <Card className="bg-card/50">
+            <CardContent className="py-3">
+              <div className="flex items-center gap-4 flex-wrap">
+                <FileCode className="w-5 h-5 text-primary" />
+                <div className="flex-1">
+                  <span className="font-medium">{selectedResult.strategyName}</span>
+                  <p className="text-xs text-muted-foreground">
+                    {selectedResult.initialBits.length} bits • {reconstructedSteps.length} steps
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Badge variant="secondary">{reconstructedBits.length} bits</Badge>
+                  <Badge variant="outline" className="flex items-center gap-1">
+                    <DollarSign className="w-3 h-3" />
+                    {cumulativeCost}/{totalCost}
+                  </Badge>
+                  <Badge variant={budgetRemaining > 0 ? 'default' : 'destructive'}>
+                    Budget: {budgetRemaining}/{budgetInitial}
+                  </Badge>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Progress */}
+          <div>
+            <Progress value={progress} className="h-2" />
+            <div className="flex justify-between text-xs text-muted-foreground mt-1">
+              <span>Step {currentStep + 1} of {reconstructedSteps.length || 1}</span>
+              <span>{progress.toFixed(0)}% complete</span>
+            </div>
+          </div>
+
+          {/* Controls */}
+          <Card>
+            <CardContent className="py-3">
+              <div className="flex items-center gap-3 flex-wrap">
+                <div className="flex items-center gap-1">
+                  <Button size="icon" variant="outline" onClick={handleStop} className="h-8 w-8">
+                    <RotateCcw className="w-4 h-4" />
+                  </Button>
+                  <Button size="icon" variant="outline" onClick={() => setCurrentStep(0)} className="h-8 w-8">
+                    <SkipBack className="w-4 h-4" />
+                  </Button>
+                  <Button size="icon" variant="outline" onClick={() => setCurrentStep(Math.max(0, currentStep - 1))} className="h-8 w-8">
+                    <ChevronLeft className="w-4 h-4" />
+                  </Button>
+                  {isPlaying ? (
+                    <Button size="icon" onClick={handlePause} className="h-8 w-8">
+                      <Pause className="w-4 h-4" />
+                    </Button>
+                  ) : (
+                    <Button size="icon" onClick={handlePlay} disabled={reconstructedSteps.length === 0} className="h-8 w-8">
+                      <Play className="w-4 h-4" />
+                    </Button>
+                  )}
+                  <Button size="icon" variant="outline" onClick={() => setCurrentStep(Math.min(reconstructedSteps.length - 1, currentStep + 1))} className="h-8 w-8">
+                    <ChevronRight className="w-4 h-4" />
+                  </Button>
+                  <Button size="icon" variant="outline" onClick={() => setCurrentStep(reconstructedSteps.length - 1)} className="h-8 w-8">
+                    <SkipForward className="w-4 h-4" />
+                  </Button>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground">Speed:</span>
+                  <Select value={playbackSpeed.toString()} onValueChange={(v) => setPlaybackSpeed(parseFloat(v))}>
+                    <SelectTrigger className="w-16 h-8 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="0.25">0.25x</SelectItem>
+                      <SelectItem value="0.5">0.5x</SelectItem>
+                      <SelectItem value="1">1x</SelectItem>
+                      <SelectItem value="2">2x</SelectItem>
+                      <SelectItem value="4">4x</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="flex-1 min-w-[100px]">
+                  <Slider
+                    value={[currentStep]}
+                    min={0}
+                    max={Math.max(0, reconstructedSteps.length - 1)}
+                    step={1}
+                    onValueChange={(v) => setCurrentStep(v[0])}
+                  />
+                </div>
+
+                <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                  <Clock className="w-3 h-3" />
+                  {step?.duration?.toFixed(1) || 0}ms
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Step Details */}
+          <div className="flex-1 overflow-hidden">
+            <Tabs defaultValue="details" className="h-full flex flex-col">
+              <TabsList>
+                <TabsTrigger value="details">Step Details</TabsTrigger>
+                <TabsTrigger value="diff">Visual Diff</TabsTrigger>
+                <TabsTrigger value="timeline">Metrics Timeline</TabsTrigger>
+                <TabsTrigger value="data">Binary Data</TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="details" className="flex-1 overflow-auto mt-4">
+                {step ? (
+                  <div className="grid grid-cols-2 gap-4">
+                    <Card>
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm flex items-center gap-2">
+                          <Zap className="w-4 h-4" />
+                          Operation
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="p-3 rounded-lg bg-primary/10 border border-primary/30">
+                          <div className="flex items-center justify-between">
+                            <h4 className="font-mono text-lg text-primary">{step.operation}</h4>
+                            <Badge className="flex items-center gap-1">
+                              <DollarSign className="w-3 h-3" />
+                              {step.cost}
+                            </Badge>
+                          </div>
+                        </div>
+                        {step.params && Object.keys(step.params).length > 0 && (
+                          <div className="mt-3">
+                            <h5 className="text-xs font-medium text-muted-foreground mb-1">Parameters</h5>
+                            <div className="space-y-1">
+                              {Object.entries(step.params).map(([key, value]) => (
+                                <div key={key} className="flex justify-between text-sm bg-muted/30 px-2 py-1 rounded">
+                                  <span className="text-muted-foreground">{key}:</span>
+                                  <span className="font-mono">{JSON.stringify(value).slice(0, 50)}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {step.bitRanges && step.bitRanges.length > 0 && (
+                          <div className="mt-3">
+                            <h5 className="text-xs font-medium text-muted-foreground mb-1">Bit Ranges</h5>
+                            <div className="flex flex-wrap gap-1">
+                              {step.bitRanges.slice(0, 10).map((range: any, i: number) => (
+                                <Badge key={i} variant="outline" className="font-mono text-xs">
+                                  [{range.start}:{range.end}]
+                                </Badge>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+
+                    <Card>
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm flex items-center gap-2">
+                          <Activity className="w-4 h-4" />
+                          Metrics
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <ScrollArea className="h-[200px]">
+                          <div className="space-y-1">
+                            {step.metrics && Object.entries(step.metrics).slice(0, 12).map(([key, value]) => (
+                              <div key={key} className="flex justify-between text-sm">
+                                <span className="text-muted-foreground">{key}</span>
+                                <span className="font-mono">{typeof value === 'number' ? (value as number).toFixed(4) : String(value)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </ScrollArea>
+                      </CardContent>
+                    </Card>
+                  </div>
+                ) : (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <Layers className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                    <p>Select a step to view details</p>
+                  </div>
+                )}
+              </TabsContent>
+
+              <TabsContent value="diff" className="flex-1 overflow-auto mt-4">
+                {step && (
+                  <BitDiffView
+                    beforeBits={step.fullBeforeBits || step.beforeBits}
+                    afterBits={step.fullAfterBits || step.afterBits}
+                  />
+                )}
+              </TabsContent>
+
+              <TabsContent value="timeline" className="flex-1 overflow-auto mt-4">
+                <MetricsTimelineChart steps={reconstructedSteps} />
+              </TabsContent>
+
+              <TabsContent value="data" className="flex-1 overflow-auto mt-4">
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm">Current Binary State</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <ScrollArea className="h-[300px]">
+                      <div className="font-mono text-xs break-all bg-muted/30 p-4 rounded">
+                        {reconstructedBits.slice(0, 5000)}
+                        {reconstructedBits.length > 5000 && (
+                          <span className="text-muted-foreground">
+                            ... ({reconstructedBits.length - 5000} more bits)
+                          </span>
+                        )}
+                      </div>
+                    </ScrollArea>
+                    <div className="flex gap-4 mt-4 text-sm">
+                      <div>
+                        <span className="text-muted-foreground">Total: </span>
+                        <span className="font-mono">{reconstructedBits.length} bits</span>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Ones: </span>
+                        <span className="font-mono">{(reconstructedBits.match(/1/g) || []).length}</span>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Zeros: </span>
+                        <span className="font-mono">{(reconstructedBits.match(/0/g) || []).length}</span>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+            </Tabs>
+          </div>
+        </>
+      )}
+    </div>
+  );
+};

@@ -22,6 +22,7 @@ import { Toolbar, AppMode } from '@/components/Toolbar';
 import { AlgorithmPanel } from '@/components/AlgorithmPanel';
 import { BackendPanel } from '@/components/BackendPanel';
 import { MLPanel } from '@/components/MLPanel';
+import { PlayerModePanel } from '@/components/PlayerModePanel';
 import { DataGraphsDialog } from '@/components/DataGraphsDialog';
 import { AudioVisualizerDialog } from '@/components/AudioVisualizerDialog';
 import { PatternHeatmapDialog } from '@/components/PatternHeatmapDialog';
@@ -383,6 +384,11 @@ const Index = () => {
 
   return (
     <div className="h-screen flex flex-col bg-background text-foreground">
+      {/* Header */}
+      <div className="bg-gradient-to-r from-primary/20 to-purple-500/20 border-b border-border px-4 py-2">
+        <h1 className="text-lg font-bold text-foreground">BSEE <span className="text-muted-foreground font-normal text-sm">- Binary Structural Exploration Engine</span></h1>
+      </div>
+
       <Toolbar
         onLoad={handleLoadFile}
         onSave={handleSaveFile}
