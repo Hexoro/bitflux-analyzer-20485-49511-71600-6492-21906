@@ -200,21 +200,23 @@ export const PlayerModePanel = ({ onExitPlayer, selectedResultId }: PlayerModePa
   return (
     <div className="h-full flex flex-col gap-4 p-4 bg-background">
       {/* Header with Exit Button */}
-      <Card className="bg-gradient-to-r from-purple-500/20 to-primary/20 border-primary/30">
+      <Card className="bg-gradient-to-r from-primary/10 to-accent/10 border-primary/30">
         <CardContent className="py-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <Play className="w-6 h-6 text-primary" />
+              <div className="w-8 h-8 rounded bg-primary/20 border border-primary/40 flex items-center justify-center">
+                <Play className="w-4 h-4 text-primary" />
+              </div>
               <div>
-                <h1 className="text-lg font-bold">Player Mode</h1>
+                <h1 className="text-lg font-bold">File Player Mode</h1>
                 <p className="text-xs text-muted-foreground">
-                  Step-by-step execution playback
+                  Step-by-step execution playback • File locked
                 </p>
               </div>
             </div>
             <Button variant="destructive" onClick={handleExitPlayer}>
               <LogOut className="w-4 h-4 mr-2" />
-              Exit Player Mode
+              Exit Player
             </Button>
           </div>
         </CardContent>
