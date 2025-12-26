@@ -373,20 +373,73 @@ export const JobsDialog = ({ open, onOpenChange }: JobsDialogProps) => {
           <TabsContent value="create" className="flex-1 overflow-hidden m-0 mt-4">
             <ScrollArea className="h-[450px]">
               <div className="space-y-4 pr-4">
-                {/* CLI Info Card */}
-                <Card className="bg-blue-500/10 border-blue-500/30">
-                  <CardContent className="py-3">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Terminal className="w-4 h-4 text-blue-500" />
-                      <span className="font-medium text-sm">CLI Alternatives</span>
+                {/* Strategy Info Panel */}
+                <Card className="bg-gradient-to-r from-primary/10 to-transparent border-primary/30">
+                  <CardHeader className="py-3">
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <Terminal className="w-4 h-4 text-primary" />
+                      Strategy Execution Guide
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="py-2 space-y-4">
+                    {/* Execution Pipeline */}
+                    <div>
+                      <div className="text-xs font-medium mb-2 text-muted-foreground">Execution Pipeline</div>
+                      <div className="flex items-center gap-2 text-xs">
+                        <Badge variant="outline" className="bg-primary/10">Scheduler</Badge>
+                        <span className="text-muted-foreground">→</span>
+                        <Badge variant="outline" className="bg-blue-500/10">Algorithm</Badge>
+                        <span className="text-muted-foreground">→</span>
+                        <Badge variant="outline" className="bg-green-500/10">Scoring</Badge>
+                        <span className="text-muted-foreground">→</span>
+                        <Badge variant="outline" className="bg-yellow-500/10">Policies</Badge>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-2">
+                        The scheduler orchestrates execution, algorithm applies transformations,
+                        scoring tracks costs/budget, and policies enforce constraints.
+                      </p>
                     </div>
-                    <p className="text-xs text-muted-foreground mb-2">
-                      You can also run strategies from the Python Console:
-                    </p>
-                    <div className="space-y-1 text-xs font-mono bg-muted/30 p-2 rounded">
-                      <div><span className="text-blue-400">run_strategy</span>("<span className="text-green-400">name</span>")</div>
-                      <div><span className="text-blue-400">list_strategies</span>()</div>
-                      <div><span className="text-blue-400">list_files</span>()</div>
+
+                    {/* CLI Commands */}
+                    <div>
+                      <div className="text-xs font-medium mb-2 text-muted-foreground">Python Console Commands</div>
+                      <div className="space-y-1 text-xs font-mono bg-card p-3 rounded border border-border">
+                        <div className="flex justify-between">
+                          <span><span className="text-primary">run_strategy</span>("<span className="text-green-400">name</span>", "<span className="text-yellow-400">file_id</span>")</span>
+                          <span className="text-muted-foreground"># Execute strategy</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span><span className="text-primary">list_strategies</span>()</span>
+                          <span className="text-muted-foreground"># Show available</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span><span className="text-primary">list_files</span>()</span>
+                          <span className="text-muted-foreground"># Show data files</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span><span className="text-primary">get_results</span>()</span>
+                          <span className="text-muted-foreground"># View all results</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span><span className="text-primary">export_csv</span>("<span className="text-green-400">result_id</span>")</span>
+                          <span className="text-muted-foreground"># Export to CSV</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Parameter Docs */}
+                    <div>
+                      <div className="text-xs font-medium mb-2 text-muted-foreground">Job Parameters</div>
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div className="p-2 bg-card rounded border border-border">
+                          <span className="font-medium">Iterations</span>
+                          <p className="text-muted-foreground">Times to run each strategy on the data</p>
+                        </div>
+                        <div className="p-2 bg-card rounded border border-border">
+                          <span className="font-medium">Execution Order</span>
+                          <p className="text-muted-foreground">Sequential order of strategy application</p>
+                        </div>
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
