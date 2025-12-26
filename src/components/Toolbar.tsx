@@ -25,7 +25,7 @@ import {
   Briefcase,
 } from 'lucide-react';
 
-export type AppMode = 'analysis' | 'algorithm' | 'backend';
+export type AppMode = 'analysis' | 'algorithm' | 'backend' | 'ml';
 
 interface ToolbarProps {
   onLoad: () => void;
@@ -74,6 +74,7 @@ export const Toolbar = ({
     analysis: 'Analysis',
     algorithm: 'Algorithm',
     backend: 'Backend',
+    ml: 'Machine Learning',
   };
   return (
     <div className="flex items-center gap-2 p-2 bg-card border-b border-border">
@@ -205,6 +206,12 @@ export const Toolbar = ({
             className={currentMode === 'backend' ? 'bg-accent' : ''}
           >
             Backend Mode
+          </DropdownMenuItem>
+          <DropdownMenuItem 
+            onClick={() => onModeChange('ml')}
+            className={currentMode === 'ml' ? 'bg-accent' : ''}
+          >
+            Machine Learning
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
