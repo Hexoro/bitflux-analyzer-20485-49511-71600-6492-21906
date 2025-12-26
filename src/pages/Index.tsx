@@ -418,21 +418,24 @@ const Index = () => {
 
   return (
     <div className="h-screen flex flex-col bg-background text-foreground">
-      {/* Header */}
-      <div className="border-b border-border bg-card/50 backdrop-blur-sm">
-        <div className="flex items-center justify-center py-2">
+      {/* Header - Thin single line with neon logo */}
+      <div className="border-b border-border bg-background/80 backdrop-blur-sm animate-slide-in">
+        <div className="flex items-center justify-center py-1.5 px-4">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded bg-primary/20 border border-primary/40 flex items-center justify-center">
-              <span className="text-primary font-black text-sm">B</span>
+            {/* Neon Logo */}
+            <div className="relative">
+              <div className="w-6 h-6 rounded border border-primary/60 bg-primary/10 flex items-center justify-center overflow-hidden">
+                <span className="text-primary font-black text-xs neon-pulse">B</span>
+              </div>
+              <div className="absolute inset-0 rounded border border-primary/30 blur-sm" />
             </div>
-            <div>
-              <h1 className="text-lg font-bold tracking-tight">
-                <span className="text-primary">B</span>
-                <span className="text-foreground">SEE</span>
+            {/* Title - All in one line */}
+            <div className="flex items-baseline gap-2">
+              <h1 className="text-sm font-bold tracking-tight flex items-baseline" style={{ fontFamily: 'Outfit, sans-serif' }}>
+                <span className="text-primary neon-text neon-pulse">BSEE</span>
+                <span className="text-muted-foreground font-normal mx-2">—</span>
+                <span className="text-foreground/90 font-medium">Binary Structural Exploration Engine</span>
               </h1>
-              <p className="text-[10px] text-muted-foreground tracking-widest uppercase -mt-0.5">
-                Binary Structural Exploration Engine
-              </p>
             </div>
           </div>
         </div>

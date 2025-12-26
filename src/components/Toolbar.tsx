@@ -214,6 +214,12 @@ export const Toolbar = ({
           >
             Machine Learning
           </DropdownMenuItem>
+          <DropdownMenuItem 
+            onClick={() => onModeChange('player')}
+            className={currentMode === 'player' ? 'bg-accent' : ''}
+          >
+            File Player
+          </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
 
