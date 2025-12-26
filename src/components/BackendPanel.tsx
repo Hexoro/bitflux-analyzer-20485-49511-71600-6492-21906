@@ -50,8 +50,10 @@ import { GuidesTab } from './backend/GuidesTab';
 import { AnomaliesTab } from './backend/AnomaliesTab';
 import { GenerationTab } from './backend/GenerationTab';
 import { GraphsTab } from './backend/GraphsTab';
+import { ViewerTab } from './backend/ViewerTab';
+import { Eye } from 'lucide-react';
 
-type BackendTab = 'overview' | 'metrics' | 'operations' | 'anomalies' | 'generation' | 'graphs' | 'guides' | 'metrics-code' | 'operations-code' | 'info';
+type BackendTab = 'overview' | 'metrics' | 'operations' | 'anomalies' | 'generation' | 'graphs' | 'viewer' | 'guides' | 'info';
 
 export const BackendPanel = () => {
   const [activeTab, setActiveTab] = useState<BackendTab>('overview');
@@ -201,6 +203,10 @@ export const BackendPanel = () => {
         <TabsTrigger value="graphs">
           <FileCode className="w-4 h-4 mr-1" />
           Graphs
+        </TabsTrigger>
+        <TabsTrigger value="viewer">
+          <Eye className="w-4 h-4 mr-1" />
+          Viewer
         </TabsTrigger>
         <TabsTrigger value="guides">
           <BookOpen className="w-4 h-4 mr-1" />
@@ -468,6 +474,11 @@ export const BackendPanel = () => {
         {/* Graphs Tab */}
         <TabsContent value="graphs" className="h-full m-0">
           <GraphsTab />
+        </TabsContent>
+
+        {/* Viewer Tab */}
+        <TabsContent value="viewer" className="h-full m-0">
+          <ViewerTab />
         </TabsContent>
 
         {/* Guides Tab */}
