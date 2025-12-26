@@ -21,6 +21,7 @@ import { FileSystemSidebar } from '@/components/FileSystemSidebar';
 import { Toolbar, AppMode } from '@/components/Toolbar';
 import { AlgorithmPanel } from '@/components/AlgorithmPanel';
 import { BackendPanel } from '@/components/BackendPanel';
+import { MLPanel } from '@/components/MLPanel';
 import { DataGraphsDialog } from '@/components/DataGraphsDialog';
 import { AudioVisualizerDialog } from '@/components/AudioVisualizerDialog';
 import { PatternHeatmapDialog } from '@/components/PatternHeatmapDialog';
@@ -522,6 +523,8 @@ const Index = () => {
             </Tabs>
           ) : appMode === 'algorithm' ? (
             <AlgorithmPanel />
+          ) : appMode === 'ml' ? (
+            <MLPanel />
           ) : (
             <BackendPanel />
           )}
