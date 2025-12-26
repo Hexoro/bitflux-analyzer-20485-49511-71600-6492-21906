@@ -412,16 +412,15 @@ const Index = () => {
   return (
     <div className="h-screen flex flex-col bg-background text-foreground">
       {/* Header */}
-      <div className="bg-gradient-to-r from-primary/20 via-purple-500/20 to-cyan-500/20 border-b border-primary/30 px-4 py-3">
-        <div className="flex items-center justify-center gap-3">
-          <div className="flex items-center gap-2">
-            <span className="text-2xl font-black bg-gradient-to-r from-primary via-purple-500 to-cyan-500 bg-clip-text text-transparent tracking-tight">
+      <div className="bg-gradient-to-r from-primary/10 via-accent/5 to-primary/10 border-b border-border px-4 py-3">
+        <div className="flex items-center justify-center">
+          <div className="text-center">
+            <h1 className="text-2xl font-black text-primary tracking-tight">
               BSEE
-            </span>
-            <div className="h-6 w-px bg-border" />
-            <span className="text-sm text-muted-foreground font-medium tracking-wide">
+            </h1>
+            <p className="text-xs text-muted-foreground font-medium tracking-widest uppercase">
               Binary Structural Exploration Engine
-            </span>
+            </p>
           </div>
         </div>
       </div>
