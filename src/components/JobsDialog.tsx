@@ -117,17 +117,15 @@ export const JobsDialog = ({ open, onOpenChange }: JobsDialogProps) => {
     }
 
     try {
+      // Create job but don't auto-start - jobs start in pending state
       const job = jobManagerV2.createJob(jobName, selectedFileId, presets);
-      toast.success(`Job "${jobName}" created`);
+      toast.success(`Job "${jobName}" created - Click play to start`);
       
       // Reset form
       setJobName('');
       setSelectedFileId('');
       setPresets([]);
       setActiveTab('queue');
-      
-      // Auto-start
-      jobManagerV2.startJob(job.id);
     } catch (error) {
       toast.error((error as Error).message);
     }
@@ -173,6 +171,11 @@ export const JobsDialog = ({ open, onOpenChange }: JobsDialogProps) => {
               {getStatusBadge(job.status)}
               {showControls && (
                 <div className="flex gap-1" onClick={e => e.stopPropagation()}>
+                  {job.status === 'pending' && (
+                    <Button size="icon" variant="ghost" className="h-7 w-7 text-green-500" onClick={() => jobManagerV2.startJob(job.id)}>
+                      <Play className="w-3 h-3" />
+                    </Button>
+                  )}
                   {job.status === 'running' && (
                     <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => jobManagerV2.cancelJob(job.id)}>
                       <Pause className="w-3 h-3" />
@@ -194,15 +197,34 @@ export const JobsDialog = ({ open, onOpenChange }: JobsDialogProps) => {
           </div>
 
           {job.status === 'running' && (
-            <div className="mt-3">
-              <div className="flex justify-between text-xs mb-1">
-                <span>
-                  Strategy {job.currentPresetIndex + 1}/{job.presets.length} • 
-                  Iteration {job.currentIteration + 1}/{job.presets[job.currentPresetIndex]?.iterations || 1}
+            <div className="mt-3 space-y-2">
+              <div className="flex justify-between text-xs">
+                <span className="font-medium">
+                  Strategy {job.currentPresetIndex + 1}/{job.presets.length}: {job.presets[job.currentPresetIndex]?.strategyName}
                 </span>
-                <span>{job.progress}%</span>
+                <Badge variant="outline" className="text-xs">
+                  Iteration {job.currentIteration + 1}/{job.presets[job.currentPresetIndex]?.iterations || 1}
+                </Badge>
               </div>
               <Progress value={job.progress} className="h-2" />
+              <div className="flex justify-between text-xs text-muted-foreground">
+                <span>{job.progress}% complete</span>
+                <span>
+                  {job.startTime && job.progress > 0 && (() => {
+                    const elapsed = Date.now() - job.startTime.getTime();
+                    const estimated = (elapsed / job.progress) * (100 - job.progress);
+                    const mins = Math.floor(estimated / 60000);
+                    const secs = Math.floor((estimated % 60000) / 1000);
+                    return `ETA: ${mins}m ${secs}s`;
+                  })()}
+                </span>
+              </div>
+            </div>
+          )}
+
+          {job.status === 'pending' && (
+            <div className="mt-3 text-center">
+              <Badge variant="outline" className="text-xs">Ready to start - Click play button</Badge>
             </div>
           )}
 

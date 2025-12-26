@@ -53,7 +53,10 @@ const Index = () => {
   const [jobsDialogOpen, setJobsDialogOpen] = useState(false);
   const [idealBitIndices, setIdealBitIndices] = useState<number[]>([]);
   const [appMode, setAppMode] = useState<AppMode>('analysis');
+  const [isPlayerMode, setIsPlayerMode] = useState(false);
+  const [playerResultId, setPlayerResultId] = useState<string | null>(null);
   const viewerRef = useRef<any>(null);
+  const currentYear = new Date().getFullYear();
 
   // Subscribe to file system changes
   useEffect(() => {
@@ -382,11 +385,45 @@ const Index = () => {
   const highlightRanges = activeFile.state.getHighlightRanges();
   const selectedRanges = activeFile.state.getSelectedRanges();
 
+  const handleEnterPlayerMode = (resultId?: string) => {
+    setPlayerResultId(resultId || null);
+    setIsPlayerMode(true);
+    setAppMode('player');
+  };
+
+  const handleExitPlayerMode = () => {
+    setIsPlayerMode(false);
+    setPlayerResultId(null);
+    setAppMode('analysis');
+  };
+
+  // Handle mode change - check for player mode
+  const handleModeChange = (mode: AppMode) => {
+    if (mode === 'player') {
+      handleEnterPlayerMode();
+    } else {
+      if (isPlayerMode) {
+        handleExitPlayerMode();
+      }
+      setAppMode(mode);
+    }
+  };
+
   return (
     <div className="h-screen flex flex-col bg-background text-foreground">
       {/* Header */}
-      <div className="bg-gradient-to-r from-primary/20 to-purple-500/20 border-b border-border px-4 py-2">
-        <h1 className="text-lg font-bold text-foreground">BSEE <span className="text-muted-foreground font-normal text-sm">- Binary Structural Exploration Engine</span></h1>
+      <div className="bg-gradient-to-r from-primary/20 via-purple-500/20 to-cyan-500/20 border-b border-primary/30 px-4 py-3">
+        <div className="flex items-center justify-center gap-3">
+          <div className="flex items-center gap-2">
+            <span className="text-2xl font-black bg-gradient-to-r from-primary via-purple-500 to-cyan-500 bg-clip-text text-transparent tracking-tight">
+              BSEE
+            </span>
+            <div className="h-6 w-px bg-border" />
+            <span className="text-sm text-muted-foreground font-medium tracking-wide">
+              Binary Structural Exploration Engine
+            </span>
+          </div>
+        </div>
       </div>
 
       <Toolbar
@@ -408,7 +445,7 @@ const Index = () => {
         canRedo={(activeFile.state.model as any).redoStack?.length > 0}
         editMode={editMode}
         currentMode={appMode}
-        onModeChange={setAppMode}
+        onModeChange={handleModeChange}
       />
 
       <ResizablePanelGroup direction="horizontal" className="flex-1">
@@ -531,6 +568,8 @@ const Index = () => {
             <AlgorithmPanel />
           ) : appMode === 'ml' ? (
             <MLPanel />
+          ) : appMode === 'player' ? (
+            <PlayerModePanel onExitPlayer={handleExitPlayerMode} selectedResultId={playerResultId} />
           ) : (
             <BackendPanel />
           )}
@@ -592,6 +631,13 @@ const Index = () => {
         open={jobsDialogOpen}
         onOpenChange={setJobsDialogOpen}
       />
+
+      {/* Footer */}
+      <div className="bg-muted/30 border-t border-border px-4 py-1 text-center">
+        <p className="text-xs text-muted-foreground">
+          Made by <span className="font-medium text-foreground">Ahmad Hussain</span> / <span className="font-medium text-foreground">Hexoro</span> © {currentYear}
+        </p>
+      </div>
     </div>
   );
 };
