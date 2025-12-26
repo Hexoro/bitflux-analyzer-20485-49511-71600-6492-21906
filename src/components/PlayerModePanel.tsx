@@ -101,17 +101,28 @@ export const PlayerModePanel = ({ onExitPlayer, selectedResultId }: PlayerModePa
       const beforeBits = currentBits;
 
       let afterBits = currentBits;
-      try {
-        const opResult = executeOperation(
-          originalStep.operation,
-          currentBits,
-          originalStep.params || {}
-        );
-        if (opResult.success) {
-          afterBits = opResult.bits;
+      
+      // First, try to use the stored full file state
+      if (originalStep.fullAfterBits && originalStep.fullAfterBits.length === currentBits.length) {
+        afterBits = originalStep.fullAfterBits;
+      } else if (originalStep.cumulativeBits && originalStep.cumulativeBits.length === currentBits.length) {
+        afterBits = originalStep.cumulativeBits;
+      } else {
+        // Fall back to executing the operation
+        try {
+          const opResult = executeOperation(
+            originalStep.operation,
+            currentBits,
+            originalStep.params || {}
+          );
+          if (opResult.success && opResult.bits.length > 0) {
+            // Ensure the result maintains the file length (unless operation changes length)
+            afterBits = opResult.bits;
+          }
+        } catch (e) {
+          // If operation fails, keep the previous bits
+          console.warn(`Operation ${originalStep.operation} failed:`, e);
         }
-      } catch (e) {
-        afterBits = originalStep.afterBits || currentBits;
       }
 
       const metricsResult = calculateAllMetrics(afterBits);
@@ -124,6 +135,7 @@ export const PlayerModePanel = ({ onExitPlayer, selectedResultId }: PlayerModePa
         metrics: metricsResult.metrics,
         cost: originalStep.cost || getOperationCost(originalStep.operation),
         cumulativeBits: afterBits,
+        bitsLength: afterBits.length,
       });
 
       currentBits = afterBits;

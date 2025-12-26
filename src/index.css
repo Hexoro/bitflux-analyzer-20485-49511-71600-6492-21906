@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@400;500;600;700;800;900&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -50,7 +52,58 @@ All colors MUST be HSL.
     /* Panel Colors */
     --panel-bg: 0 0% 5%;
     --viewer-bg: 0 0% 0%;
+
+    /* Neon Effects */
+    --neon-glow: 0 0 10px hsl(180 100% 50%), 0 0 20px hsl(180 100% 50% / 0.5), 0 0 40px hsl(180 100% 50% / 0.3);
   }
+}
+
+/* Neon text effect */
+.neon-text {
+  text-shadow: 
+    0 0 5px hsl(180 100% 50%),
+    0 0 10px hsl(180 100% 50%),
+    0 0 20px hsl(180 100% 50% / 0.8),
+    0 0 40px hsl(180 100% 50% / 0.5);
+}
+
+/* Glow animation */
+@keyframes neon-pulse {
+  0%, 100% {
+    filter: brightness(1);
+    text-shadow: 
+      0 0 5px hsl(180 100% 50%),
+      0 0 10px hsl(180 100% 50%),
+      0 0 20px hsl(180 100% 50% / 0.8);
+  }
+  50% {
+    filter: brightness(1.2);
+    text-shadow: 
+      0 0 10px hsl(180 100% 50%),
+      0 0 20px hsl(180 100% 50%),
+      0 0 40px hsl(180 100% 50%),
+      0 0 60px hsl(180 100% 50% / 0.5);
+  }
+}
+
+.neon-pulse {
+  animation: neon-pulse 2s ease-in-out infinite;
+}
+
+/* Slide in animation */
+@keyframes slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-slide-in {
+  animation: slide-in 0.5s ease-out forwards;
 }
 
 @layer base {
