@@ -48,8 +48,10 @@ import { OperationsCodeEditor } from './OperationsCodeEditor';
 import { CodeFileEditor } from './CodeFileEditor';
 import { GuidesTab } from './backend/GuidesTab';
 import { AnomaliesTab } from './backend/AnomaliesTab';
+import { GenerationTab } from './backend/GenerationTab';
+import { GraphsTab } from './backend/GraphsTab';
 
-type BackendTab = 'overview' | 'metrics' | 'operations' | 'anomalies' | 'guides' | 'metrics-code' | 'operations-code' | 'info';
+type BackendTab = 'overview' | 'metrics' | 'operations' | 'anomalies' | 'generation' | 'graphs' | 'guides' | 'metrics-code' | 'operations-code' | 'info';
 
 export const BackendPanel = () => {
   const [activeTab, setActiveTab] = useState<BackendTab>('overview');
@@ -192,17 +194,17 @@ export const BackendPanel = () => {
           <Activity className="w-4 h-4 mr-1" />
           Anomalies
         </TabsTrigger>
+        <TabsTrigger value="generation">
+          <Zap className="w-4 h-4 mr-1" />
+          Generation
+        </TabsTrigger>
+        <TabsTrigger value="graphs">
+          <FileCode className="w-4 h-4 mr-1" />
+          Graphs
+        </TabsTrigger>
         <TabsTrigger value="guides">
           <BookOpen className="w-4 h-4 mr-1" />
           Guides
-        </TabsTrigger>
-        <TabsTrigger value="metrics-code">
-          <Code className="w-4 h-4 mr-1" />
-          M-Code
-        </TabsTrigger>
-        <TabsTrigger value="operations-code">
-          <Code className="w-4 h-4 mr-1" />
-          O-Code
         </TabsTrigger>
         <TabsTrigger value="info">
           <Info className="w-4 h-4 mr-1" />
@@ -458,19 +460,19 @@ export const BackendPanel = () => {
           <AnomaliesTab />
         </TabsContent>
 
+        {/* Generation Tab */}
+        <TabsContent value="generation" className="h-full m-0">
+          <GenerationTab />
+        </TabsContent>
+
+        {/* Graphs Tab */}
+        <TabsContent value="graphs" className="h-full m-0">
+          <GraphsTab />
+        </TabsContent>
+
         {/* Guides Tab */}
         <TabsContent value="guides" className="h-full m-0">
           <GuidesTab />
-        </TabsContent>
-
-        {/* Metrics Code Editor Tab */}
-        <TabsContent value="metrics-code" className="h-full m-0 p-4">
-          <MetricsCodeEditor />
-        </TabsContent>
-
-        {/* Operations Code Editor Tab */}
-        <TabsContent value="operations-code" className="h-full m-0 p-4">
-          <OperationsCodeEditor />
         </TabsContent>
 
         {/* Info Tab - Rewritten */}

@@ -28,6 +28,7 @@ import { AudioVisualizerDialog } from '@/components/AudioVisualizerDialog';
 import { PatternHeatmapDialog } from '@/components/PatternHeatmapDialog';
 import { BitSelectionDialog } from '@/components/BitSelectionDialog';
 import { JobsDialog } from '@/components/JobsDialog';
+import { StartupTestSuite } from '@/components/StartupTestSuite';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable';
 import { toast } from 'sonner';
@@ -217,6 +218,12 @@ const Index = () => {
 
   const handleGenerate = (bits: string) => {
     if (activeFile) {
+      // Check if active file already has data - prevent accidental overwrite
+      const existingBits = activeFile.state.model.getBits();
+      if (existingBits && existingBits.length > 0) {
+        toast.error('Cannot generate data in a file that already contains data. Create a new file instead.');
+        return;
+      }
       activeFile.state.model.loadBits(bits);
       activeFile.state.addToHistory(`Generated ${bits.length} bits`);
     } else {
@@ -643,10 +650,12 @@ const Index = () => {
       />
 
       {/* Footer */}
-      <div className="bg-muted/30 border-t border-border px-4 py-1 text-center">
+      <div className="bg-muted/30 border-t border-border px-4 py-1 flex items-center justify-between">
+        <StartupTestSuite />
         <p className="text-xs text-muted-foreground">
           Made by <span className="font-medium text-foreground">Ahmad Hussain</span> / <span className="font-medium text-foreground">Hexoro</span> © {currentYear}
         </p>
+        <div className="w-20" /> {/* Spacer for balance */}
       </div>
     </div>
   );
