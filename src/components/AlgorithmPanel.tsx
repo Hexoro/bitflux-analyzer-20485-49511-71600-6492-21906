@@ -1,6 +1,6 @@
 /**
- * Algorithm Panel V5 - With Comparison tab (Neural Network moved to ML mode)
- * Tabs: Files, Strategy, Player, Results, Compare, Metrics, Operations, Python
+ * Algorithm Panel V6 - Player tab removed (migrated to File Player mode)
+ * Tabs: Files, Strategy, Results, Compare, Metrics, Operations, Python
  */
 
 import { useState, useEffect, useCallback } from 'react';
@@ -9,7 +9,6 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import {
-  Play,
   FileText,
   FolderOpen,
   Code,
@@ -21,14 +20,14 @@ import {
   GitCompare,
 } from 'lucide-react';
 import { predefinedManager } from '@/lib/predefinedManager';
-import { PlayerTab, ExecutionResult, TransformationStep } from './algorithm/PlayerTab';
+import { ExecutionResult, TransformationStep } from './algorithm/PlayerTab';
 import { ResultsTab } from './algorithm/ResultsTab';
 import { FilesTab } from './algorithm/FilesTab';
 import { StrategyTab } from './algorithm/StrategyTab';
 import { PythonConsoleTab } from './algorithm/PythonConsoleTab';
 import { ComparisonTab } from './algorithm/ComparisonTab';
 
-type AlgorithmTab = 'files' | 'strategy' | 'player' | 'results' | 'compare' | 'metrics' | 'operations' | 'python';
+type AlgorithmTab = 'files' | 'strategy' | 'results' | 'compare' | 'metrics' | 'operations' | 'python';
 
 export const AlgorithmPanel = () => {
   const [activeTab, setActiveTab] = useState<AlgorithmTab>('files');
@@ -51,7 +50,7 @@ export const AlgorithmPanel = () => {
   const handleResultSelect = useCallback((result: ExecutionResult | null) => {
     setCurrentResult(result);
     if (result) {
-      setActiveTab('player');
+      setActiveTab('results');
     }
   }, []);
 
@@ -75,10 +74,6 @@ export const AlgorithmPanel = () => {
         <TabsTrigger value="strategy">
           <Code className="w-4 h-4 mr-1" />
           Strategy
-        </TabsTrigger>
-        <TabsTrigger value="player">
-          <Play className="w-4 h-4 mr-1" />
-          Player
         </TabsTrigger>
         <TabsTrigger value="results">
           <FileText className="w-4 h-4 mr-1" />
@@ -109,10 +104,6 @@ export const AlgorithmPanel = () => {
 
         <TabsContent value="strategy" className="h-full m-0">
           <StrategyTab onRunStrategy={handleRunStrategy} isExecuting={isExecuting} />
-        </TabsContent>
-
-        <TabsContent value="player" className="h-full m-0">
-          <PlayerTab result={currentResult} onStepChange={handleStepChange} />
         </TabsContent>
 
         <TabsContent value="results" className="h-full m-0">
