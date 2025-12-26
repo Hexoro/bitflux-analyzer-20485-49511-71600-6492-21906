@@ -3,11 +3,13 @@ import { BinaryMetrics } from '@/lib/binaryMetrics';
 import { FileState, SavedSequence } from '@/lib/fileState';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
-import { Card } from './ui/card';
-import { Search, X, Grid, List, Eye, EyeOff } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
+import { Search, X, Grid, List, Eye, EyeOff, Sparkles, TrendingUp } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { Checkbox } from './ui/checkbox';
+import { Badge } from './ui/badge';
+import { ScrollArea } from './ui/scroll-area';
 import { toast } from 'sonner';
 
 interface SequencesPanelProps {
@@ -17,19 +19,17 @@ interface SequencesPanelProps {
 
 export const SequencesPanel = ({ fileState, onJumpTo }: SequencesPanelProps) => {
   const [searchInput, setSearchInput] = useState('');
-  const [colorInput, setColorInput] = useState('#FF00FF');
+  const [colorInput, setColorInput] = useState('#00FFFF');
   const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
   const [sortFilter, setSortFilter] = useState<string>('serial');
   const [savedSequences, setSavedSequences] = useState<SavedSequence[]>([]);
 
   const bits = fileState.model.getBits();
 
-  // Sync local state with fileState
   useEffect(() => {
     setSavedSequences(Array.isArray(fileState.savedSequences) ? fileState.savedSequences : []);
   }, [fileState.savedSequences]);
 
-  // Subscribe to file state changes
   useEffect(() => {
     const unsubscribe = fileState.subscribe(() => {
       setSavedSequences(Array.isArray(fileState.savedSequences) ? [...fileState.savedSequences] : []);
@@ -73,14 +73,12 @@ export const SequencesPanel = ({ fileState, onJumpTo }: SequencesPanelProps) => 
       return;
     }
 
-    // Re-search all saved sequences to update positions
     const allSequences = savedSequences.map(s => s.sequence);
     const matches = BinaryMetrics.searchMultipleSequences(bits, allSequences);
     
     matches.forEach(match => {
       const existing = fileState.savedSequences.find(s => s.sequence === match.sequence);
       if (existing) {
-        // Update the sequence with new positions
         fileState.removeSequence(existing.id);
         fileState.addSequence(match, existing.color);
       }
@@ -139,258 +137,302 @@ export const SequencesPanel = ({ fileState, onJumpTo }: SequencesPanelProps) => 
     }
   });
 
+  const totalOccurrences = savedSequences.reduce((sum, s) => sum + s.count, 0);
+
   return (
-    <div className="h-full overflow-auto p-4 space-y-4 scrollbar-thin">
-      <Card className="p-4 bg-card border-border">
-        <h3 className="text-sm font-semibold text-primary mb-3">Sequence Search</h3>
-        <div className="space-y-3">
-          <div className="flex gap-2">
-            <Input
-              placeholder="Enter binary sequences (e.g., 1010, 0011)"
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-              className="font-mono flex-1"
-            />
-            <div className="flex items-center gap-2">
-              <input
-                type="color"
-                value={colorInput}
-                onChange={(e) => setColorInput(e.target.value)}
-                className="w-10 h-10 rounded cursor-pointer border border-border"
-                title="Choose highlight color"
-              />
-              <Button onClick={handleSearch} size="sm">
-                <Search className="w-4 h-4" />
-              </Button>
-            </div>
-          </div>
-          {savedSequences.length > 0 && (
-            <div className="flex gap-2">
-              <Button onClick={handleFindAll} variant="outline" size="sm" className="flex-1">
-                Find All
-              </Button>
-              <Button onClick={handleExportSequences} variant="outline" size="sm" className="flex-1">
-                Export
-              </Button>
-              <Button onClick={handleClearAll} variant="outline" size="sm" className="flex-1">
-                Clear
-              </Button>
-            </div>
-          )}
-          <p className="text-xs text-muted-foreground">
-            Separate multiple sequences with commas or spaces. Choose color before searching.
-          </p>
-        </div>
-      </Card>
-
-      {savedSequences.length > 0 && (
-        <>
-          <Card className="p-4 bg-card border-border">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="text-xs text-muted-foreground">Sort by:</div>
-                <Select value={sortFilter} onValueChange={setSortFilter}>
-                  <SelectTrigger className="h-8 w-32 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="serial">Serial #</SelectItem>
-                    <SelectItem value="count">Count</SelectItem>
-                    <SelectItem value="length">Length</SelectItem>
-                    <SelectItem value="position">Position</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              
-              <div className="flex gap-2">
-                <Button
-                  size="sm"
-                  variant={viewMode === 'cards' ? 'default' : 'outline'}
-                  onClick={() => setViewMode('cards')}
-                  className="h-7 px-2"
-                >
-                  <Grid className="w-3 h-3" />
-                </Button>
-                <Button
-                  size="sm"
-                  variant={viewMode === 'table' ? 'default' : 'outline'}
-                  onClick={() => setViewMode('table')}
-                  className="h-7 px-2"
-                >
-                  <List className="w-3 h-3" />
-                </Button>
-              </div>
-            </div>
+    <ScrollArea className="h-full">
+      <div className="p-4 space-y-4">
+        {/* Header Stats */}
+        <div className="grid grid-cols-3 gap-3">
+          <Card className="bg-gradient-to-br from-primary/20 to-transparent border-primary/30">
+            <CardContent className="py-3">
+              <div className="text-xs text-muted-foreground">Sequences</div>
+              <div className="text-2xl font-bold text-primary">{savedSequences.length}</div>
+            </CardContent>
           </Card>
+          <Card className="bg-gradient-to-br from-cyan-500/20 to-transparent border-cyan-500/30">
+            <CardContent className="py-3">
+              <div className="text-xs text-muted-foreground">Total Occurrences</div>
+              <div className="text-2xl font-bold text-cyan-400">{totalOccurrences}</div>
+            </CardContent>
+          </Card>
+          <Card className="bg-gradient-to-br from-green-500/20 to-transparent border-green-500/30">
+            <CardContent className="py-3">
+              <div className="text-xs text-muted-foreground">Coverage</div>
+              <div className="text-2xl font-bold text-green-400">
+                {bits.length > 0 ? ((totalOccurrences / bits.length) * 100).toFixed(1) : 0}%
+              </div>
+            </CardContent>
+          </Card>
+        </div>
 
-          {viewMode === 'cards' ? (
-            <div className="space-y-3">
-              {sortedSequences.map((seq) => (
-                <Card key={seq.id} className="p-4 bg-card border-border relative">
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="flex items-center gap-3">
-                      <div className="text-lg font-bold text-primary">#{seq.serialNumber}</div>
-                      <Button
-                        onClick={() => handleToggleHighlight(seq.id)}
-                        variant="ghost"
-                        size="sm"
-                        className="h-6 w-6 p-0"
-                        title={seq.highlighted ? 'Hide highlights' : 'Show highlights'}
-                      >
-                        {seq.highlighted ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
-                      </Button>
-                    </div>
-                    <Button
-                      onClick={() => handleRemoveSequence(seq.id)}
-                      variant="ghost"
-                      size="sm"
-                      className="h-6 w-6 p-0"
-                    >
-                      <X className="w-4 h-4" />
-                    </Button>
+        {/* Search Card */}
+        <Card className="bg-gradient-to-r from-card to-muted/20 border-border overflow-hidden">
+          <CardHeader className="py-3 bg-muted/30">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Search className="w-4 h-4 text-primary" />
+              Sequence Search
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="py-4 space-y-3">
+            <div className="flex gap-2">
+              <Input
+                placeholder="Enter binary sequences (e.g., 1010, 0011)"
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                className="font-mono flex-1 bg-background"
+              />
+              <div className="flex items-center gap-2">
+                <input
+                  type="color"
+                  value={colorInput}
+                  onChange={(e) => setColorInput(e.target.value)}
+                  className="w-10 h-10 rounded cursor-pointer border border-border bg-transparent"
+                  title="Choose highlight color"
+                />
+                <Button onClick={handleSearch} className="bg-primary hover:bg-primary/90">
+                  <Search className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
+            {savedSequences.length > 0 && (
+              <div className="flex gap-2">
+                <Button onClick={handleFindAll} variant="outline" size="sm" className="flex-1">
+                  <Sparkles className="w-3 h-3 mr-1" />
+                  Refresh All
+                </Button>
+                <Button onClick={handleExportSequences} variant="outline" size="sm" className="flex-1">
+                  Export
+                </Button>
+                <Button onClick={handleClearAll} variant="outline" size="sm" className="flex-1 text-destructive hover:text-destructive">
+                  Clear
+                </Button>
+              </div>
+            )}
+            <p className="text-xs text-muted-foreground">
+              Separate multiple sequences with commas or spaces. Choose color before searching.
+            </p>
+          </CardContent>
+        </Card>
+
+        {savedSequences.length > 0 && (
+          <>
+            {/* Controls */}
+            <Card className="bg-card border-border">
+              <CardContent className="py-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="text-xs text-muted-foreground">Sort by:</div>
+                    <Select value={sortFilter} onValueChange={setSortFilter}>
+                      <SelectTrigger className="h-8 w-32 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="serial">Serial #</SelectItem>
+                        <SelectItem value="count">Count</SelectItem>
+                        <SelectItem value="length">Length</SelectItem>
+                        <SelectItem value="position">Position</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                   
-                  <div className="flex items-start gap-3 mb-3">
-                    <div
-                      className="w-4 h-4 rounded border border-border flex-shrink-0 mt-1"
-                      style={{ backgroundColor: seq.color }}
-                      title="Highlight color"
-                    />
-                    <div className="flex-1">
-                      <div className="text-sm font-semibold text-primary font-mono break-all">
-                        {seq.sequence}
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        {seq.count} occurrence{seq.count !== 1 ? 's' : ''} • {seq.sequence.length} bits
-                      </div>
-                    </div>
+                  <div className="flex gap-1">
+                    <Button
+                      size="sm"
+                      variant={viewMode === 'cards' ? 'default' : 'outline'}
+                      onClick={() => setViewMode('cards')}
+                      className="h-7 px-2"
+                    >
+                      <Grid className="w-3 h-3" />
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant={viewMode === 'table' ? 'default' : 'outline'}
+                      onClick={() => setViewMode('table')}
+                      className="h-7 px-2"
+                    >
+                      <List className="w-3 h-3" />
+                    </Button>
                   </div>
+                </div>
+              </CardContent>
+            </Card>
 
-                  <div className="space-y-2 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Mean Distance:</span>
-                      <span className="text-foreground font-mono">
-                        {seq.meanDistance.toFixed(2)} bits
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Variance:</span>
-                      <span className="text-foreground font-mono">
-                        {seq.varianceDistance.toFixed(2)}
-                      </span>
-                    </div>
-                  </div>
-
-                  {seq.positions.length > 0 && (
-                    <div className="mt-3">
-                      <div className="text-xs text-muted-foreground mb-2">
-                        Positions (showing first 10):
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        {seq.positions.slice(0, 10).map((pos, posIdx) => (
-                          <Button
-                            key={posIdx}
-                            size="sm"
-                            variant="outline"
-                            onClick={() => onJumpTo(pos)}
-                            className="h-6 px-2 text-xs font-mono"
+            {viewMode === 'cards' ? (
+              <div className="space-y-3">
+                {sortedSequences.map((seq) => (
+                  <Card key={seq.id} className="bg-gradient-to-r from-card to-transparent border-border hover:border-primary/50 transition-all overflow-hidden group">
+                    <CardContent className="p-4">
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="flex items-center gap-3">
+                          <div 
+                            className="w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold"
+                            style={{ backgroundColor: seq.color + '30', color: seq.color }}
                           >
-                            {pos}
-                          </Button>
-                        ))}
-                        {seq.positions.length > 10 && (
-                          <span className="text-xs text-muted-foreground self-center">
-                            +{seq.positions.length - 10} more
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </Card>
-              ))}
-            </div>
-          ) : (
-            <Card className="p-0 bg-card border-border overflow-hidden">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-12">#</TableHead>
-                    <TableHead className="w-12">
-                      <Eye className="w-4 h-4" />
-                    </TableHead>
-                    <TableHead className="w-12">Color</TableHead>
-                    <TableHead>Sequence</TableHead>
-                    <TableHead className="text-right">Count</TableHead>
-                    <TableHead className="text-right">Length</TableHead>
-                    <TableHead className="text-right">Mean Dist</TableHead>
-                    <TableHead className="w-20"></TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {sortedSequences.map((seq) => (
-                    <TableRow key={seq.id}>
-                      <TableCell className="font-bold text-primary">
-                        {seq.serialNumber}
-                      </TableCell>
-                      <TableCell>
-                        <Checkbox
-                          checked={seq.highlighted}
-                          onCheckedChange={() => handleToggleHighlight(seq.id)}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <div
-                          className="w-4 h-4 rounded border border-border"
-                          style={{ backgroundColor: seq.color }}
-                        />
-                      </TableCell>
-                      <TableCell className="font-mono text-xs max-w-[200px] truncate">
-                        {seq.sequence}
-                      </TableCell>
-                      <TableCell className="text-right font-mono text-xs">
-                        {seq.count}
-                      </TableCell>
-                      <TableCell className="text-right font-mono text-xs">
-                        {seq.sequence.length}
-                      </TableCell>
-                      <TableCell className="text-right font-mono text-xs">
-                        {seq.meanDistance.toFixed(1)}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex gap-1">
+                            #{seq.serialNumber}
+                          </div>
                           <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => seq.positions[0] && onJumpTo(seq.positions[0])}
-                            className="h-6 text-xs px-2"
-                          >
-                            Jump
-                          </Button>
-                          <Button
-                            onClick={() => handleRemoveSequence(seq.id)}
+                            onClick={() => handleToggleHighlight(seq.id)}
                             variant="ghost"
                             size="sm"
-                            className="h-6 w-6 p-0"
+                            className="h-8 w-8 p-0"
+                            title={seq.highlighted ? 'Hide highlights' : 'Show highlights'}
                           >
-                            <X className="w-3 h-3" />
+                            {seq.highlighted ? <Eye className="w-4 h-4 text-primary" /> : <EyeOff className="w-4 h-4" />}
                           </Button>
                         </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </Card>
-          )}
-        </>
-      )}
+                        <Button
+                          onClick={() => handleRemoveSequence(seq.id)}
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100 transition-opacity text-destructive"
+                        >
+                          <X className="w-4 h-4" />
+                        </Button>
+                      </div>
+                      
+                      <div className="mb-3">
+                        <div 
+                          className="text-sm font-mono break-all p-2 rounded-lg"
+                          style={{ backgroundColor: seq.color + '15' }}
+                        >
+                          {seq.sequence}
+                        </div>
+                        <div className="flex gap-2 mt-2">
+                          <Badge variant="secondary">{seq.count} match{seq.count !== 1 ? 'es' : ''}</Badge>
+                          <Badge variant="outline">{seq.sequence.length} bits</Badge>
+                        </div>
+                      </div>
 
-      {savedSequences.length === 0 && (
-        <div className="text-center text-muted-foreground text-sm py-8">
-          Enter binary sequences to search for patterns in the data
-        </div>
-      )}
-    </div>
+                      <div className="grid grid-cols-2 gap-3 text-sm mb-3">
+                        <div className="p-2 bg-muted/30 rounded-lg">
+                          <span className="text-muted-foreground text-xs">Mean Distance</span>
+                          <div className="font-mono text-primary">{seq.meanDistance.toFixed(2)}</div>
+                        </div>
+                        <div className="p-2 bg-muted/30 rounded-lg">
+                          <span className="text-muted-foreground text-xs">Variance</span>
+                          <div className="font-mono text-primary">{seq.varianceDistance.toFixed(2)}</div>
+                        </div>
+                      </div>
+
+                      {seq.positions.length > 0 && (
+                        <div>
+                          <div className="text-xs text-muted-foreground mb-2">
+                            Positions (first 8):
+                          </div>
+                          <div className="flex flex-wrap gap-1">
+                            {seq.positions.slice(0, 8).map((pos, posIdx) => (
+                              <Button
+                                key={posIdx}
+                                size="sm"
+                                variant="outline"
+                                onClick={() => onJumpTo(pos)}
+                                className="h-6 px-2 text-xs font-mono hover:bg-primary/20"
+                              >
+                                {pos}
+                              </Button>
+                            ))}
+                            {seq.positions.length > 8 && (
+                              <Badge variant="secondary" className="text-xs">
+                                +{seq.positions.length - 8} more
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            ) : (
+              <Card className="bg-card border-border overflow-hidden">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-muted/30">
+                      <TableHead className="w-12">#</TableHead>
+                      <TableHead className="w-12">
+                        <Eye className="w-4 h-4" />
+                      </TableHead>
+                      <TableHead className="w-12">Color</TableHead>
+                      <TableHead>Sequence</TableHead>
+                      <TableHead className="text-right">Count</TableHead>
+                      <TableHead className="text-right">Length</TableHead>
+                      <TableHead className="text-right">Mean Dist</TableHead>
+                      <TableHead className="w-24"></TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {sortedSequences.map((seq) => (
+                      <TableRow key={seq.id} className="hover:bg-muted/20">
+                        <TableCell className="font-bold text-primary">
+                          {seq.serialNumber}
+                        </TableCell>
+                        <TableCell>
+                          <Checkbox
+                            checked={seq.highlighted}
+                            onCheckedChange={() => handleToggleHighlight(seq.id)}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <div
+                            className="w-5 h-5 rounded-md border border-border"
+                            style={{ backgroundColor: seq.color }}
+                          />
+                        </TableCell>
+                        <TableCell className="font-mono text-xs max-w-[200px] truncate">
+                          {seq.sequence}
+                        </TableCell>
+                        <TableCell className="text-right font-mono text-xs">
+                          {seq.count}
+                        </TableCell>
+                        <TableCell className="text-right font-mono text-xs">
+                          {seq.sequence.length}
+                        </TableCell>
+                        <TableCell className="text-right font-mono text-xs">
+                          {seq.meanDistance.toFixed(1)}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex gap-1">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => seq.positions[0] && onJumpTo(seq.positions[0])}
+                              className="h-6 text-xs px-2"
+                            >
+                              Jump
+                            </Button>
+                            <Button
+                              onClick={() => handleRemoveSequence(seq.id)}
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 w-6 p-0 text-destructive"
+                            >
+                              <X className="w-3 h-3" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </Card>
+            )}
+          </>
+        )}
+
+        {savedSequences.length === 0 && (
+          <Card className="bg-muted/20 border-dashed">
+            <CardContent className="py-12">
+              <div className="text-center text-muted-foreground">
+                <TrendingUp className="w-12 h-12 mx-auto mb-4 opacity-30" />
+                <p className="text-lg font-medium mb-1">No Sequences Found</p>
+                <p className="text-sm">Enter binary patterns above to search</p>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+      </div>
+    </ScrollArea>
   );
 };
