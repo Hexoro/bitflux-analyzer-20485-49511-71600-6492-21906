@@ -283,10 +283,10 @@ export const PlayerTab = ({ result, onStepChange }: PlayerTabProps) => {
   return (
     <div className="h-full flex flex-col gap-3 p-4 overflow-hidden">
       {/* Header with Strategy Info and Budget */}
-      <Card className="bg-purple-500/10 border-purple-500/30 flex-shrink-0">
+      <Card className="bg-primary/10 border-primary/30 flex-shrink-0">
         <CardContent className="py-3">
           <div className="flex items-center gap-4 flex-wrap">
-            <FileCode className="w-5 h-5 text-purple-500" />
+            <FileCode className="w-5 h-5 text-primary" />
             <div className="flex-1 min-w-0">
               <span className="text-sm font-medium truncate">{result.strategyName}</span>
               <p className="text-xs text-muted-foreground">

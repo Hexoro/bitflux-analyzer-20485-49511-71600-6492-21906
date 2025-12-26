@@ -49,10 +49,10 @@ import { CodeFileEditor } from './CodeFileEditor';
 import { GuidesTab } from './backend/GuidesTab';
 import { AnomaliesTab } from './backend/AnomaliesTab';
 
-type BackendTab = 'metrics' | 'operations' | 'anomalies' | 'guides' | 'metrics-code' | 'operations-code' | 'metrics-json' | 'operations-json' | 'info';
+type BackendTab = 'overview' | 'metrics' | 'operations' | 'anomalies' | 'guides' | 'metrics-code' | 'operations-code' | 'info';
 
 export const BackendPanel = () => {
-  const [activeTab, setActiveTab] = useState<BackendTab>('metrics');
+  const [activeTab, setActiveTab] = useState<BackendTab>('overview');
   const [, forceUpdate] = useState({});
 
   // Dialog states
@@ -176,6 +176,10 @@ export const BackendPanel = () => {
   return (
     <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as BackendTab)} className="h-full flex flex-col">
       <TabsList className="w-full justify-start rounded-none border-b overflow-x-auto flex-shrink-0">
+        <TabsTrigger value="overview">
+          <Binary className="w-4 h-4 mr-1" />
+          Overview
+        </TabsTrigger>
         <TabsTrigger value="metrics">
           <Calculator className="w-4 h-4 mr-1" />
           Metrics
@@ -207,6 +211,70 @@ export const BackendPanel = () => {
       </TabsList>
 
       <div className="flex-1 overflow-hidden">
+        {/* Overview Tab - All Metrics and Operations */}
+        <TabsContent value="overview" className="h-full m-0">
+          <ScrollArea className="h-full">
+            <div className="p-4 space-y-4">
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <Binary className="w-4 h-4" />
+                    All Metrics & Operations
+                  </CardTitle>
+                  <p className="text-xs text-muted-foreground">
+                    Complete view of all available metrics and operations for strategies.
+                  </p>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {/* Metrics Summary */}
+                  <div>
+                    <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
+                      <Calculator className="w-4 h-4 text-primary" />
+                      Metrics ({metrics.length})
+                    </h4>
+                    <div className="grid grid-cols-2 gap-2">
+                      {metricCategories.map(cat => (
+                        <div key={cat} className="p-2 bg-muted/30 rounded">
+                          <div className="text-xs font-medium text-muted-foreground uppercase mb-1">{cat}</div>
+                          <div className="flex flex-wrap gap-1">
+                            {metrics.filter(m => m.category === cat).map(m => (
+                              <Badge key={m.id} variant="secondary" className="text-xs">
+                                {m.name}
+                              </Badge>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  
+                  {/* Operations Summary */}
+                  <div>
+                    <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
+                      <Cog className="w-4 h-4 text-primary" />
+                      Operations ({operations.length})
+                    </h4>
+                    <div className="grid grid-cols-2 gap-2">
+                      {operationCategories.map(cat => (
+                        <div key={cat} className="p-2 bg-muted/30 rounded">
+                          <div className="text-xs font-medium text-muted-foreground uppercase mb-1">{cat}</div>
+                          <div className="flex flex-wrap gap-1">
+                            {operations.filter(o => o.category === cat).map(o => (
+                              <Badge key={o.id} variant="outline" className="text-xs font-mono">
+                                {o.id}
+                              </Badge>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </ScrollArea>
+        </TabsContent>
+
         {/* Metrics Tab - Editable */}
         <TabsContent value="metrics" className="h-full m-0">
           <ScrollArea className="h-full">

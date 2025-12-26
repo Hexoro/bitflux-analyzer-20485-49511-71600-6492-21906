@@ -98,11 +98,12 @@ export const PatternHeatmapDialog = ({
   const gridRows = Math.ceil(heatmapData.length / gridCols);
 
   const getColor = (value: number) => {
-    if (value < 20) return 'rgb(59, 130, 246)'; // blue-500
-    if (value < 40) return 'rgb(34, 197, 94)'; // green-500
-    if (value < 60) return 'rgb(234, 179, 8)'; // yellow-500
-    if (value < 80) return 'rgb(249, 115, 22)'; // orange-500
-    return 'rgb(239, 68, 68)'; // red-500
+    // Use semantic colors from design system
+    if (value < 20) return 'hsl(180, 100%, 50%)'; // primary/cyan
+    if (value < 40) return 'hsl(180, 100%, 40%)';
+    if (value < 60) return 'hsl(45, 100%, 50%)'; // yellow
+    if (value < 80) return 'hsl(30, 100%, 50%)'; // orange
+    return 'hsl(0, 84%, 60%)'; // red/destructive
   };
 
   return (
@@ -188,23 +189,23 @@ export const PatternHeatmapDialog = ({
           <div className="flex items-center gap-2 text-sm">
             <span className="text-muted-foreground">Scale:</span>
             <div className="flex items-center gap-1">
-              <div className="w-4 h-4 rounded" style={{ backgroundColor: getColor(10) }} />
+              <div className="w-4 h-4 rounded" style={{ backgroundColor: 'hsl(180, 100%, 50%)' }} />
               <span>0-20%</span>
             </div>
             <div className="flex items-center gap-1">
-              <div className="w-4 h-4 rounded" style={{ backgroundColor: getColor(30) }} />
+              <div className="w-4 h-4 rounded" style={{ backgroundColor: 'hsl(180, 100%, 40%)' }} />
               <span>20-40%</span>
             </div>
             <div className="flex items-center gap-1">
-              <div className="w-4 h-4 rounded" style={{ backgroundColor: getColor(50) }} />
+              <div className="w-4 h-4 rounded" style={{ backgroundColor: 'hsl(45, 100%, 50%)' }} />
               <span>40-60%</span>
             </div>
             <div className="flex items-center gap-1">
-              <div className="w-4 h-4 rounded" style={{ backgroundColor: getColor(70) }} />
+              <div className="w-4 h-4 rounded" style={{ backgroundColor: 'hsl(30, 100%, 50%)' }} />
               <span>60-80%</span>
             </div>
             <div className="flex items-center gap-1">
-              <div className="w-4 h-4 rounded" style={{ backgroundColor: getColor(90) }} />
+              <div className="w-4 h-4 rounded" style={{ backgroundColor: 'hsl(0, 84%, 60%)' }} />
               <span>80-100%</span>
             </div>
           </div>
