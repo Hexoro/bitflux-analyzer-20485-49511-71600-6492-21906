@@ -1,7 +1,6 @@
 /**
- * Algorithm Panel V3 - Redesigned with new tab structure
- * Tabs: Files, Strategy, Player, Results, Metrics, Operations, Python (fixed order)
- * No custom tabs
+ * Algorithm Panel V4 - With Neural Network mode
+ * Tabs: Files, Strategy, Player, Results, Neural Network, Metrics, Operations, Python
  */
 
 import { useState, useEffect, useCallback } from 'react';
@@ -19,6 +18,7 @@ import {
   ChevronRight,
   ChevronDown,
   Terminal,
+  Brain,
 } from 'lucide-react';
 import { predefinedManager } from '@/lib/predefinedManager';
 import { PlayerTab, ExecutionResult, TransformationStep } from './algorithm/PlayerTab';
@@ -26,8 +26,9 @@ import { ResultsTab } from './algorithm/ResultsTab';
 import { FilesTab } from './algorithm/FilesTab';
 import { StrategyTab } from './algorithm/StrategyTab';
 import { PythonConsoleTab } from './algorithm/PythonConsoleTab';
+import { NeuralNetworkTab } from './algorithm/NeuralNetworkTab';
 
-type AlgorithmTab = 'files' | 'strategy' | 'player' | 'results' | 'metrics' | 'operations' | 'python';
+type AlgorithmTab = 'files' | 'strategy' | 'player' | 'results' | 'neural' | 'metrics' | 'operations' | 'python';
 
 export const AlgorithmPanel = () => {
   const [activeTab, setActiveTab] = useState<AlgorithmTab>('files');
@@ -85,6 +86,10 @@ export const AlgorithmPanel = () => {
           <FileText className="w-4 h-4 mr-1" />
           Results
         </TabsTrigger>
+        <TabsTrigger value="neural">
+          <Brain className="w-4 h-4 mr-1" />
+          Neural Net
+        </TabsTrigger>
         <TabsTrigger value="metrics">
           <Activity className="w-4 h-4 mr-1" />
           Metrics
@@ -114,6 +119,11 @@ export const AlgorithmPanel = () => {
 
         <TabsContent value="results" className="h-full m-0">
           <ResultsTab onSelectResult={handleResultSelect} />
+        </TabsContent>
+
+        {/* Neural Network Tab */}
+        <TabsContent value="neural" className="h-full m-0">
+          <NeuralNetworkTab />
         </TabsContent>
 
         {/* Metrics Tab - Display only */}

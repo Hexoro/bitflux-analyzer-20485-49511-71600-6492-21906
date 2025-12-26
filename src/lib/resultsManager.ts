@@ -71,7 +71,7 @@ export interface ExecutionResultV2 {
 }
 
 const STORAGE_KEY = 'bitwise_results_v2';
-const MAX_RESULTS = 100; // Limit to prevent localStorage overflow
+const MAX_RESULTS = 100;
 
 class ResultsManager {
   private results: Map<string, ExecutionResultV2> = new Map();
@@ -107,7 +107,7 @@ class ResultsManager {
   }
 
   createResult(partial: Omit<ExecutionResultV2, 'id' | 'bookmarked' | 'tags' | 'notes'>): ExecutionResultV2 {
-    const id = `result_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const id = 'result_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
     const result: ExecutionResultV2 = {
       ...partial,
       id,
@@ -144,7 +144,6 @@ class ResultsManager {
     return this.getAllResults().filter(r => r.tags.includes(tag));
   }
 
-  // Bookmarking
   toggleBookmark(id: string): void {
     const result = this.results.get(id);
     if (result) {
@@ -193,83 +192,89 @@ class ResultsManager {
     this.notifyListeners();
   }
 
-  // Export
   exportToCSV(result: ExecutionResultV2): string {
     const lines: string[] = [];
     
-    // ============= HEADER SECTION =============
+    // HEADER
     lines.push('═══════════════════════════════════════════════════════════════');
     lines.push('BITWISE STRATEGY EXECUTION REPORT');
     lines.push('═══════════════════════════════════════════════════════════════');
     lines.push('');
     
-    // ============= EXECUTION METADATA =============
+    // EXECUTION METADATA
     lines.push('EXECUTION METADATA');
     lines.push('─────────────────────────────────────────────────────────────────');
-    lines.push(`Result ID,${result.id}`);
-    lines.push(`Strategy Name,${result.strategyName}`);
-    lines.push(`Strategy ID,${result.strategyId}`);
-    lines.push(`Source File,${result.sourceFileName || 'N/A'}`);
-    lines.push(`Source File ID,${result.sourceFileId || 'N/A'}`);
-    lines.push(`Status,${result.status}`);
-    lines.push(`Start Time,${new Date(result.startTime).toISOString()}`);
-    lines.push(`End Time,${new Date(result.endTime).toISOString()}`);
-    lines.push(`Total Duration,${result.duration}ms`);
-    lines.push(`Export Generated,${new Date().toISOString()}`);
+    lines.push('Result ID,' + result.id);
+    lines.push('Strategy Name,' + result.strategyName);
+    lines.push('Strategy ID,' + result.strategyId);
+    lines.push('Source File,' + (result.sourceFileName || 'N/A'));
+    lines.push('Source File ID,' + (result.sourceFileId || 'N/A'));
+    lines.push('Status,' + result.status);
+    lines.push('Start Time,' + new Date(result.startTime).toISOString());
+    lines.push('End Time,' + new Date(result.endTime).toISOString());
+    lines.push('Total Duration,' + result.duration + 'ms');
+    lines.push('Export Generated,' + new Date().toISOString());
     lines.push('');
     
-    // ============= DATA SIZE ANALYSIS =============
+    // DATA SIZE ANALYSIS
     lines.push('DATA SIZE ANALYSIS');
     lines.push('─────────────────────────────────────────────────────────────────');
-    lines.push(`Initial Size,${result.initialBits.length} bits,${(result.initialBits.length / 8).toFixed(0)} bytes`);
-    lines.push(`Final Size,${result.finalBits.length} bits,${(result.finalBits.length / 8).toFixed(0)} bytes`);
-    lines.push(`Size Change,${result.finalBits.length - result.initialBits.length} bits`);
+    lines.push('Initial Size,' + result.initialBits.length + ' bits,' + Math.floor(result.initialBits.length / 8) + ' bytes');
+    lines.push('Final Size,' + result.finalBits.length + ' bits,' + Math.floor(result.finalBits.length / 8) + ' bytes');
+    lines.push('Size Change,' + (result.finalBits.length - result.initialBits.length) + ' bits');
     const compressionRatio = result.initialBits.length > 0 
       ? (result.finalBits.length / result.initialBits.length).toFixed(4)
       : '1.0000';
-    lines.push(`Compression Ratio,${compressionRatio}x`);
+    lines.push('Compression Ratio,' + compressionRatio + 'x');
     lines.push('');
     
-    // ============= INITIAL AND FINAL DATA =============
-    lines.push('BINARY DATA');
+    // BINARY DATA - Preview
+    lines.push('BINARY DATA PREVIEW');
     lines.push('─────────────────────────────────────────────────────────────────');
+    const initPreview = result.initialBits.slice(0, 256);
+    const finalPreview = result.finalBits.slice(0, 256);
     lines.push('Initial Bits (first 256)');
-    lines.push(`"${result.initialBits.slice(0, 256)}${result.initialBits.length > 256 ? '...' : ''}"`);
+    lines.push('"' + initPreview + (result.initialBits.length > 256 ? '...' : '') + '"');
     lines.push('');
     lines.push('Final Bits (first 256)');
-    lines.push(`"${result.finalBits.slice(0, 256)}${result.finalBits.length > 256 ? '...' : ''}"`);
+    lines.push('"' + finalPreview + (result.finalBits.length > 256 ? '...' : '') + '"');
     lines.push('');
     
-    // Full data in separate rows for research
-    lines.push('Initial Bits (full - may be truncated in some viewers)');
-    lines.push(`"${result.initialBits}"`);
+    // FULL BINARY DATA (separate section for research)
+    lines.push('FULL BINARY DATA');
+    lines.push('─────────────────────────────────────────────────────────────────');
+    lines.push('Initial Bits (complete)');
+    lines.push('"' + result.initialBits + '"');
     lines.push('');
-    lines.push('Final Bits (full - may be truncated in some viewers)');
-    lines.push(`"${result.finalBits}"`);
+    lines.push('Final Bits (complete)');
+    lines.push('"' + result.finalBits + '"');
     lines.push('');
     
-    // ============= BIT STATISTICS =============
+    // BIT STATISTICS
     lines.push('BIT STATISTICS');
     lines.push('─────────────────────────────────────────────────────────────────');
     const initialOnes = (result.initialBits.match(/1/g) || []).length;
     const initialZeros = result.initialBits.length - initialOnes;
     const finalOnes = (result.finalBits.match(/1/g) || []).length;
     const finalZeros = result.finalBits.length - finalOnes;
-    lines.push(`Initial Ones,${initialOnes},${(initialOnes/result.initialBits.length*100).toFixed(2)}%`);
-    lines.push(`Initial Zeros,${initialZeros},${(initialZeros/result.initialBits.length*100).toFixed(2)}%`);
-    lines.push(`Final Ones,${finalOnes},${(finalOnes/result.finalBits.length*100).toFixed(2)}%`);
-    lines.push(`Final Zeros,${finalZeros},${(finalZeros/result.finalBits.length*100).toFixed(2)}%`);
+    const initLen = result.initialBits.length || 1;
+    const finalLen = result.finalBits.length || 1;
+    lines.push('Initial Ones,' + initialOnes + ',' + (initialOnes/initLen*100).toFixed(2) + '%');
+    lines.push('Initial Zeros,' + initialZeros + ',' + (initialZeros/initLen*100).toFixed(2) + '%');
+    lines.push('Final Ones,' + finalOnes + ',' + (finalOnes/finalLen*100).toFixed(2) + '%');
+    lines.push('Final Zeros,' + finalZeros + ',' + (finalZeros/finalLen*100).toFixed(2) + '%');
     
-    // Count total bits changed
     let totalBitsChanged = 0;
-    for (let i = 0; i < Math.min(result.initialBits.length, result.finalBits.length); i++) {
+    const minLen = Math.min(result.initialBits.length, result.finalBits.length);
+    for (let i = 0; i < minLen; i++) {
       if (result.initialBits[i] !== result.finalBits[i]) totalBitsChanged++;
     }
     totalBitsChanged += Math.abs(result.initialBits.length - result.finalBits.length);
-    lines.push(`Total Bits Changed,${totalBitsChanged},${(totalBitsChanged/Math.max(result.initialBits.length,result.finalBits.length)*100).toFixed(2)}%`);
+    const maxLen = Math.max(result.initialBits.length, result.finalBits.length) || 1;
+    lines.push('Total Bits Changed,' + totalBitsChanged + ',' + (totalBitsChanged/maxLen*100).toFixed(2) + '%');
     lines.push('');
     
-    // ============= METRICS COMPARISON =============
+    // METRICS COMPARISON
     lines.push('METRICS COMPARISON');
     lines.push('─────────────────────────────────────────────────────────────────');
     lines.push('Metric,Initial Value,Final Value,Change,% Change');
@@ -282,22 +287,23 @@ class ResultsManager {
       const final = result.finalMetrics?.[metric] ?? 0;
       const change = final - initial;
       const pctChange = initial !== 0 ? ((change / Math.abs(initial)) * 100).toFixed(2) : 'N/A';
-      lines.push(`${metric},${initial.toFixed(6)},${final.toFixed(6)},${change.toFixed(6)},${pctChange}%`);
+      lines.push(metric + ',' + initial.toFixed(6) + ',' + final.toFixed(6) + ',' + change.toFixed(6) + ',' + pctChange + '%');
     });
     lines.push('');
     
-    // ============= BENCHMARKS =============
+    // BENCHMARKS
     lines.push('PERFORMANCE BENCHMARKS');
     lines.push('─────────────────────────────────────────────────────────────────');
-    lines.push(`CPU Time,${result.benchmarks?.cpuTime || result.duration}ms`);
-    lines.push(`Peak Memory,${result.benchmarks?.peakMemory || 0}MB`);
-    lines.push(`Operation Count,${result.benchmarks?.operationCount || result.steps.length}`);
-    lines.push(`Avg Step Duration,${(result.benchmarks?.avgStepDuration || 0).toFixed(2)}ms`);
-    lines.push(`Total Cost,${result.benchmarks?.totalCost || 0}`);
-    lines.push(`Operations Per Second,${result.duration > 0 ? ((result.steps.length / result.duration) * 1000).toFixed(2) : 'N/A'}`);
+    lines.push('CPU Time,' + (result.benchmarks?.cpuTime || result.duration) + 'ms');
+    lines.push('Peak Memory,' + (result.benchmarks?.peakMemory || 0) + 'MB');
+    lines.push('Operation Count,' + (result.benchmarks?.operationCount || result.steps.length));
+    lines.push('Avg Step Duration,' + (result.benchmarks?.avgStepDuration || 0).toFixed(2) + 'ms');
+    lines.push('Total Cost,' + (result.benchmarks?.totalCost || 0));
+    const opsPerSec = result.duration > 0 ? ((result.steps.length / result.duration) * 1000).toFixed(2) : 'N/A';
+    lines.push('Operations Per Second,' + opsPerSec);
     lines.push('');
     
-    // ============= OPERATION STATISTICS =============
+    // OPERATION BREAKDOWN
     lines.push('OPERATION BREAKDOWN');
     lines.push('─────────────────────────────────────────────────────────────────');
     const opCounts: Record<string, { count: number; totalCost: number; totalBitsChanged: number }> = {};
@@ -307,22 +313,23 @@ class ResultsManager {
       }
       opCounts[step.operation].count++;
       opCounts[step.operation].totalCost += step.cost || 0;
-      // Count bits changed for this operation
       const before = step.fullBeforeBits || step.beforeBits;
       const after = step.fullAfterBits || step.afterBits;
       let changed = 0;
-      for (let i = 0; i < Math.min(before.length, after.length); i++) {
+      const len = Math.min(before.length, after.length);
+      for (let i = 0; i < len; i++) {
         if (before[i] !== after[i]) changed++;
       }
       opCounts[step.operation].totalBitsChanged += changed;
     });
     lines.push('Operation,Count,Total Cost,Avg Cost,Bits Changed');
     Object.entries(opCounts).sort((a, b) => b[1].count - a[1].count).forEach(([op, data]) => {
-      lines.push(`${op},${data.count},${data.totalCost},${(data.totalCost/data.count).toFixed(2)},${data.totalBitsChanged}`);
+      const avgCost = data.count > 0 ? (data.totalCost / data.count).toFixed(2) : '0';
+      lines.push(op + ',' + data.count + ',' + data.totalCost + ',' + avgCost + ',' + data.totalBitsChanged);
     });
     lines.push('');
     
-    // ============= TRANSFORMATION STEPS =============
+    // TRANSFORMATION STEPS
     lines.push('TRANSFORMATION STEPS');
     lines.push('─────────────────────────────────────────────────────────────────');
     lines.push('Step,Operation,Parameters,Before Size,After Size,Bits Changed,Duration (ms),Cost,Bit Ranges,Metrics');
@@ -331,57 +338,60 @@ class ResultsManager {
       const before = step.fullBeforeBits || step.beforeBits;
       const after = step.fullAfterBits || step.afterBits;
       let bitsChanged = 0;
-      for (let i = 0; i < Math.min(before.length, after.length); i++) {
+      const len = Math.min(before.length, after.length);
+      for (let i = 0; i < len; i++) {
         if (before[i] !== after[i]) bitsChanged++;
       }
       
       const metricsStr = Object.entries(step.metrics || {})
-        .map(([k, v]) => `${k}=${v.toFixed(4)}`)
+        .map(([k, v]) => k + '=' + (typeof v === 'number' ? v.toFixed(4) : v))
         .join('; ');
-      const rangesStr = step.bitRanges?.map(r => `[${r.start}:${r.end}]`).join(' ') || 'full';
+      const rangesStr = step.bitRanges?.map(r => '[' + r.start + ':' + r.end + ']').join(' ') || 'full';
       const paramsStr = JSON.stringify(step.params || {}).replace(/"/g, "'");
       
       lines.push([
         step.index,
         step.operation,
-        `"${paramsStr}"`,
+        '"' + paramsStr + '"',
         before.length,
         after.length,
         bitsChanged,
         step.duration.toFixed(2),
         step.cost || 0,
-        `"${rangesStr}"`,
-        `"${metricsStr}"`,
+        '"' + rangesStr + '"',
+        '"' + metricsStr + '"',
       ].join(','));
     });
     lines.push('');
     
-    // ============= FILES USED =============
+    // FILES CONFIGURATION
     lines.push('FILES CONFIGURATION');
     lines.push('─────────────────────────────────────────────────────────────────');
-    lines.push(`Algorithm File,${result.filesUsed?.algorithm || 'N/A'}`);
-    lines.push(`Scoring File,${result.filesUsed?.scoring || 'N/A'}`);
-    lines.push(`Policy File,${result.filesUsed?.policy || 'N/A'}`);
+    lines.push('Algorithm File,' + (result.filesUsed?.algorithm || 'N/A'));
+    lines.push('Scoring File,' + (result.filesUsed?.scoring || 'N/A'));
+    lines.push('Policy File,' + (result.filesUsed?.policy || 'N/A'));
     lines.push('');
     
-    // ============= SYSTEM INFO =============
+    // SYSTEM INFO
     lines.push('SYSTEM INFORMATION');
     lines.push('─────────────────────────────────────────────────────────────────');
-    lines.push(`User Agent,${navigator.userAgent}`);
-    lines.push(`Platform,${navigator.platform}`);
-    lines.push(`CPU Cores,${navigator.hardwareConcurrency || 'Unknown'}`);
+    lines.push('User Agent,' + navigator.userAgent);
+    lines.push('Platform,' + navigator.platform);
+    lines.push('CPU Cores,' + (navigator.hardwareConcurrency || 'Unknown'));
     // @ts-ignore
-    lines.push(`Device Memory,${navigator.deviceMemory ? navigator.deviceMemory + ' GB' : 'Unknown'}`);
-    lines.push(`Timezone,${Intl.DateTimeFormat().resolvedOptions().timeZone}`);
+    const deviceMem = navigator.deviceMemory ? (navigator.deviceMemory + ' GB') : 'Unknown';
+    lines.push('Device Memory,' + deviceMem);
+    lines.push('Timezone,' + Intl.DateTimeFormat().resolvedOptions().timeZone);
     lines.push('');
     
-    // ============= NOTES & TAGS =============
+    // USER ANNOTATIONS
     if (result.notes || result.tags.length > 0) {
       lines.push('USER ANNOTATIONS');
       lines.push('─────────────────────────────────────────────────────────────────');
-      lines.push(`Bookmarked,${result.bookmarked ? 'Yes' : 'No'}`);
-      lines.push(`Tags,"${result.tags.join(', ')}"`);
-      lines.push(`Notes,"${result.notes.replace(/"/g, "'').replace(/\n/g, ' ')}"`);
+      lines.push('Bookmarked,' + (result.bookmarked ? 'Yes' : 'No'));
+      lines.push('Tags,"' + result.tags.join(', ') + '"');
+      const notesClean = (result.notes || '').replace(/"/g, "'").replace(/\n/g, ' ');
+      lines.push('Notes,"' + notesClean + '"');
       lines.push('');
     }
     
@@ -399,7 +409,6 @@ class ResultsManager {
     }, null, 2);
   }
 
-  // Statistics
   getStatistics(): {
     totalResults: number;
     bookmarkedCount: number;
@@ -425,7 +434,6 @@ class ResultsManager {
     };
   }
 
-  // Subscribe
   subscribe(listener: () => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);

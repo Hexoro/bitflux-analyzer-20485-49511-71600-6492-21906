@@ -1,8 +1,8 @@
 /**
- * Player Tab V4 - Plays transformations on the currently loaded file
- * - No temp files
- * - Highlights changed ranges directly in the BinaryViewer
- * - Shows operation costs, bit ranges, and metrics per step
+ * Player Tab V5 - Reconstructs transformations from result data
+ * - Grabs initialBits from result
+ * - Replays each transformation step-by-step using operationsRouter
+ * - Shows cost, metrics, and full file context
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
@@ -34,14 +34,16 @@ import {
   Layers,
   FileCode,
   RotateCcw,
-  ExternalLink,
   DollarSign,
   TrendingDown,
   TrendingUp,
   Trash2,
+  Info,
 } from 'lucide-react';
 import { fileSystemManager } from '@/lib/fileSystemManager';
 import { predefinedManager } from '@/lib/predefinedManager';
+import { executeOperation, getOperationCost } from '@/lib/operationsRouter';
+import { calculateAllMetrics } from '@/lib/metricsCalculator';
 import { toast } from 'sonner';
 import { BitDiffView } from './BitDiffView';
 import { MetricsTimelineChart } from './MetricsTimelineChart';
@@ -50,10 +52,8 @@ export interface TransformationStep {
   stepIndex: number;
   operation: string;
   params: Record<string, any>;
-  // Full file state
   fullBeforeBits?: string;
   fullAfterBits?: string;
-  // Segment-level
   beforeBits: string;
   afterBits: string;
   metrics: Record<string, number>;
@@ -61,7 +61,6 @@ export interface TransformationStep {
   timestamp?: Date;
   bitRanges?: { start: number; end: number }[];
   cost?: number;
-  // Cumulative state for accurate playback
   cumulativeBits?: string;
 }
 
@@ -97,7 +96,6 @@ interface PlayerTabProps {
   onStepChange?: (step: TransformationStep | null) => void;
 }
 
-// Operation costs mapping
 const OPERATION_COSTS: Record<string, number> = {
   'NOT': 1, 'AND': 2, 'OR': 2, 'XOR': 2,
   'NAND': 3, 'NOR': 3, 'XNOR': 3,
@@ -111,27 +109,76 @@ export const PlayerTab = ({ result, onStepChange }: PlayerTabProps) => {
   const [currentStep, setCurrentStep] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
+  const [reconstructedBits, setReconstructedBits] = useState<string>('');
+  const [reconstructedSteps, setReconstructedSteps] = useState<TransformationStep[]>([]);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const operations = predefinedManager.getAllOperations();
   const metrics = predefinedManager.getAllMetrics();
 
-  // Sync the Player to an existing file (prefer the already-created result file)
+  // Reconstruct transformations from result when result changes
   useEffect(() => {
+    if (!result) {
+      setReconstructedBits('');
+      setReconstructedSteps([]);
+      return;
+    }
+
     setCurrentStep(0);
     setIsPlaying(false);
 
-    // Clear previous player highlights when switching results
-    const active = fileSystemManager.getActiveFile();
-    active?.state.clearExternalHighlightRanges();
+    // Start from initial bits and reconstruct each step
+    let currentBits = result.initialBits;
+    const steps: TransformationStep[] = [];
+
+    for (let i = 0; i < result.steps.length; i++) {
+      const originalStep = result.steps[i];
+      const beforeBits = currentBits;
+      
+      // Apply the operation to reconstruct
+      let afterBits = currentBits;
+      try {
+        const opResult = executeOperation(
+          originalStep.operation,
+          currentBits,
+          originalStep.params || {}
+        );
+        if (opResult.success) {
+          afterBits = opResult.bits;
+        }
+      } catch (e) {
+        // Use stored afterBits as fallback
+        afterBits = originalStep.cumulativeBits || originalStep.fullAfterBits || originalStep.afterBits || currentBits;
+      }
+
+      // Calculate metrics at this step
+      const metricsResult = calculateAllMetrics(afterBits);
+      
+      steps.push({
+        ...originalStep,
+        stepIndex: i,
+        fullBeforeBits: beforeBits,
+        fullAfterBits: afterBits,
+        beforeBits: beforeBits,
+        afterBits: afterBits,
+        metrics: metricsResult.metrics,
+        cost: originalStep.cost || getOperationCost(originalStep.operation),
+        cumulativeBits: afterBits,
+      });
+
+      currentBits = afterBits;
+    }
+
+    setReconstructedSteps(steps);
+    setReconstructedBits(result.initialBits);
   }, [result?.id]);
 
   // Playback logic
   useEffect(() => {
-    if (isPlaying && result && result.steps.length > 0) {
+    if (isPlaying && reconstructedSteps.length > 0) {
       intervalRef.current = setInterval(() => {
         setCurrentStep(prev => {
-          if (prev >= result.steps.length - 1) {
+          if (prev >= reconstructedSteps.length - 1) {
             setIsPlaying(false);
             return prev;
           }
@@ -145,70 +192,53 @@ export const PlayerTab = ({ result, onStepChange }: PlayerTabProps) => {
         clearInterval(intervalRef.current);
       }
     };
-  }, [isPlaying, playbackSpeed, result]);
+  }, [isPlaying, playbackSpeed, reconstructedSteps.length]);
 
-  // Apply step to the currently loaded file + highlight changed ranges
+  // Update displayed bits when step changes
   useEffect(() => {
-    if (!result) return;
+    if (!result || reconstructedSteps.length === 0) return;
 
-    const targetFileId = result.dataFileId || fileSystemManager.getActiveFile()?.id;
-    if (!targetFileId) return;
+    if (currentStep === 0) {
+      setReconstructedBits(result.initialBits);
+    } else if (currentStep <= reconstructedSteps.length) {
+      const step = reconstructedSteps[currentStep - 1] || reconstructedSteps[currentStep];
+      setReconstructedBits(step?.cumulativeBits || step?.fullAfterBits || step?.afterBits || result.initialBits);
+    }
 
-    const file = fileSystemManager.getFile(targetFileId);
-    if (!file) return;
+    const step = reconstructedSteps[currentStep];
+    onStepChange?.(step || null);
 
-    const step = result.steps[currentStep];
-    
-    // Use cumulativeBits (full file state) for accurate playback, fallback to afterBits
-    const bitsToApply = step?.cumulativeBits || step?.fullAfterBits || step?.afterBits || result.initialBits;
-
-    // Update file bits to match step
-    file.state.model.loadBits(bitsToApply);
-
-    // Highlight changed ranges
-    if (step) {
-      const ranges = step.bitRanges && step.bitRanges.length > 0
-        ? step.bitRanges
-        : computeChangedRanges(
-            step.fullBeforeBits || step.beforeBits, 
-            step.fullAfterBits || step.afterBits
-          );
-
-      file.state.setExternalHighlightRanges(
+    // Highlight changed ranges in active file
+    const activeFile = fileSystemManager.getActiveFile();
+    if (activeFile && step) {
+      const ranges = step.bitRanges?.length 
+        ? step.bitRanges 
+        : computeChangedRanges(step.fullBeforeBits || step.beforeBits, step.fullAfterBits || step.afterBits);
+      
+      activeFile.state.setExternalHighlightRanges(
         ranges.map(r => ({ ...r, color: 'hsl(var(--primary) / 0.22)' }))
       );
-
-      onStepChange?.(step);
-    } else {
-      file.state.clearExternalHighlightRanges();
-      onStepChange?.(null);
     }
-  }, [currentStep, result, onStepChange]);
+  }, [currentStep, reconstructedSteps, result, onStepChange]);
 
   const handlePlay = () => setIsPlaying(true);
   const handlePause = () => setIsPlaying(false);
   const handleStop = () => {
     setIsPlaying(false);
     setCurrentStep(0);
-    if (result?.dataFileId) {
-      const file = fileSystemManager.getFile(result.dataFileId);
-      file?.state.clearExternalHighlightRanges();
-      file?.state.model.loadBits(result.initialBits);
+    if (result) {
+      setReconstructedBits(result.initialBits);
     }
   };
   const handleReset = () => {
-    if (result?.dataFileId) {
-      const file = fileSystemManager.getFile(result.dataFileId);
-      file?.state.clearExternalHighlightRanges();
-      file?.state.model.loadBits(result.initialBits);
-    }
     setCurrentStep(0);
     setIsPlaying(false);
+    if (result) {
+      setReconstructedBits(result.initialBits);
+    }
   };
   const handlePrevious = () => setCurrentStep(prev => Math.max(0, prev - 1));
-  const handleNext = () => setCurrentStep(prev => 
-    result ? Math.min(result.steps.length - 1, prev + 1) : prev
-  );
+  const handleNext = () => setCurrentStep(prev => Math.min(reconstructedSteps.length - 1, prev + 1));
   const handleSliderChange = (value: number[]) => setCurrentStep(value[0]);
 
   const handleCleanupTempFiles = () => {
@@ -237,23 +267,22 @@ export const PlayerTab = ({ result, onStepChange }: PlayerTabProps) => {
     );
   }
 
-  const step = result.steps[currentStep];
-  // Use cumulative/full bits for accurate display
-  const currentBits = step?.cumulativeBits || step?.fullAfterBits || step?.afterBits || result.initialBits;
-  const progress = result.steps.length > 0 ? ((currentStep + 1) / result.steps.length) * 100 : 0;
+  const step = reconstructedSteps[currentStep];
+  const currentBits = reconstructedBits || result.initialBits;
+  const progress = reconstructedSteps.length > 0 ? ((currentStep + 1) / reconstructedSteps.length) * 100 : 0;
   
-  // Calculate totals using full file context
-  const totalCost = result.steps.reduce((sum, s) => sum + (s.cost || OPERATION_COSTS[s.operation] || 1), 0);
-  const totalBitsChanged = result.steps.reduce((sum, s) => {
-    const before = s.fullBeforeBits || s.beforeBits;
-    const after = s.fullAfterBits || s.afterBits;
-    return sum + countChangedBits(before, after);
+  // Calculate totals
+  const totalCost = reconstructedSteps.reduce((sum, s) => sum + (s.cost || 0), 0);
+  const totalBitsChanged = reconstructedSteps.reduce((sum, s) => {
+    return sum + countChangedBits(s.fullBeforeBits || s.beforeBits, s.fullAfterBits || s.afterBits);
   }, 0);
-  const cumulativeCost = result.steps.slice(0, currentStep + 1).reduce((sum, s) => sum + (s.cost || OPERATION_COSTS[s.operation] || 1), 0);
+  const cumulativeCost = reconstructedSteps.slice(0, currentStep + 1).reduce((sum, s) => sum + (s.cost || 0), 0);
+  const budgetInitial = result.budgetConfig?.initial || 1000;
+  const budgetRemaining = budgetInitial - cumulativeCost;
 
   return (
     <div className="h-full flex flex-col gap-3 p-4 overflow-hidden">
-      {/* Header with Strategy Info */}
+      {/* Header with Strategy Info and Budget */}
       <Card className="bg-purple-500/10 border-purple-500/30 flex-shrink-0">
         <CardContent className="py-3">
           <div className="flex items-center gap-4 flex-wrap">
@@ -261,15 +290,18 @@ export const PlayerTab = ({ result, onStepChange }: PlayerTabProps) => {
             <div className="flex-1 min-w-0">
               <span className="text-sm font-medium truncate">{result.strategyName}</span>
               <p className="text-xs text-muted-foreground">
-                Playback Mode - changes are highlighted on the loaded file
+                Reconstructed playback from {result.initialBits.length} bits
               </p>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
               <Badge variant="secondary">{currentBits.length} bits</Badge>
-              <Badge variant="outline">{result.steps.length} steps</Badge>
+              <Badge variant="outline">{reconstructedSteps.length} steps</Badge>
               <Badge variant="outline" className="flex items-center gap-1">
                 <DollarSign className="w-3 h-3" />
-                {cumulativeCost}/{totalCost} cost
+                {cumulativeCost}/{totalCost}
+              </Badge>
+              <Badge variant={budgetRemaining > 0 ? 'default' : 'destructive'} className="flex items-center gap-1">
+                Budget: {budgetRemaining}/{budgetInitial}
               </Badge>
               <Button
                 size="sm"
@@ -288,7 +320,7 @@ export const PlayerTab = ({ result, onStepChange }: PlayerTabProps) => {
       <div className="flex-shrink-0">
         <Progress value={progress} className="h-2" />
         <div className="flex justify-between text-xs text-muted-foreground mt-1">
-          <span>Step {currentStep + 1} of {result.steps.length || 1}</span>
+          <span>Step {currentStep + 1} of {reconstructedSteps.length || 1}</span>
           <span>{progress.toFixed(0)}% complete</span>
         </div>
       </div>
@@ -297,7 +329,6 @@ export const PlayerTab = ({ result, onStepChange }: PlayerTabProps) => {
       <Card className="flex-shrink-0">
         <CardContent className="py-3">
           <div className="flex items-center gap-3 flex-wrap">
-            {/* Control Buttons */}
             <div className="flex items-center gap-1">
               <Button size="icon" variant="outline" onClick={handleReset} title="Reset to initial" className="h-8 w-8">
                 <RotateCcw className="w-4 h-4" />
@@ -316,19 +347,18 @@ export const PlayerTab = ({ result, onStepChange }: PlayerTabProps) => {
                   <Pause className="w-4 h-4" />
                 </Button>
               ) : (
-                <Button size="icon" onClick={handlePlay} disabled={!result.steps.length || currentStep >= result.steps.length - 1} className="h-8 w-8">
+                <Button size="icon" onClick={handlePlay} disabled={!reconstructedSteps.length || currentStep >= reconstructedSteps.length - 1} className="h-8 w-8">
                   <Play className="w-4 h-4" />
                 </Button>
               )}
-              <Button size="icon" variant="outline" onClick={() => setCurrentStep(prev => Math.min(result.steps.length - 1, prev + 1))} disabled={currentStep >= result.steps.length - 1} className="h-8 w-8">
+              <Button size="icon" variant="outline" onClick={() => setCurrentStep(prev => Math.min(reconstructedSteps.length - 1, prev + 1))} disabled={currentStep >= reconstructedSteps.length - 1} className="h-8 w-8">
                 <ChevronRight className="w-4 h-4" />
               </Button>
-              <Button size="icon" variant="outline" onClick={handleNext} disabled={currentStep >= result.steps.length - 1} className="h-8 w-8">
+              <Button size="icon" variant="outline" onClick={handleNext} disabled={currentStep >= reconstructedSteps.length - 1} className="h-8 w-8">
                 <SkipForward className="w-4 h-4" />
               </Button>
             </div>
 
-            {/* Speed Control */}
             <div className="flex items-center gap-2">
               <span className="text-xs text-muted-foreground">Speed:</span>
               <Select value={playbackSpeed.toString()} onValueChange={(v) => setPlaybackSpeed(parseFloat(v))}>
@@ -345,18 +375,16 @@ export const PlayerTab = ({ result, onStepChange }: PlayerTabProps) => {
               </Select>
             </div>
 
-            {/* Timeline Slider */}
             <div className="flex-1 min-w-[100px]">
               <Slider
                 value={[currentStep]}
                 min={0}
-                max={Math.max(0, result.steps.length - 1)}
+                max={Math.max(0, reconstructedSteps.length - 1)}
                 step={1}
                 onValueChange={handleSliderChange}
               />
             </div>
 
-            {/* Duration */}
             <div className="flex items-center gap-1 text-xs text-muted-foreground">
               <Clock className="w-3 h-3" />
               {step?.duration?.toFixed(1) || 0}ms
@@ -365,166 +393,165 @@ export const PlayerTab = ({ result, onStepChange }: PlayerTabProps) => {
         </CardContent>
       </Card>
 
-      {/* Tabbed View: Details + Diff + Timeline */}
+      {/* Tabbed View */}
       <Tabs defaultValue="details" className="flex-1 flex flex-col min-h-0 overflow-hidden">
         <TabsList className="w-full justify-start flex-shrink-0">
           <TabsTrigger value="details">Step Details</TabsTrigger>
           <TabsTrigger value="diff">Visual Diff</TabsTrigger>
           <TabsTrigger value="timeline">Metrics Timeline</TabsTrigger>
+          <TabsTrigger value="data">Binary Data</TabsTrigger>
         </TabsList>
         
-        {/* Details Tab - 2 Column Layout */}
+        {/* Details Tab */}
         <TabsContent value="details" className="flex-1 m-0 mt-2 overflow-hidden">
           <div className="h-full grid grid-cols-2 gap-3 overflow-hidden">
-        {/* Left: Operation Details */}
-        <Card className="flex flex-col min-h-0 overflow-hidden">
-          <CardHeader className="pb-2 flex-shrink-0">
-            <CardTitle className="text-sm flex items-center gap-2">
-              <Zap className="w-4 h-4" />
-              Step {currentStep + 1} Details
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="flex-1 overflow-auto">
-            {step ? (
-              <div className="space-y-3">
-                {/* Operation Name & Cost */}
-                <div className="p-3 rounded-lg bg-primary/10 border border-primary/30">
-                  <div className="flex items-center justify-between">
-                    <h4 className="font-mono text-lg text-primary">{step.operation}</h4>
-                    <Badge className="flex items-center gap-1">
-                      <DollarSign className="w-3 h-3" />
-                      {step.cost || OPERATION_COSTS[step.operation] || 1}
-                    </Badge>
-                  </div>
-                </div>
-
-                {/* Parameters */}
-                {step.params && Object.keys(step.params).length > 0 && (
-                  <div>
-                    <h5 className="text-xs font-medium text-muted-foreground mb-1">Parameters</h5>
-                    <div className="space-y-1">
-                      {Object.entries(step.params).map(([key, value]) => (
-                        <div key={key} className="flex justify-between text-sm bg-muted/30 px-2 py-1 rounded">
-                          <span className="text-muted-foreground">{key}:</span>
-                          <span className="font-mono">{JSON.stringify(value)}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Bit Ranges */}
-                {step.bitRanges && step.bitRanges.length > 0 && (
-                  <div>
-                    <h5 className="text-xs font-medium text-muted-foreground mb-1">Bit Ranges Changed</h5>
-                    <div className="flex flex-wrap gap-1">
-                      {step.bitRanges.map((range, i) => (
-                        <Badge key={i} variant="outline" className="font-mono text-xs">
-                          [{range.start}:{range.end}] ({range.end - range.start} bits)
+            <Card className="flex flex-col min-h-0 overflow-hidden">
+              <CardHeader className="pb-2 flex-shrink-0">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Zap className="w-4 h-4" />
+                  Step {currentStep + 1} Details
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="flex-1 overflow-auto">
+                {step ? (
+                  <div className="space-y-3">
+                    <div className="p-3 rounded-lg bg-primary/10 border border-primary/30">
+                      <div className="flex items-center justify-between">
+                        <h4 className="font-mono text-lg text-primary">{step.operation}</h4>
+                        <Badge className="flex items-center gap-1">
+                          <DollarSign className="w-3 h-3" />
+                          {step.cost || getOperationCost(step.operation)}
                         </Badge>
-                      ))}
+                      </div>
                     </div>
-                  </div>
-                )}
 
-                {/* File Size Info */}
-                <div>
-                  <h5 className="text-xs font-medium text-muted-foreground mb-1">File Size</h5>
-                  <div className="flex items-center gap-2 text-sm">
-                    <span className="font-mono">{(step.fullBeforeBits || step.beforeBits).length} bits</span>
-                    <span className="text-muted-foreground">→</span>
-                    <span className="font-mono">{(step.fullAfterBits || step.afterBits).length} bits</span>
-                  </div>
-                  {step.bitRanges && step.bitRanges.length > 0 && (
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Segment modified: {step.beforeBits.length} bits
-                    </p>
-                  )}
-                </div>
-
-                {/* Bits Changed (using full file context) */}
-                <div>
-                  <h5 className="text-xs font-medium text-muted-foreground mb-1">Bits Modified</h5>
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono text-sm">
-                      {countChangedBits(step.fullBeforeBits || step.beforeBits, step.fullAfterBits || step.afterBits)}
-                    </span>
-                    <span className="text-xs text-muted-foreground">
-                      ({(
-                        (countChangedBits(step.fullBeforeBits || step.beforeBits, step.fullAfterBits || step.afterBits) / 
-                        (step.fullBeforeBits || step.beforeBits).length) * 100
-                      ).toFixed(1)}% of file)
-                    </span>
-                  </div>
-                </div>
-
-                {/* Execution Time */}
-                <div>
-                  <h5 className="text-xs font-medium text-muted-foreground mb-1">Execution Time</h5>
-                  <span className="font-mono text-sm">{step.duration?.toFixed(4) || 0} ms</span>
-                </div>
-
-              </div>
-            ) : (
-              <p className="text-muted-foreground text-sm">No step selected</p>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Right: Metrics */}
-        <Card className="flex flex-col min-h-0 overflow-hidden">
-          <CardHeader className="pb-2 flex-shrink-0">
-            <CardTitle className="text-sm flex items-center gap-2">
-              <Activity className="w-4 h-4" />
-              Metrics at Step {currentStep + 1}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="flex-1 overflow-auto">
-            {step ? (
-              <ScrollArea className="h-full">
-                <div className="space-y-2">
-                  {Object.entries(step.metrics || {}).map(([key, value]) => {
-                    const metricDef = metrics.find(m => m.id === key);
-                    const prevStep = currentStep > 0 ? result.steps[currentStep - 1] : null;
-                    const prevValue = prevStep?.metrics?.[key] ?? value;
-                    const change = Number(value) - Number(prevValue);
-                    const isImprovement = key === 'entropy' ? change < 0 : change > 0;
-                    
-                    return (
-                      <div key={key} className="p-2 rounded bg-muted/30 border">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <span className="font-medium text-sm">{metricDef?.name || key}</span>
-                            {metricDef?.unit && (
-                              <span className="text-xs text-muted-foreground ml-1">({metricDef.unit})</span>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className="font-mono text-sm">{typeof value === 'number' ? value.toFixed(4) : value}</span>
-                            {change !== 0 && (
-                              <Badge 
-                                variant={isImprovement ? 'default' : 'secondary'} 
-                                className="text-xs flex items-center gap-0.5"
-                              >
-                                {isImprovement ? <TrendingDown className="w-3 h-3" /> : <TrendingUp className="w-3 h-3" />}
-                                {change > 0 ? '+' : ''}{change.toFixed(4)}
-                              </Badge>
-                            )}
-                          </div>
+                    {step.params && Object.keys(step.params).length > 0 && (
+                      <div>
+                        <h5 className="text-xs font-medium text-muted-foreground mb-1">Parameters</h5>
+                        <div className="space-y-1">
+                          {Object.entries(step.params).map(([key, value]) => (
+                            <div key={key} className="flex justify-between text-sm bg-muted/30 px-2 py-1 rounded">
+                              <span className="text-muted-foreground">{key}:</span>
+                              <span className="font-mono truncate max-w-[150px]">{JSON.stringify(value).slice(0, 50)}</span>
+                            </div>
+                          ))}
                         </div>
                       </div>
-                    );
-                  })}
-                  {(!step.metrics || Object.keys(step.metrics).length === 0) && (
-                    <p className="text-muted-foreground text-sm">No metrics recorded for this step</p>
-                  )}
-                </div>
-              </ScrollArea>
-            ) : (
-              <p className="text-muted-foreground text-sm">No metrics available</p>
-            )}
-          </CardContent>
-        </Card>
+                    )}
+
+                    {step.bitRanges && step.bitRanges.length > 0 && (
+                      <div>
+                        <h5 className="text-xs font-medium text-muted-foreground mb-1">Bit Ranges Changed</h5>
+                        <div className="flex flex-wrap gap-1">
+                          {step.bitRanges.slice(0, 10).map((range, i) => (
+                            <Badge key={i} variant="outline" className="font-mono text-xs">
+                              [{range.start}:{range.end}]
+                            </Badge>
+                          ))}
+                          {step.bitRanges.length > 10 && (
+                            <Badge variant="secondary" className="text-xs">+{step.bitRanges.length - 10} more</Badge>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    <div>
+                      <h5 className="text-xs font-medium text-muted-foreground mb-1">File Size</h5>
+                      <div className="flex items-center gap-2 text-sm">
+                        <span className="font-mono">{(step.fullBeforeBits || step.beforeBits).length} bits</span>
+                        <span className="text-muted-foreground">→</span>
+                        <span className="font-mono">{(step.fullAfterBits || step.afterBits).length} bits</span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <h5 className="text-xs font-medium text-muted-foreground mb-1">Bits Modified</h5>
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-sm">
+                          {countChangedBits(step.fullBeforeBits || step.beforeBits, step.fullAfterBits || step.afterBits)}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          ({((countChangedBits(step.fullBeforeBits || step.beforeBits, step.fullAfterBits || step.afterBits) / 
+                            (step.fullBeforeBits || step.beforeBits).length) * 100).toFixed(1)}%)
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="pt-2 border-t">
+                      <h5 className="text-xs font-medium text-muted-foreground mb-1 flex items-center gap-1">
+                        <Info className="w-3 h-3" /> Cumulative Stats
+                      </h5>
+                      <div className="grid grid-cols-2 gap-2 text-sm">
+                        <div className="bg-muted/30 p-2 rounded">
+                          <span className="text-muted-foreground text-xs">Cost Used</span>
+                          <p className="font-mono">{cumulativeCost} / {budgetInitial}</p>
+                        </div>
+                        <div className="bg-muted/30 p-2 rounded">
+                          <span className="text-muted-foreground text-xs">Budget Left</span>
+                          <p className="font-mono">{budgetRemaining}</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-muted-foreground text-sm">No step selected</p>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card className="flex flex-col min-h-0 overflow-hidden">
+              <CardHeader className="pb-2 flex-shrink-0">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Activity className="w-4 h-4" />
+                  Metrics at Step {currentStep + 1}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="flex-1 overflow-auto">
+                {step ? (
+                  <ScrollArea className="h-full">
+                    <div className="space-y-2">
+                      {Object.entries(step.metrics || {}).map(([key, value]) => {
+                        const metricDef = metrics.find(m => m.id === key);
+                        const prevStep = currentStep > 0 ? reconstructedSteps[currentStep - 1] : null;
+                        const prevValue = prevStep?.metrics?.[key] ?? value;
+                        const change = Number(value) - Number(prevValue);
+                        const isImprovement = key === 'entropy' ? change < 0 : change > 0;
+                        
+                        return (
+                          <div key={key} className="p-2 rounded bg-muted/30 border">
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <span className="font-medium text-sm">{metricDef?.name || key}</span>
+                                {metricDef?.unit && (
+                                  <span className="text-xs text-muted-foreground ml-1">({metricDef.unit})</span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono text-sm">{typeof value === 'number' ? value.toFixed(4) : value}</span>
+                                {change !== 0 && (
+                                  <Badge 
+                                    variant={isImprovement ? 'default' : 'secondary'} 
+                                    className="text-xs flex items-center gap-0.5"
+                                  >
+                                    {isImprovement ? <TrendingDown className="w-3 h-3" /> : <TrendingUp className="w-3 h-3" />}
+                                    {change > 0 ? '+' : ''}{change.toFixed(4)}
+                                  </Badge>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {(!step.metrics || Object.keys(step.metrics).length === 0) && (
+                        <p className="text-muted-foreground text-sm">No metrics recorded</p>
+                      )}
+                    </div>
+                  </ScrollArea>
+                ) : (
+                  <p className="text-muted-foreground text-sm">No metrics available</p>
+                )}
+              </CardContent>
+            </Card>
           </div>
         </TabsContent>
         
@@ -542,14 +569,39 @@ export const PlayerTab = ({ result, onStepChange }: PlayerTabProps) => {
         {/* Metrics Timeline Tab */}
         <TabsContent value="timeline" className="flex-1 m-0 mt-2 overflow-auto">
           <MetricsTimelineChart
-            steps={result.steps.map(s => ({
+            steps={reconstructedSteps.map(s => ({
               operation: s.operation,
               metrics: s.metrics,
               cost: s.cost,
             }))}
-            initialMetrics={result.metricsHistory ? undefined : undefined}
             currentStepIndex={currentStep}
           />
+        </TabsContent>
+
+        {/* Binary Data Tab */}
+        <TabsContent value="data" className="flex-1 m-0 mt-2 overflow-hidden">
+          <Card className="h-full flex flex-col">
+            <CardHeader className="pb-2 flex-shrink-0">
+              <CardTitle className="text-sm">Current Binary State ({currentBits.length} bits)</CardTitle>
+            </CardHeader>
+            <CardContent className="flex-1 overflow-auto">
+              <ScrollArea className="h-full">
+                <div className="font-mono text-xs break-all leading-relaxed p-2 bg-muted/30 rounded">
+                  {currentBits.split('').map((bit, i) => {
+                    const changed = step && (step.fullBeforeBits || step.beforeBits)[i] !== (step.fullAfterBits || step.afterBits)[i];
+                    return (
+                      <span
+                        key={i}
+                        className={changed ? 'bg-primary/30 text-primary font-bold' : (bit === '1' ? 'text-green-500' : 'text-muted-foreground')}
+                      >
+                        {bit}
+                      </span>
+                    );
+                  })}
+                </div>
+              </ScrollArea>
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
 
@@ -560,7 +612,7 @@ export const PlayerTab = ({ result, onStepChange }: PlayerTabProps) => {
             <div className="flex items-center gap-4">
               <span className="flex items-center gap-1">
                 <Layers className="w-3 h-3 text-muted-foreground" />
-                {result.steps.length} total steps
+                {reconstructedSteps.length} steps
               </span>
               <span className="flex items-center gap-1">
                 <Activity className="w-3 h-3 text-muted-foreground" />
@@ -572,13 +624,13 @@ export const PlayerTab = ({ result, onStepChange }: PlayerTabProps) => {
               </span>
               <span className="flex items-center gap-1">
                 <Clock className="w-3 h-3 text-muted-foreground" />
-                {result.totalDuration.toFixed(0)}ms total
+                {result.totalDuration.toFixed(0)}ms
               </span>
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-muted-foreground">Available Operations:</span>
+              <span className="text-muted-foreground">Operations:</span>
               <div className="flex flex-wrap gap-1">
-                {operations.slice(0, 8).map(op => (
+                {operations.slice(0, 6).map(op => (
                   <Badge
                     key={op.id}
                     variant={step?.operation === op.id ? 'default' : 'outline'}
@@ -587,8 +639,8 @@ export const PlayerTab = ({ result, onStepChange }: PlayerTabProps) => {
                     {op.id}
                   </Badge>
                 ))}
-                {operations.length > 8 && (
-                  <Badge variant="outline" className="text-xs">+{operations.length - 8}</Badge>
+                {operations.length > 6 && (
+                  <Badge variant="outline" className="text-xs">+{operations.length - 6}</Badge>
                 )}
               </div>
             </div>
@@ -599,7 +651,6 @@ export const PlayerTab = ({ result, onStepChange }: PlayerTabProps) => {
   );
 };
 
-// Helper function
 function countChangedBits(before: string, after: string): number {
   let count = 0;
   const maxLen = Math.max(before.length, after.length);
@@ -612,7 +663,6 @@ function countChangedBits(before: string, after: string): number {
 function computeChangedRanges(before: string, after: string): Array<{ start: number; end: number }> {
   const maxLen = Math.max(before.length, after.length);
   const ranges: Array<{ start: number; end: number }> = [];
-
   let inRange = false;
   let rangeStart = 0;
 
@@ -631,7 +681,5 @@ function computeChangedRanges(before: string, after: string): Array<{ start: num
   }
 
   if (inRange) ranges.push({ start: rangeStart, end: maxLen - 1 });
-
-  // Avoid overwhelming the viewer: cap ranges to the first 200.
   return ranges.slice(0, 200);
 }
