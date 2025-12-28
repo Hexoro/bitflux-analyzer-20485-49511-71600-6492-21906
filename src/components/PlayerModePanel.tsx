@@ -421,6 +421,36 @@ export const PlayerModePanel = ({ onExitPlayer, selectedResultId }: PlayerModePa
                             </div>
                           </div>
                         )}
+                        {/* Memory Window Display */}
+                        <div className="mt-3 p-2 bg-accent/10 rounded border border-accent/30">
+                          <h5 className="text-xs font-medium text-accent mb-1 flex items-center gap-1">
+                            <Activity className="w-3 h-3" />
+                            Memory Window
+                          </h5>
+                          <div className="grid grid-cols-2 gap-2 text-xs">
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground">Start:</span>
+                              <span className="font-mono">{step.bitRanges?.[0]?.start || 0}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground">End:</span>
+                              <span className="font-mono">{step.bitRanges?.[0]?.end || step.fullAfterBits?.length || 0}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground">Window Size:</span>
+                              <span className="font-mono">
+                                {(step.bitRanges?.[0]?.end || step.beforeBits?.length || 0) - (step.bitRanges?.[0]?.start || 0)} bits
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground">Coverage:</span>
+                              <span className="font-mono">
+                                {step.fullAfterBits?.length ? 
+                                  (((step.bitRanges?.[0]?.end || step.beforeBits?.length || 0) - (step.bitRanges?.[0]?.start || 0)) / step.fullAfterBits.length * 100).toFixed(1) : 0}%
+                              </span>
+                            </div>
+                          </div>
+                        </div>
                       </CardContent>
                     </Card>
 

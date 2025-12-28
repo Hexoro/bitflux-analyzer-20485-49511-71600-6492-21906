@@ -20,6 +20,13 @@ export interface TransformationStep {
   cost?: number;
   // Cumulative state (full file after this step)
   cumulativeBits?: string;
+  // Memory window - what part of data the algorithm is looking at
+  memoryWindow?: {
+    start: number;
+    end: number;
+    lookAhead?: number;
+    lookBehind?: number;
+  };
 }
 
 export interface ExecutionResultV2 {
@@ -407,6 +414,98 @@ class ResultsManager {
       ...result,
       exportedAt: new Date().toISOString(),
     }, null, 2);
+  }
+
+  /**
+   * Export result as ZIP containing:
+   * - result_report.csv - Full execution report
+   * - initial_data.txt - Initial binary data
+   * - final_data.txt - Final binary data after transformations
+   * - steps_detail.json - Detailed step-by-step data with memory windows
+   */
+  async exportAsZip(result: ExecutionResultV2): Promise<Blob> {
+    const JSZip = (await import('jszip')).default;
+    const zip = new JSZip();
+
+    // Add CSV report
+    zip.file('result_report.csv', this.exportToCSV(result));
+
+    // Add initial data
+    zip.file('initial_data.txt', [
+      '=== INITIAL BINARY DATA ===',
+      `Length: ${result.initialBits.length} bits (${Math.floor(result.initialBits.length / 8)} bytes)`,
+      `Strategy: ${result.strategyName}`,
+      `Timestamp: ${new Date(result.startTime).toISOString()}`,
+      '',
+      '=== BINARY (raw) ===',
+      result.initialBits,
+      '',
+      '=== HEX ===',
+      this.bitsToHex(result.initialBits),
+      '',
+      '=== STATISTICS ===',
+      `Ones: ${(result.initialBits.match(/1/g) || []).length}`,
+      `Zeros: ${result.initialBits.length - (result.initialBits.match(/1/g) || []).length}`,
+    ].join('\n'));
+
+    // Add final data
+    zip.file('final_data.txt', [
+      '=== FINAL BINARY DATA ===',
+      `Length: ${result.finalBits.length} bits (${Math.floor(result.finalBits.length / 8)} bytes)`,
+      `Strategy: ${result.strategyName}`,
+      `Timestamp: ${new Date(result.endTime).toISOString()}`,
+      '',
+      '=== BINARY (raw) ===',
+      result.finalBits,
+      '',
+      '=== HEX ===',
+      this.bitsToHex(result.finalBits),
+      '',
+      '=== STATISTICS ===',
+      `Ones: ${(result.finalBits.match(/1/g) || []).length}`,
+      `Zeros: ${result.finalBits.length - (result.finalBits.match(/1/g) || []).length}`,
+    ].join('\n'));
+
+    // Add detailed steps with memory windows
+    const stepsWithMemoryWindows = result.steps.map((step, index) => ({
+      stepIndex: index,
+      operation: step.operation,
+      params: step.params || {},
+      memoryWindow: {
+        start: step.bitRanges?.[0]?.start || 0,
+        end: step.bitRanges?.[0]?.end || (step.beforeBits?.length || 0),
+        affectedBits: step.beforeBits?.length || 0,
+      },
+      beforeBits: step.beforeBits,
+      afterBits: step.afterBits,
+      fullBeforeBits: step.fullBeforeBits,
+      fullAfterBits: step.fullAfterBits,
+      cumulativeBits: step.cumulativeBits,
+      metrics: step.metrics,
+      cost: step.cost || 0,
+      duration: step.duration,
+      timestamp: step.timestamp,
+    }));
+
+    zip.file('steps_detail.json', JSON.stringify({
+      resultId: result.id,
+      strategyName: result.strategyName,
+      initialBits: result.initialBits,
+      finalBits: result.finalBits,
+      totalSteps: result.steps.length,
+      steps: stepsWithMemoryWindows,
+    }, null, 2));
+
+    return await zip.generateAsync({ type: 'blob' });
+  }
+
+  private bitsToHex(bits: string): string {
+    const bytes: string[] = [];
+    for (let i = 0; i < bits.length; i += 8) {
+      const byte = bits.slice(i, i + 8).padEnd(8, '0');
+      bytes.push(parseInt(byte, 2).toString(16).padStart(2, '0').toUpperCase());
+    }
+    return bytes.join(' ');
   }
 
   getStatistics(): {
