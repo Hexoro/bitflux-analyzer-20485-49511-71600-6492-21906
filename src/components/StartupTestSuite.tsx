@@ -1,6 +1,6 @@
 /**
  * Startup Test Suite Display Component
- * Runs tests on boot and displays results
+ * Runs tests on boot and displays results with approval gating
  */
 
 import { useState, useEffect } from 'react';
@@ -14,6 +14,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
 } from '@/components/ui/dialog';
 import {
   CheckCircle,
@@ -24,21 +25,30 @@ import {
   ChevronDown,
   ChevronRight,
   RefreshCw,
+  Play,
 } from 'lucide-react';
 import { testSuite, TestSuiteResults, TestResult } from '@/lib/testSuite';
 
 interface StartupTestSuiteProps {
   onComplete?: (results: TestSuiteResults) => void;
+  onApproved?: () => void;
+  requireApproval?: boolean;
 }
 
-export const StartupTestSuite = ({ onComplete }: StartupTestSuiteProps) => {
+export const StartupTestSuite = ({ 
+  onComplete, 
+  onApproved,
+  requireApproval = true 
+}: StartupTestSuiteProps) => {
   const [isRunning, setIsRunning] = useState(false);
   const [results, setResults] = useState<TestSuiteResults | null>(null);
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
-  const [showDialog, setShowDialog] = useState(false);
+  const [showDialog, setShowDialog] = useState(true);
+  const [isApproved, setIsApproved] = useState(false);
 
   const runTests = async () => {
     setIsRunning(true);
+    setIsApproved(false);
     try {
       const testResults = await testSuite.runAll();
       setResults(testResults);
@@ -49,6 +59,9 @@ export const StartupTestSuite = ({ onComplete }: StartupTestSuiteProps) => {
         testResults.results.filter(r => !r.passed).map(r => r.category)
       );
       setExpandedCategories(failedCategories);
+      
+      // Keep dialog open for review
+      setShowDialog(true);
     } catch (error) {
       console.error('Test suite error:', error);
     } finally {
@@ -57,7 +70,6 @@ export const StartupTestSuite = ({ onComplete }: StartupTestSuiteProps) => {
   };
 
   useEffect(() => {
-    // Run tests on mount
     runTests();
   }, []);
 
@@ -71,6 +83,12 @@ export const StartupTestSuite = ({ onComplete }: StartupTestSuiteProps) => {
       }
       return next;
     });
+  };
+
+  const handleApprove = () => {
+    setIsApproved(true);
+    setShowDialog(false);
+    onApproved?.();
   };
 
   const getResultsByCategory = () => {
@@ -87,12 +105,29 @@ export const StartupTestSuite = ({ onComplete }: StartupTestSuiteProps) => {
 
   const resultsByCategory = getResultsByCategory();
 
-  if (!results && !isRunning) {
-    return null;
+  // Show loading state while running
+  if (isRunning) {
+    return (
+      <Dialog open={true}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FlaskConical className="w-5 h-5" />
+              System Test Suite
+            </DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col items-center justify-center py-12">
+            <Loader2 className="w-12 h-12 animate-spin text-primary mb-4" />
+            <p className="text-lg font-medium">Running Tests...</p>
+            <p className="text-sm text-muted-foreground">Verifying system integrity</p>
+          </div>
+        </DialogContent>
+      </Dialog>
+    );
   }
 
-  // Mini status badge for toolbar
-  if (results && !showDialog) {
+  // Mini status badge when approved
+  if (isApproved && results && !showDialog) {
     const allPassed = results.failed === 0;
     return (
       <Button
@@ -112,26 +147,26 @@ export const StartupTestSuite = ({ onComplete }: StartupTestSuiteProps) => {
     );
   }
 
+  // Main dialog with approval gate
   return (
-    <Dialog open={showDialog || isRunning} onOpenChange={setShowDialog}>
-      <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
+    <Dialog open={showDialog && results !== null} onOpenChange={(open) => {
+      // Only allow closing if approved or not requiring approval
+      if (!open && (isApproved || !requireApproval)) {
+        setShowDialog(false);
+      }
+    }}>
+      <DialogContent className="max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FlaskConical className="w-5 h-5" />
-            System Test Suite
+            System Test Suite - Review Required
           </DialogTitle>
         </DialogHeader>
 
-        {isRunning ? (
-          <div className="flex flex-col items-center justify-center py-12">
-            <Loader2 className="w-12 h-12 animate-spin text-primary mb-4" />
-            <p className="text-lg font-medium">Running Tests...</p>
-            <p className="text-sm text-muted-foreground">Verifying system integrity</p>
-          </div>
-        ) : results ? (
+        {results && (
           <div className="flex-1 overflow-hidden flex flex-col">
             {/* Summary */}
-            <Card className="mb-4">
+            <Card className="mb-4 flex-shrink-0">
               <CardContent className="pt-4">
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-4">
@@ -150,8 +185,8 @@ export const StartupTestSuite = ({ onComplete }: StartupTestSuiteProps) => {
                       {results.duration.toFixed(0)}ms
                     </span>
                   </div>
-                  <Button size="sm" variant="outline" onClick={runTests}>
-                    <RefreshCw className="w-3 h-3 mr-1" />
+                  <Button size="sm" variant="outline" onClick={runTests} disabled={isRunning}>
+                    <RefreshCw className={`w-3 h-3 mr-1 ${isRunning ? 'animate-spin' : ''}`} />
                     Re-run
                   </Button>
                 </div>
@@ -167,8 +202,8 @@ export const StartupTestSuite = ({ onComplete }: StartupTestSuiteProps) => {
               </CardContent>
             </Card>
 
-            {/* Results by Category */}
-            <ScrollArea className="flex-1">
+            {/* Results by Category - Scrollable */}
+            <ScrollArea className="flex-1 min-h-0">
               <div className="space-y-2 pr-4">
                 {Object.entries(resultsByCategory).map(([category, tests]) => {
                   const passed = tests.filter(t => t.passed).length;
@@ -236,8 +271,37 @@ export const StartupTestSuite = ({ onComplete }: StartupTestSuiteProps) => {
                 })}
               </div>
             </ScrollArea>
+
+            {/* Approval Footer */}
+            <DialogFooter className="mt-4 flex-shrink-0 border-t pt-4">
+              <div className="flex items-center gap-3 w-full justify-between">
+                <p className="text-sm text-muted-foreground">
+                  {results.failed > 0 
+                    ? 'Some tests failed. Review results before continuing.' 
+                    : 'All tests passed. Continue to the application.'}
+                </p>
+                <div className="flex gap-2">
+                  {results.failed > 0 && (
+                    <Button 
+                      variant="outline" 
+                      onClick={handleApprove}
+                    >
+                      <AlertTriangle className="w-4 h-4 mr-2" />
+                      Continue Anyway
+                    </Button>
+                  )}
+                  <Button 
+                    onClick={handleApprove}
+                    className={results.failed === 0 ? '' : 'bg-green-600 hover:bg-green-700'}
+                  >
+                    <Play className="w-4 h-4 mr-2" />
+                    {results.failed === 0 ? 'Continue to App' : 'Acknowledge & Continue'}
+                  </Button>
+                </div>
+              </div>
+            </DialogFooter>
           </div>
-        ) : null}
+        )}
       </DialogContent>
     </Dialog>
   );
