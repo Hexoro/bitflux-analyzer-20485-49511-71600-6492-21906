@@ -1,6 +1,7 @@
 /**
  * Graphs Tab for Backend Mode
  * Allows editing graph definitions using code
+ * Now syncs with customPresetsManager for shared state
  */
 
 import { useState, useEffect } from 'react';
@@ -30,17 +31,8 @@ import {
   Code,
 } from 'lucide-react';
 import { toast } from 'sonner';
-
-const STORAGE_KEY = 'bsee_custom_graphs';
-
-interface GraphDefinition {
-  id: string;
-  name: string;
-  description: string;
-  type: 'bar' | 'line' | 'area' | 'scatter' | 'radar';
-  enabled: boolean;
-  dataFn: string; // JavaScript function code
-}
+import { customPresetsManager, GraphDefinition } from '@/lib/customPresetsManager';
+import { EXAMPLE_GRAPHS } from '@/lib/expandedPresets';
 
 const DEFAULT_GRAPHS: GraphDefinition[] = [
   {
@@ -138,30 +130,34 @@ export const GraphsTab = () => {
 
   useEffect(() => {
     loadGraphs();
+    // Subscribe to customPresetsManager for live updates
+    const unsubscribe = customPresetsManager.subscribe(() => {
+      setGraphs(customPresetsManager.getGraphs());
+    });
+    return unsubscribe;
   }, []);
 
   const loadGraphs = () => {
-    try {
-      const data = localStorage.getItem(STORAGE_KEY);
-      if (data) {
-        setGraphs(JSON.parse(data));
-      } else {
-        setGraphs([...DEFAULT_GRAPHS]);
-        saveGraphs([...DEFAULT_GRAPHS]);
-      }
-    } catch (e) {
-      console.error('Failed to load graphs:', e);
-      setGraphs([...DEFAULT_GRAPHS]);
+    const existingGraphs = customPresetsManager.getGraphs();
+    if (existingGraphs.length === 0) {
+      // Load defaults + examples with generated IDs
+      const allDefaults: GraphDefinition[] = [
+        ...DEFAULT_GRAPHS,
+        ...EXAMPLE_GRAPHS.map((g, i) => ({
+          ...g,
+          id: `example_graph_${i}_${Date.now()}`,
+        })),
+      ];
+      customPresetsManager.setGraphs(allDefaults);
+      setGraphs(allDefaults);
+    } else {
+      setGraphs(existingGraphs);
     }
   };
 
   const saveGraphs = (newGraphs: GraphDefinition[]) => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(newGraphs));
-      setGraphs(newGraphs);
-    } catch (e) {
-      console.error('Failed to save graphs:', e);
-    }
+    customPresetsManager.setGraphs(newGraphs);
+    setGraphs(newGraphs);
   };
 
   const handleAdd = () => {

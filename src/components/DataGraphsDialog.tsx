@@ -1,17 +1,21 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
 import { Card } from './ui/card';
 import { Button } from './ui/button';
 import { Switch } from './ui/switch';
 import { Label } from './ui/label';
 import { Input } from './ui/input';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
+import { Badge } from './ui/badge';
 import { BarChart, Bar, LineChart, Line, AreaChart, Area, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { BinaryMetrics } from '@/lib/binaryMetrics';
 import { IdealityMetrics } from '@/lib/idealityMetrics';
 import type { Partition } from '@/lib/partitionManager';
-import { Download, FileDown } from 'lucide-react';
+import { Download, FileDown, Eye, BarChart3 } from 'lucide-react';
 import { ChartExporter } from '@/lib/chartExport';
 import { useToast } from '@/hooks/use-toast';
+import { customPresetsManager, GraphDefinition } from '@/lib/customPresetsManager';
+import { ScrollArea } from './ui/scroll-area';
 
 interface DataGraphsDialogProps {
   open: boolean;
@@ -27,6 +31,114 @@ export const DataGraphsDialog = ({ open, onOpenChange, binaryData, partitions }:
   const [showLegend, setShowLegend] = useState(true);
   const [idealityStart, setIdealityStart] = useState('0');
   const [idealityEnd, setIdealityEnd] = useState(String(binaryData.length - 1));
+  const [activeTab, setActiveTab] = useState<'builtin' | 'custom'>('builtin');
+  const [customGraphs, setCustomGraphs] = useState<GraphDefinition[]>([]);
+  const [selectedCustomGraph, setSelectedCustomGraph] = useState<GraphDefinition | null>(null);
+  const [customGraphData, setCustomGraphData] = useState<any[]>([]);
+
+  // Load custom graphs from manager
+  useEffect(() => {
+    setCustomGraphs(customPresetsManager.getEnabledGraphs());
+    const unsubscribe = customPresetsManager.subscribe(() => {
+      setCustomGraphs(customPresetsManager.getEnabledGraphs());
+    });
+    return unsubscribe;
+  }, []);
+
+  // Execute custom graph data function
+  const executeGraphDataFn = (graph: GraphDefinition) => {
+    try {
+      // Extract function body and execute
+      const fnBody = graph.dataFn;
+      const getDataFn = new Function('bits', `${fnBody}\nreturn getData(bits);`);
+      const data = getDataFn(binaryData);
+      setCustomGraphData(data || []);
+      setSelectedCustomGraph(graph);
+    } catch (e) {
+      toast({
+        title: 'Error',
+        description: `Failed to execute graph function: ${(e as Error).message}`,
+        variant: 'destructive',
+      });
+      setCustomGraphData([]);
+    }
+  };
+
+  // Render custom graph based on type
+  const renderCustomGraph = () => {
+    if (!selectedCustomGraph || customGraphData.length === 0) return null;
+    
+    const dataKeys = Object.keys(customGraphData[0] || {}).filter(k => k !== 'position' && k !== 'name' && k !== 'label');
+    const xKey = customGraphData[0]?.position !== undefined ? 'position' : 
+                 customGraphData[0]?.name !== undefined ? 'name' : 
+                 customGraphData[0]?.label !== undefined ? 'label' : 
+                 Object.keys(customGraphData[0])[0];
+    
+    switch (selectedCustomGraph.type) {
+      case 'bar':
+        return (
+          <BarChart data={customGraphData}>
+            {showGrid && <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />}
+            <XAxis dataKey={xKey} stroke="hsl(var(--foreground))" />
+            <YAxis stroke="hsl(var(--foreground))" />
+            <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--background))', border: '1px solid hsl(var(--border))' }} />
+            {showLegend && <Legend />}
+            {dataKeys.map((key, i) => (
+              <Bar key={key} dataKey={key} fill={`hsl(${(i * 60) % 360}, 70%, 50%)`} animationDuration={animate ? 1000 : 0} />
+            ))}
+          </BarChart>
+        );
+      case 'line':
+        return (
+          <LineChart data={customGraphData}>
+            {showGrid && <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />}
+            <XAxis dataKey={xKey} stroke="hsl(var(--foreground))" />
+            <YAxis stroke="hsl(var(--foreground))" />
+            <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--background))', border: '1px solid hsl(var(--border))' }} />
+            {showLegend && <Legend />}
+            {dataKeys.map((key, i) => (
+              <Line key={key} type="monotone" dataKey={key} stroke={`hsl(${(i * 60) % 360}, 70%, 50%)`} strokeWidth={2} dot={false} animationDuration={animate ? 1000 : 0} />
+            ))}
+          </LineChart>
+        );
+      case 'area':
+        return (
+          <AreaChart data={customGraphData}>
+            {showGrid && <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />}
+            <XAxis dataKey={xKey} stroke="hsl(var(--foreground))" />
+            <YAxis stroke="hsl(var(--foreground))" />
+            <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--background))', border: '1px solid hsl(var(--border))' }} />
+            {showLegend && <Legend />}
+            {dataKeys.map((key, i) => (
+              <Area key={key} type="monotone" dataKey={key} stroke={`hsl(${(i * 60) % 360}, 70%, 50%)`} fill={`hsl(${(i * 60) % 360}, 70%, 50%)`} fillOpacity={0.5} animationDuration={animate ? 1000 : 0} />
+            ))}
+          </AreaChart>
+        );
+      case 'scatter':
+        return (
+          <ScatterChart>
+            {showGrid && <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />}
+            <XAxis dataKey={xKey} stroke="hsl(var(--foreground))" />
+            <YAxis dataKey={dataKeys[0]} stroke="hsl(var(--foreground))" />
+            <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--background))', border: '1px solid hsl(var(--border))' }} />
+            <Scatter data={customGraphData} fill="hsl(var(--primary))" animationDuration={animate ? 1000 : 0} />
+          </ScatterChart>
+        );
+      default:
+        return (
+          <LineChart data={customGraphData}>
+            {showGrid && <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />}
+            <XAxis dataKey={xKey} stroke="hsl(var(--foreground))" />
+            <YAxis stroke="hsl(var(--foreground))" />
+            <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--background))', border: '1px solid hsl(var(--border))' }} />
+            {showLegend && <Legend />}
+            {dataKeys.map((key, i) => (
+              <Line key={key} type="monotone" dataKey={key} stroke={`hsl(${(i * 60) % 360}, 70%, 50%)`} strokeWidth={2} animationDuration={animate ? 1000 : 0} />
+            ))}
+          </LineChart>
+        );
+    }
+  };
 
   const stats = useMemo(() => BinaryMetrics.analyze(binaryData), [binaryData]);
 
@@ -241,6 +353,16 @@ export const DataGraphsDialog = ({ open, onOpenChange, binaryData, partitions }:
             </div>
           </div>
         ) : (
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'builtin' | 'custom')}>
+          <TabsList className="mb-4">
+            <TabsTrigger value="builtin">Built-in Graphs</TabsTrigger>
+            <TabsTrigger value="custom" className="flex items-center gap-1">
+              <BarChart3 className="w-4 h-4" />
+              Custom Graphs ({customGraphs.length})
+            </TabsTrigger>
+          </TabsList>
+          
+          <TabsContent value="builtin">
         <div className="space-y-6">
           {/* Overview Stats */}
           <div className="grid grid-cols-4 gap-4">
@@ -560,6 +682,105 @@ export const DataGraphsDialog = ({ open, onOpenChange, binaryData, partitions }:
             </div>
           )}
           </div>
+          </TabsContent>
+          
+          <TabsContent value="custom">
+            <div className="space-y-4">
+              {customGraphs.length === 0 ? (
+                <Card className="p-8 text-center">
+                  <BarChart3 className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                  <p className="text-muted-foreground">No custom graphs defined</p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Add custom graphs in Backend Mode → Graphs tab
+                  </p>
+                </Card>
+              ) : (
+                <div className="grid grid-cols-3 gap-4">
+                  {/* Graph selector sidebar */}
+                  <Card className="p-4">
+                    <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                      <BarChart3 className="w-4 h-4" />
+                      Custom Graphs
+                    </h3>
+                    <ScrollArea className="h-[400px]">
+                      <div className="space-y-2">
+                        {customGraphs.map(graph => (
+                          <div
+                            key={graph.id}
+                            className={`p-3 rounded-lg border cursor-pointer transition-colors ${
+                              selectedCustomGraph?.id === graph.id
+                                ? 'bg-primary/10 border-primary'
+                                : 'hover:bg-muted/50'
+                            }`}
+                            onClick={() => executeGraphDataFn(graph)}
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="font-medium text-sm">{graph.name}</span>
+                              <Badge variant="secondary" className="text-xs">
+                                {graph.type}
+                              </Badge>
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
+                              {graph.description}
+                            </p>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="mt-2 w-full h-7 text-xs"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                executeGraphDataFn(graph);
+                              }}
+                            >
+                              <Eye className="w-3 h-3 mr-1" />
+                              View Graph
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    </ScrollArea>
+                  </Card>
+                  
+                  {/* Graph display area */}
+                  <Card className="col-span-2 p-4">
+                    {selectedCustomGraph ? (
+                      <>
+                        <div className="flex items-center justify-between mb-4">
+                          <div>
+                            <h3 className="text-sm font-semibold">{selectedCustomGraph.name}</h3>
+                            <p className="text-xs text-muted-foreground">{selectedCustomGraph.description}</p>
+                          </div>
+                          <div className="flex gap-1">
+                            <Button size="sm" variant="ghost" onClick={() => exportChartData(selectedCustomGraph.id, customGraphData, 'csv')}>
+                              <FileDown className="w-3 h-3" />
+                            </Button>
+                          </div>
+                        </div>
+                        {customGraphData.length > 0 ? (
+                          <ResponsiveContainer width="100%" height={350}>
+                            {renderCustomGraph() || <div />}
+                          </ResponsiveContainer>
+                        ) : (
+                          <div className="flex items-center justify-center h-[350px] text-muted-foreground">
+                            No data returned from graph function
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <div className="flex items-center justify-center h-full text-muted-foreground">
+                        <div className="text-center">
+                          <Eye className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                          <p>Select a graph to view</p>
+                          <p className="text-sm mt-1">Click on a graph from the list or press View Graph</p>
+                        </div>
+                      </div>
+                    )}
+                  </Card>
+                </div>
+              )}
+            </div>
+          </TabsContent>
+        </Tabs>
         )}
       </DialogContent>
     </Dialog>
