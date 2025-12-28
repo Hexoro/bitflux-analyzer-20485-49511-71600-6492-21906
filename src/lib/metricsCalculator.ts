@@ -20,7 +20,11 @@ export interface AllMetricsResult {
   success: boolean;
   metrics: Record<string, number>;
   errors: string[];
+  coreMetricsComputed: boolean;
 }
+
+// Core metrics that must always work
+const CORE_METRICS = ['entropy', 'balance', 'hamming_weight', 'transition_count', 'run_length_avg'];
 
 // Map metric IDs to their implementations
 const METRIC_IMPLEMENTATIONS: Record<string, (bits: string) => number> = {
@@ -160,17 +164,6 @@ const customMetrics: Map<string, (bits: string) => number> = new Map();
  */
 export function calculateMetric(metricId: string, bits: string): MetricResult {
   try {
-    // Validate metric exists in predefinedManager
-    const metricDef = predefinedManager.getMetric(metricId);
-    if (!metricDef) {
-      return {
-        success: false,
-        value: 0,
-        error: `Metric '${metricId}' not found in database`,
-        metricId,
-      };
-    }
-
     // Check for custom implementation first
     if (customMetrics.has(metricId)) {
       const impl = customMetrics.get(metricId)!;
@@ -181,10 +174,20 @@ export function calculateMetric(metricId: string, bits: string): MetricResult {
     // Check built-in implementations
     const impl = METRIC_IMPLEMENTATIONS[metricId];
     if (!impl) {
+      // Check if metric exists in predefinedManager but has no implementation
+      const metricDef = predefinedManager.getMetric(metricId);
+      if (metricDef) {
+        return {
+          success: false,
+          value: 0,
+          error: `Metric '${metricId}' is defined but has no implementation`,
+          metricId,
+        };
+      }
       return {
         success: false,
         value: 0,
-        error: `No implementation for metric '${metricId}'`,
+        error: `Metric '${metricId}' not found`,
         metricId,
       };
     }
@@ -215,27 +218,45 @@ export function calculateMetricOnRange(
 }
 
 /**
- * Calculate all metrics from predefinedManager
+ * Calculate all metrics - success means core metrics computed
  */
 export function calculateAllMetrics(bits: string): AllMetricsResult {
   const metrics: Record<string, number> = {};
   const errors: string[] = [];
+  let coreMetricsComputed = true;
   
+  // First compute core metrics - these must succeed
+  for (const coreId of CORE_METRICS) {
+    const result = calculateMetric(coreId, bits);
+    if (result.success) {
+      metrics[coreId] = result.value;
+    } else {
+      errors.push(result.error || `Failed to calculate ${coreId}`);
+      coreMetricsComputed = false;
+    }
+  }
+
+  // Then try extended metrics from predefinedManager
   const allMetricDefs = predefinedManager.getAllMetrics();
   
   for (const metricDef of allMetricDefs) {
+    // Skip if already computed as core metric
+    if (CORE_METRICS.includes(metricDef.id)) continue;
+    
     const result = calculateMetric(metricDef.id, bits);
     if (result.success) {
       metrics[metricDef.id] = result.value;
     } else {
+      // Extended metrics failing is OK - just log it
       errors.push(result.error || `Failed to calculate ${metricDef.id}`);
     }
   }
   
   return {
-    success: errors.length === 0,
+    success: coreMetricsComputed, // Success if core metrics work
     metrics,
     errors,
+    coreMetricsComputed,
   };
 }
 
@@ -259,6 +280,7 @@ export function calculateMetrics(bits: string, metricIds: string[]): AllMetricsR
     success: errors.length === 0,
     metrics,
     errors,
+    coreMetricsComputed: true,
   };
 }
 
@@ -277,9 +299,16 @@ export function unregisterMetric(metricId: string): void {
 }
 
 /**
- * Get all available metric IDs
+ * Get all available metric IDs (only those with implementations)
  */
 export function getAvailableMetrics(): string[] {
+  return [...new Set([...Object.keys(METRIC_IMPLEMENTATIONS), ...customMetrics.keys()])];
+}
+
+/**
+ * Get all defined metrics (may not have implementations)
+ */
+export function getAllDefinedMetrics(): string[] {
   const dbMetrics = predefinedManager.getAllMetrics().map(m => m.id);
   return [...new Set([...dbMetrics, ...Object.keys(METRIC_IMPLEMENTATIONS)])];
 }
