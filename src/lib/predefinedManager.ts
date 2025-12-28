@@ -3,6 +3,8 @@
  * These are the source of truth for all metrics/operations available in Algorithm mode
  */
 
+import { EXTENDED_METRICS, EXTENDED_OPERATIONS } from './expandedPresets';
+
 export interface PredefinedMetric {
   id: string;
   name: string;
@@ -270,20 +272,24 @@ export class PredefinedManager {
 
   private loadFromStorage(): void {
     try {
-      // Load metrics - merge with defaults to ensure all base metrics exist
+      // Load metrics - merge with defaults AND extended to ensure all metrics exist
       const metricsData = localStorage.getItem(STORAGE_KEYS.metrics);
       // Always add defaults first
       DEFAULT_METRICS.forEach(m => this.metrics.set(m.id, m));
+      // Add extended metrics (100+)
+      EXTENDED_METRICS.forEach(m => this.metrics.set(m.id, m));
       if (metricsData) {
         const parsed: PredefinedMetric[] = JSON.parse(metricsData);
         // Override with stored (allows custom edits to persist)
         parsed.forEach(m => this.metrics.set(m.id, m));
       }
 
-      // Load operations - merge with defaults to ensure all base operations exist
+      // Load operations - merge with defaults AND extended to ensure all operations exist
       const opsData = localStorage.getItem(STORAGE_KEYS.operations);
       // Always add defaults first (includes all 7 logic gates)
       DEFAULT_OPERATIONS.forEach(op => this.operations.set(op.id, op));
+      // Add extended operations (100+)
+      EXTENDED_OPERATIONS.forEach(op => this.operations.set(op.id, op));
       if (opsData) {
         const parsed: PredefinedOperation[] = JSON.parse(opsData);
         // Override with stored (allows custom edits to persist)
@@ -294,9 +300,11 @@ export class PredefinedManager {
       this.saveToStorage();
     } catch (error) {
       console.error('Failed to load predefined data:', error);
-      // Fallback to defaults
+      // Fallback to defaults + extended
       DEFAULT_METRICS.forEach(m => this.metrics.set(m.id, m));
+      EXTENDED_METRICS.forEach(m => this.metrics.set(m.id, m));
       DEFAULT_OPERATIONS.forEach(op => this.operations.set(op.id, op));
+      EXTENDED_OPERATIONS.forEach(op => this.operations.set(op.id, op));
     }
   }
 
@@ -387,7 +395,9 @@ export class PredefinedManager {
     this.metrics.clear();
     this.operations.clear();
     DEFAULT_METRICS.forEach(m => this.metrics.set(m.id, m));
+    EXTENDED_METRICS.forEach(m => this.metrics.set(m.id, m));
     DEFAULT_OPERATIONS.forEach(op => this.operations.set(op.id, op));
+    EXTENDED_OPERATIONS.forEach(op => this.operations.set(op.id, op));
     this.saveToStorage();
     this.notifyListeners();
   }

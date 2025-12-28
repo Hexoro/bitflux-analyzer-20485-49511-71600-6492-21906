@@ -1,11 +1,12 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { Card } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { ScrollArea } from './ui/scroll-area';
-import { AlertCircle, Filter, Grid, List } from 'lucide-react';
+import { AlertCircle, Filter, Grid, List, RefreshCw } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
+import { anomaliesManager, AnomalyDefinition } from '@/lib/anomaliesManager';
 
 interface Anomaly {
   id: string;
@@ -256,10 +257,47 @@ export const AnomaliesPanel = ({ bits, onJumpTo }: AnomaliesPanelProps) => {
   const [maxLength, setMaxLength] = useState<string>('');
   const [minPosition, setMinPosition] = useState<string>('');
   const [maxPosition, setMaxPosition] = useState<string>('');
+  const [useBackendDefinitions, setUseBackendDefinitions] = useState(true);
+  const [, forceUpdate] = useState({});
 
+  // Subscribe to anomaliesManager changes
+  useEffect(() => {
+    const unsubscribe = anomaliesManager.subscribe(() => forceUpdate({}));
+    return unsubscribe;
+  }, []);
+
+  // Use backend definitions when enabled
   const anomalies = useMemo(() => {
     if (bits.length === 0) return [];
     
+    if (useBackendDefinitions) {
+      // Use anomaliesManager definitions
+      const enabledDefs = anomaliesManager.getEnabledDefinitions();
+      const results: Anomaly[] = [];
+      
+      for (const def of enabledDefs) {
+        try {
+          const detections = anomaliesManager.executeDetection(def.id, bits);
+          for (const detection of detections) {
+            results.push({
+              id: `${def.id}-${detection.position}`,
+              type: def.name,
+              position: detection.position,
+              length: detection.length,
+              sequence: bits.substring(detection.position, Math.min(detection.position + 20, detection.position + detection.length)) + (detection.length > 20 ? '...' : ''),
+              description: def.description,
+              severity: def.severity,
+            });
+          }
+        } catch (e) {
+          console.error(`Failed to execute anomaly detection ${def.name}:`, e);
+        }
+      }
+      
+      return results.sort((a, b) => a.position - b.position);
+    }
+    
+    // Fallback to built-in detection
     const palindromes = findPalindromes(bits, 5);
     const patterns = findRepeatingPatterns(bits, 4, 3);
     const alternating = findAlternatingSequences(bits, 8);
@@ -269,7 +307,7 @@ export const AnomaliesPanel = ({ bits, onJumpTo }: AnomaliesPanelProps) => {
     
     return [...palindromes, ...patterns, ...alternating, ...runs, ...sparse, ...byteAlign]
       .sort((a, b) => a.position - b.position);
-  }, [bits]);
+  }, [bits, useBackendDefinitions]);
   
   const filteredAnomalies = useMemo(() => {
     return anomalies.filter(a => {
@@ -400,6 +438,16 @@ export const AnomaliesPanel = ({ bits, onJumpTo }: AnomaliesPanelProps) => {
               Filters
             </h3>
             <div className="flex gap-2">
+              <Button
+                size="sm"
+                variant={useBackendDefinitions ? 'default' : 'outline'}
+                onClick={() => setUseBackendDefinitions(!useBackendDefinitions)}
+                className="h-7 px-2 text-xs"
+                title={useBackendDefinitions ? 'Using Backend Definitions' : 'Using Built-in Detection'}
+              >
+                <RefreshCw className="w-3 h-3 mr-1" />
+                {useBackendDefinitions ? 'Backend' : 'Built-in'}
+              </Button>
               <Button
                 size="sm"
                 variant={viewMode === 'cards' ? 'default' : 'outline'}
