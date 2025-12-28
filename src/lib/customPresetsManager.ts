@@ -12,6 +12,8 @@ export interface CustomPreset {
   name: string;
   description: string;
   config: GenerationConfig;
+  code?: string; // Optional code-based generation
+  isCodeBased?: boolean;
 }
 
 export interface GraphDefinition {

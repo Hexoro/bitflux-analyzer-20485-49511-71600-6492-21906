@@ -433,6 +433,26 @@ export const GenerationTab = () => {
                 </Select>
               </div>
             )}
+
+            <div className="space-y-2">
+              <Label>Generation Code (optional - overrides settings above)</Label>
+              <Textarea
+                value={(form as any).code || ''}
+                onChange={(e) => setForm({ ...form, code: e.target.value } as any)}
+                className="font-mono text-xs h-32"
+                placeholder={`function generate(length) {
+  // Return a string of 0s and 1s
+  let bits = '';
+  for (let i = 0; i < length; i++) {
+    bits += Math.random() > 0.5 ? '1' : '0';
+  }
+  return bits;
+}`}
+              />
+              <p className="text-xs text-muted-foreground">
+                Write JavaScript code that generates binary data. Function receives length and returns bit string.
+              </p>
+            </div>
           </div>
 
           <DialogFooter>
